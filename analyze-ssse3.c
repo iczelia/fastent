@@ -1,0 +1,7 @@
+/*  fastent  --  SSSE3 analyse variant.
+
+    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+
+#define FASTENT_VARIANT_SSSE3
+#define FASTENT_HAVE_SIMD
+#include "analyze-impl.h"
