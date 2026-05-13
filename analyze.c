@@ -37,15 +37,13 @@ void fastent_finalize(fastent_chunk_state * st, int binary, fastent_result * out
 
   /*  Merge banks into final histogram.  */
   if (binary) {
-    out->hist[0] = st->bit_hist[0];
-    out->hist[1] = st->bit_hist[1];
-    out->total_samples = st->total_bytes;  /*  bits  */
+    out->hist[0] = st->bit_hist[0];  out->hist[1] = st->bit_hist[1];
   } else {
     Fi(256,
        out->hist[i] = (u64) st->bank[0][i] + st->bank[1][i]
                     + st->bank[2][i] + st->bank[3][i])
-    out->total_samples = st->total_bytes;  /*  bytes  */
   }
+  out->total_samples = st->total_bytes;  /*  bits in -b mode, else bytes  */
 
   const int bins = binary ? 2 : 256;
   const f64 totalc = (f64) out->total_samples;
@@ -61,11 +59,7 @@ void fastent_finalize(fastent_chunk_state * st, int binary, fastent_result * out
   const f64 scct1 = (f64) st->cross_product;
   const f64 scct2_sq = sum_x * sum_x;
   const f64 denom = totalc * sum_x2 - scct2_sq;
-  if (denom == 0.0) {
-    out->scc = -100000.0;
-  } else {
-    out->scc = (totalc * scct1 - scct2_sq) / denom;
-  }
+  out->scc = (denom == 0.0) ? -100000.0 : (totalc * scct1 - scct2_sq) / denom;
 
   /*  Mean. Unguarded division to match original behaviour on empty
       input (yields -nan, formatted as "-nan" in default mode).  */
@@ -79,8 +73,7 @@ void fastent_finalize(fastent_chunk_state * st, int binary, fastent_result * out
      chisq += (a * a) / cexp;
      const f64 p = (f64) out->hist[i] / totalc;
      if (p > 0.0) entropy += p * fastent_log2(1.0 / p))
-  out->chi_square = chisq;
-  out->entropy = entropy;
+  out->chi_square = chisq;  out->entropy = entropy;
 
   out->chi_probability = fastent_chisq_tail(chisq, binary);
 

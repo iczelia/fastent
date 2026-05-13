@@ -45,7 +45,7 @@ endif
 dist_man_MANS = fastent.1
 
 EXTRA_DIST = README.md NEWS ChangeLog AUTHORS COPYING bootstrap \
-             tests/run-tests.sh
+             tests/run-tests.sh tests/bench.sh tests/bench-gen.c
 
 check-local:
 	$(srcdir)/tests/run-tests.sh "$(builddir)/fastent$(EXEEXT)" \
@@ -54,13 +54,15 @@ check-local:
 clean-local:
 	-rm -rf "$(builddir)/tests/fixtures"
 
-.PHONY: bench
+.PHONY: bench bench-quick bench-clean
 bench: fastent
-	@printf '== stdin (10 GiB of /dev/zero) ==\n'
-	@dd if=/dev/zero bs=1M count=10240 status=none | \
-	  /usr/bin/time -f '  %e s, %M kB' ./fastent > /dev/null
-	@printf '== mmap (4 GiB random) ==\n'
-	@if [ ! -f /tmp/fastent-bench.bin ]; then \
-	   dd if=/dev/urandom of=/tmp/fastent-bench.bin bs=1M count=4096 status=none; \
-	 fi
-	@/usr/bin/time -f '  %e s, %M kB' ./fastent /tmp/fastent-bench.bin > /dev/null
+	@BUILDDIR="$(builddir)" SRCDIR="$(srcdir)" CC="$(CC)" \
+	  $(SHELL) "$(srcdir)/tests/bench.sh"
+
+bench-quick: fastent
+	@BUILDDIR="$(builddir)" SRCDIR="$(srcdir)" CC="$(CC)" BENCH_QUICK=1 \
+	  $(SHELL) "$(srcdir)/tests/bench.sh"
+
+bench-clean:
+	-rm -rf "$${CACHE_DIR:-/tmp/fastent-bench}"
+	-rm -f "$(builddir)/tests/bench-gen"

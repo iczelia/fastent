@@ -25,3 +25,5 @@ stamp-h1
 fastent
 tests/fixtures/
 tests/tmp/
+tests/bench-gen
+*.tar.gz
