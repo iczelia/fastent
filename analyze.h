@@ -153,7 +153,7 @@ fastent_analyze_fn fastent_pick_fold_bits_variant(fastent_variant * which);
 /*  In-place ASCII + Latin-1 upper -> lower case fold. One variant per
     ISA, picked at startup.  The scalar variant is also the canonical
     fallback for non-SIMD builds.  */
-typedef void (*fastent_fold_fn)(u8 * buf, sz len);
+typedef void (* fastent_fold_fn)(u8 * buf, sz len);
 void fold_scalar(u8 * buf, sz len);
 #ifdef HAVE_SSSE3
 void fold_ssse3(u8 * buf, sz len);

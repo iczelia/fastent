@@ -117,30 +117,17 @@ fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
 
 #if defined(__GNUC__) || defined(__clang__)
   __builtin_cpu_init();
-
   #ifdef HAVE_SSSE3
-    if (__builtin_cpu_supports("ssse3")) {
-      v = FASTENT_VAR_SSSE3_;
-      fn = analyze_ssse3;
-    }
+    if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = analyze_ssse3; }
   #endif
   #ifdef HAVE_SSE41
-    if (__builtin_cpu_supports("sse4.1")) {
-      v = FASTENT_VAR_SSE41_;
-      fn = analyze_sse41;
-    }
+    if (__builtin_cpu_supports("sse4.1")) { v = FASTENT_VAR_SSE41_;  fn = analyze_sse41; }
   #endif
   #ifdef HAVE_AVX2
-    if (__builtin_cpu_supports("avx2")) {
-      v = FASTENT_VAR_AVX2_;
-      fn = analyze_avx2;
-    }
+    if (__builtin_cpu_supports("avx2"))   { v = FASTENT_VAR_AVX2_;   fn = analyze_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime()) {
-      v = FASTENT_VAR_AVX512_;
-      fn = analyze_avx512;
-    }
+    if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_avx512; }
   #endif
 #endif
 
@@ -168,30 +155,17 @@ fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which) {
 
 #if defined(__GNUC__) || defined(__clang__)
   __builtin_cpu_init();
-
   #ifdef HAVE_SSSE3
-    if (__builtin_cpu_supports("ssse3")) {
-      v = FASTENT_VAR_SSSE3_;
-      fn = analyze_bits_ssse3;
-    }
+    if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = analyze_bits_ssse3; }
   #endif
   #ifdef HAVE_SSE41
-    if (__builtin_cpu_supports("sse4.1")) {
-      v = FASTENT_VAR_SSE41_;
-      fn = analyze_bits_sse41;
-    }
+    if (__builtin_cpu_supports("sse4.1")) { v = FASTENT_VAR_SSE41_;  fn = analyze_bits_sse41; }
   #endif
   #ifdef HAVE_AVX2
-    if (__builtin_cpu_supports("avx2")) {
-      v = FASTENT_VAR_AVX2_;
-      fn = analyze_bits_avx2;
-    }
+    if (__builtin_cpu_supports("avx2"))   { v = FASTENT_VAR_AVX2_;   fn = analyze_bits_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime()) {
-      v = FASTENT_VAR_AVX512_;
-      fn = analyze_bits_avx512;
-    }
+    if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_bits_avx512; }
   #endif
 #endif
 
@@ -206,30 +180,17 @@ fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which) {
 
 #if defined(__GNUC__) || defined(__clang__)
   __builtin_cpu_init();
-
   #ifdef HAVE_SSSE3
-    if (__builtin_cpu_supports("ssse3")) {
-      v = FASTENT_VAR_SSSE3_;
-      fn = analyze_fold_ssse3;
-    }
+    if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = analyze_fold_ssse3; }
   #endif
   #ifdef HAVE_SSE41
-    if (__builtin_cpu_supports("sse4.1")) {
-      v = FASTENT_VAR_SSE41_;
-      fn = analyze_fold_sse41;
-    }
+    if (__builtin_cpu_supports("sse4.1")) { v = FASTENT_VAR_SSE41_;  fn = analyze_fold_sse41; }
   #endif
   #ifdef HAVE_AVX2
-    if (__builtin_cpu_supports("avx2")) {
-      v = FASTENT_VAR_AVX2_;
-      fn = analyze_fold_avx2;
-    }
+    if (__builtin_cpu_supports("avx2"))   { v = FASTENT_VAR_AVX2_;   fn = analyze_fold_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime()) {
-      v = FASTENT_VAR_AVX512_;
-      fn = analyze_fold_avx512;
-    }
+    if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_fold_avx512; }
   #endif
 #endif
 
@@ -244,30 +205,17 @@ fastent_analyze_fn fastent_pick_fold_bits_variant(fastent_variant * which) {
 
 #if defined(__GNUC__) || defined(__clang__)
   __builtin_cpu_init();
-
   #ifdef HAVE_SSSE3
-    if (__builtin_cpu_supports("ssse3")) {
-      v = FASTENT_VAR_SSSE3_;
-      fn = analyze_bits_fold_ssse3;
-    }
+    if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = analyze_bits_fold_ssse3; }
   #endif
   #ifdef HAVE_SSE41
-    if (__builtin_cpu_supports("sse4.1")) {
-      v = FASTENT_VAR_SSE41_;
-      fn = analyze_bits_fold_sse41;
-    }
+    if (__builtin_cpu_supports("sse4.1")) { v = FASTENT_VAR_SSE41_;  fn = analyze_bits_fold_sse41; }
   #endif
   #ifdef HAVE_AVX2
-    if (__builtin_cpu_supports("avx2")) {
-      v = FASTENT_VAR_AVX2_;
-      fn = analyze_bits_fold_avx2;
-    }
+    if (__builtin_cpu_supports("avx2"))   { v = FASTENT_VAR_AVX2_;   fn = analyze_bits_fold_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime()) {
-      v = FASTENT_VAR_AVX512_;
-      fn = analyze_bits_fold_avx512;
-    }
+    if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_bits_fold_avx512; }
   #endif
 #endif
 
@@ -282,30 +230,17 @@ fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which) {
 
 #if defined(__GNUC__) || defined(__clang__)
   __builtin_cpu_init();
-
   #ifdef HAVE_SSSE3
-    if (__builtin_cpu_supports("ssse3")) {
-      v = FASTENT_VAR_SSSE3_;
-      fn = fold_ssse3;
-    }
+    if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = fold_ssse3; }
   #endif
   #ifdef HAVE_SSE41
-    if (__builtin_cpu_supports("sse4.1")) {
-      v = FASTENT_VAR_SSE41_;
-      fn = fold_sse41;
-    }
+    if (__builtin_cpu_supports("sse4.1")) { v = FASTENT_VAR_SSE41_;  fn = fold_sse41; }
   #endif
   #ifdef HAVE_AVX2
-    if (__builtin_cpu_supports("avx2")) {
-      v = FASTENT_VAR_AVX2_;
-      fn = fold_avx2;
-    }
+    if (__builtin_cpu_supports("avx2"))   { v = FASTENT_VAR_AVX2_;   fn = fold_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime()) {
-      v = FASTENT_VAR_AVX512_;
-      fn = fold_avx512;
-    }
+    if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = fold_avx512; }
   #endif
 #endif
 

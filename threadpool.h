@@ -17,7 +17,7 @@ int  fastent_num_threads(void);
 
 /*  Synchronously run fn(i, ctx) for i in [0, n). Workers are spawned
     on first call; subsequent calls reuse them.  */
-typedef void (*fastent_parfor_fn)(sz, void *);
+typedef void (* fastent_parfor_fn)(sz, void *);
 void fastent_parallel_for(sz n, fastent_parfor_fn fn, void * ctx);
 
 #endif

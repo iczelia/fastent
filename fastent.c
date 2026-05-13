@@ -257,11 +257,7 @@ static void run_mmap_mt(fastent_chunk_state * out, const fastent_options * o,
   fastent_chunk_state * states = (fastent_chunk_state *) calloc((sz) N, sizeof(*states));
   if (!states) { fprintf(stderr, "out of memory\n"); exit(2); }
 
-  mt_ctx ctx;
-  ctx.data    = data;
-  ctx.bounds  = bounds;
-  ctx.states  = states;
-  ctx.fn      = fn;
+  mt_ctx ctx = { data, bounds, states, fn };
   fastent_parallel_for((sz) N, mt_worker, &ctx);
 
   /*  Merge per-thread states into `out`.  Slab 0 supplies first_byte;
