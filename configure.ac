@@ -105,14 +105,42 @@ AC_COMPILE_IFELSE(
   [AC_MSG_RESULT([no])
    AVX2_CFLAGS=""])
 
+# ---- AVX-512 (F + BW + CD + DQ + VL + VPOPCNTDQ + BITALG) ----
+# AVX512F+BW+VL: byte/word 512-bit ops + 128/256-bit EVEX encodings.
+# AVX512CD: VPCONFLICTD/Q for the parallel-scatter histogram.
+# AVX512VPOPCNTDQ + AVX512BITALG: VPOPCNTB byte-popcount for the
+# bit-mode body (replaces the PSHUFB-LUT nibble popcount).
+# All four extensions ship together on Zen 4, Intel Ice Lake-SP, and
+# later, so a single compound probe is fine.
+AVX512_CC_FLAGS="-mavx512f -mavx512bw -mavx512cd -mavx512dq -mavx512vl -mavx512vpopcntdq -mavx512bitalg"
+CFLAGS="$save_CFLAGS $AVX512_CC_FLAGS"
+AC_MSG_CHECKING([for AVX-512F+BW+CD+VPOPCNTDQ+BITALG intrinsics with $CC])
+AC_COMPILE_IFELSE(
+  [AC_LANG_PROGRAM([[
+    #include <immintrin.h>
+  ]], [[
+    __m512i a = _mm512_set1_epi8(1);
+    __m512i b = _mm512_conflict_epi32(a);
+    __m512i c = _mm512_popcnt_epi8(a);
+    __m512i d = _mm512_madd_epi16(a, b);
+    return (int) _mm512_reduce_add_epi32(_mm512_add_epi32(c, d));
+  ]])],
+  [AC_MSG_RESULT([yes])
+   AC_DEFINE([HAVE_AVX512], [1], [Define if AVX-512 intrinsics are available])
+   AVX512_CFLAGS="$AVX512_CC_FLAGS"],
+  [AC_MSG_RESULT([no])
+   AVX512_CFLAGS=""])
+
 CFLAGS="$save_CFLAGS"
 
 AC_SUBST([SSSE3_CFLAGS])
 AC_SUBST([SSE41_CFLAGS])
 AC_SUBST([AVX2_CFLAGS])
-AM_CONDITIONAL([HAVE_SSSE3], [test "x$SSSE3_CFLAGS" != "x"])
-AM_CONDITIONAL([HAVE_SSE41], [test "x$SSE41_CFLAGS" != "x"])
-AM_CONDITIONAL([HAVE_AVX2],  [test "x$AVX2_CFLAGS"  != "x"])
+AC_SUBST([AVX512_CFLAGS])
+AM_CONDITIONAL([HAVE_SSSE3],  [test "x$SSSE3_CFLAGS"  != "x"])
+AM_CONDITIONAL([HAVE_SSE41],  [test "x$SSE41_CFLAGS"  != "x"])
+AM_CONDITIONAL([HAVE_AVX2],   [test "x$AVX2_CFLAGS"   != "x"])
+AM_CONDITIONAL([HAVE_AVX512], [test "x$AVX512_CFLAGS" != "x"])
 
 # Optional optimisations.
 AC_ARG_ENABLE([native],

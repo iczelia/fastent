@@ -24,9 +24,12 @@ form.
 - 4-way banked SIMD histogram in the inner loop;
 - serial-correlation cross-product via `VPMADDUBSW` with an on-the-fly
   sign-correction derived from `PSADBW`;
+- bit-mode population count via `VPOPCNTB` (AVX-512 BITALG), falling
+  back to a PSHUFB nibble LUT on AVX2 / SSE;
 - memory-maps regular-file inputs with `MADV_SEQUENTIAL`;
 - runtime dispatch to the best available variant
-  (scalar / SSSE3 / SSE4.1 / AVX2) via `__builtin_cpu_supports`;
+  (scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512) via
+  `__builtin_cpu_supports`;
 - optional pthread worker pool partitioning the mmap region into
   6-aligned slabs so the Monte-Carlo Pi state machine never crosses
   threads; merge order is deterministic and yields byte-identical
@@ -64,14 +67,21 @@ the per-thread compute is the same as on the 5900X.
 ### Why the single-thread ceiling
 
 The byte-histogram inner loop does 64 indexed read-modify-write stores
-per 64-byte stride into four banked u32 counters.  Without AVX-512
-`VPCONFLICTD` for SIMD scatter-add there is no SIMD primitive that
-shortens that critical path, so headroom past ~2-3 GB/s comes from
-multi-threading.  Pass `-j N` to spread the mmap region across N
-pthread workers; slabs are 6-aligned so the Monte-Carlo Pi state
-machine never crosses threads, and adjacent slab boundary products
-are stitched into the serial-correlation sum at merge time.  `-j auto`
-resolves to `sysconf(_SC_NPROCESSORS_ONLN)`.
+per 64-byte stride into four banked u32 counters.  The AVX-512 path
+(activated when the host advertises AVX-512F + BW + CD + VPOPCNTDQ +
+BITALG) doubles the stride to 128 bytes and runs the SCC/fold/MC Pi
+SIMD compute at 64-byte width; the histogram itself stays banked-scalar
+because `VPSCATTERDD` on AMD Zen 4 is roughly 16 c reciprocal
+throughput for a 16-element zmm scatter, so any scatter-based variant
+loses to the 4-banked scalar inc-mem chain (which hits ~0.5 c/B at
+the ROB-rate limit).
+
+Past the per-core compute ceiling, headroom comes from multi-threading.
+Pass `-j N` to spread the mmap region across N pthread workers; slabs
+are 6-aligned so the Monte-Carlo Pi state machine never crosses
+threads, and adjacent slab boundary products are stitched into the
+serial-correlation sum at merge time.  `-j auto` resolves to
+`sysconf(_SC_NPROCESSORS_ONLN)`.
 
 ## Building
 

@@ -158,6 +158,21 @@ void fastent_finalize(fastent_chunk_state * st, int binary, fastent_result * out
     built; we still confirm at runtime via __builtin_cpu_supports so a
     binary built on a wider host can run on a narrower one.  */
 
+/*  Runtime feature probe shared across the pickers.  Returns 1 iff the
+    host has every AVX-512 extension referenced by the AVX-512 SIMD
+    body: F (foundation), BW (byte/word ops), CD (VPCONFLICTD),
+    VPOPCNTDQ + BITALG (VPOPCNTB).  All four ship together on Zen 4
+    and Ice Lake-SP+, so a single combined check is fine.  */
+#if defined(HAVE_AVX512) && (defined(__GNUC__) || defined(__clang__))
+static int fastent_have_avx512_runtime(void) {
+  return __builtin_cpu_supports("avx512f")
+      && __builtin_cpu_supports("avx512bw")
+      && __builtin_cpu_supports("avx512cd")
+      && __builtin_cpu_supports("avx512vpopcntdq")
+      && __builtin_cpu_supports("avx512bitalg");
+}
+#endif
+
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
   fastent_variant v = FASTENT_VAR_SCALAR;
   fastent_analyze_fn fn = analyze_scalar;
@@ -183,6 +198,12 @@ fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
       fn = analyze_avx2;
     }
   #endif
+  #ifdef HAVE_AVX512
+    if (fastent_have_avx512_runtime()) {
+      v = FASTENT_VAR_AVX512_;
+      fn = analyze_avx512;
+    }
+  #endif
 #endif
 
   if (which) *which = v;
@@ -191,6 +212,7 @@ fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
 
 const char * fastent_variant_name(fastent_variant v) {
   switch (v) {
+    case FASTENT_VAR_AVX512_: return "avx512";
     case FASTENT_VAR_AVX2_:   return "avx2";
     case FASTENT_VAR_SSE41_:  return "sse4.1";
     case FASTENT_VAR_SSSE3_:  return "ssse3";
@@ -227,6 +249,12 @@ fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which) {
       fn = analyze_bits_avx2;
     }
   #endif
+  #ifdef HAVE_AVX512
+    if (fastent_have_avx512_runtime()) {
+      v = FASTENT_VAR_AVX512_;
+      fn = analyze_bits_avx512;
+    }
+  #endif
 #endif
 
   if (which) *which = v;
@@ -257,6 +285,12 @@ fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which) {
     if (__builtin_cpu_supports("avx2")) {
       v = FASTENT_VAR_AVX2_;
       fn = analyze_fold_avx2;
+    }
+  #endif
+  #ifdef HAVE_AVX512
+    if (fastent_have_avx512_runtime()) {
+      v = FASTENT_VAR_AVX512_;
+      fn = analyze_fold_avx512;
     }
   #endif
 #endif
@@ -291,6 +325,12 @@ fastent_analyze_fn fastent_pick_fold_bits_variant(fastent_variant * which) {
       fn = analyze_bits_fold_avx2;
     }
   #endif
+  #ifdef HAVE_AVX512
+    if (fastent_have_avx512_runtime()) {
+      v = FASTENT_VAR_AVX512_;
+      fn = analyze_bits_fold_avx512;
+    }
+  #endif
 #endif
 
   if (which) *which = v;
@@ -321,6 +361,12 @@ fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which) {
     if (__builtin_cpu_supports("avx2")) {
       v = FASTENT_VAR_AVX2_;
       fn = fold_avx2;
+    }
+  #endif
+  #ifdef HAVE_AVX512
+    if (fastent_have_avx512_runtime()) {
+      v = FASTENT_VAR_AVX512_;
+      fn = fold_avx512;
     }
   #endif
 #endif

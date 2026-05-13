@@ -35,6 +35,13 @@ libfastent_avx2_a_CFLAGS    = $(AM_CFLAGS) $(AVX2_CFLAGS)
 fastent_LDADD              += libfastent_avx2.a
 endif
 
+if HAVE_AVX512
+noinst_LIBRARIES            += libfastent_avx512.a
+libfastent_avx512_a_SOURCES  = analyze-avx512.c
+libfastent_avx512_a_CFLAGS   = $(AM_CFLAGS) $(AVX512_CFLAGS)
+fastent_LDADD               += libfastent_avx512.a
+endif
+
 dist_man_MANS = fastent.1
 
 EXTRA_DIST = README.md NEWS ChangeLog AUTHORS COPYING bootstrap \

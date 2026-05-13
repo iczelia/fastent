@@ -70,7 +70,8 @@ typedef enum {
   FASTENT_VAR_SCALAR = 0,
   FASTENT_VAR_SSSE3_  = 1,
   FASTENT_VAR_SSE41_  = 2,
-  FASTENT_VAR_AVX2_   = 3
+  FASTENT_VAR_AVX2_   = 3,
+  FASTENT_VAR_AVX512_ = 4
 } fastent_variant;
 
 typedef void (* fastent_analyze_fn)(fastent_chunk_state *, const u8 *, sz);
@@ -91,6 +92,9 @@ void analyze_sse41(fastent_chunk_state * st, const u8 * buf, sz len);
 #ifdef HAVE_AVX2
 void analyze_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
+#ifdef HAVE_AVX512
+void analyze_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
 
 /*  Fused fold+analyse entries: same SIMD body as analyze_<variant> but
     each loaded vector is case-folded in-register before histogram /
@@ -105,6 +109,9 @@ void analyze_fold_sse41(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX2
 void analyze_fold_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_AVX512
+void analyze_fold_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which);
@@ -123,6 +130,9 @@ void analyze_bits_sse41(fastent_chunk_state * st, const u8 * buf, sz len);
 #ifdef HAVE_AVX2
 void analyze_bits_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
+#ifdef HAVE_AVX512
+void analyze_bits_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
 
 /*  Fused fold + bit-mode analysers.  */
 void analyze_bits_fold_scalar(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -134,6 +144,9 @@ void analyze_bits_fold_sse41(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX2
 void analyze_bits_fold_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_AVX512
+void analyze_bits_fold_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
 fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which);
@@ -152,6 +165,9 @@ void fold_sse41(u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX2
 void fold_avx2(u8 * buf, sz len);
+#endif
+#ifdef HAVE_AVX512
+void fold_avx512(u8 * buf, sz len);
 #endif
 
 fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which);

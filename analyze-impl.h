@@ -46,7 +46,29 @@
   #include <immintrin.h>
 #endif
 
-#if defined(FASTENT_VARIANT_AVX2)
+#if defined(FASTENT_VARIANT_AVX512)
+  #define FASTENT_VAR_SUFFIX _avx512
+  #define FASTENT_SIMD_VEC   __m512i
+  #define FASTENT_SIMD_VLEN  64
+  #define V_SET1_EPI8(x)       _mm512_set1_epi8((char)(x))
+  #define V_SETZERO()          _mm512_setzero_si512()
+  #define V_LOAD(p)            _mm512_loadu_si512((const void *)(p))
+  #define V_STORE(p, v)        _mm512_storeu_si512((void *)(p), (v))
+  #define V_AND(a, b)          _mm512_and_si512((a), (b))
+  #define V_OR(a, b)           _mm512_or_si512((a), (b))
+  #define V_ANDNOT(a, b)       _mm512_andnot_si512((a), (b))
+  #define V_ADD_EPI8(a, b)     _mm512_add_epi8((a), (b))
+  #define V_ADD_EPI64(a, b)    _mm512_add_epi64((a), (b))
+  #define V_SUBS_EPU8(a, b)    _mm512_subs_epu8((a), (b))
+  /*  CMPEQ on AVX-512 returns a mask register, not a vector; we
+      synthesize a 0/-1 vector by masking a -1 splat so the fold helper
+      can stay variant-agnostic.  */
+  #define V_CMPEQ_EPI8(a, b)   _mm512_maskz_set1_epi8( \
+                                  _mm512_cmpeq_epi8_mask((a), (b)), -1)
+  #define V_SRLI_EPI16(a, n)   _mm512_srli_epi16((a), (n))
+  #define V_SHUFFLE_EPI8(t, i) _mm512_shuffle_epi8((t), (i))
+  #define V_SAD_EPU8(a, b)     _mm512_sad_epu8((a), (b))
+#elif defined(FASTENT_VARIANT_AVX2)
   #define FASTENT_VAR_SUFFIX _avx2
   #define FASTENT_SIMD_VEC   __m256i
   #define FASTENT_SIMD_VLEN  32
@@ -430,7 +452,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
         We launder the stage pointer through an empty inline asm so
         GCC can't track the relationship between the just-stored
-        vector and the subsequent byte reads -- without this it tries
+        vector and the subsequent byte reads.  Without this it tries
         to be "clever" and serialises the histogram on a chain of
         vpextrb instructions (~5 c latency each on Zen) instead of
         emitting movzbl loads from L1, a ~2x slowdown on the inner
@@ -580,6 +602,272 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   }
 
   /*  Save MC state back.  */
+  st->mc_pos = mc_pos;
+  st->mc_buf[0] = m0; st->mc_buf[1] = m1; st->mc_buf[2] = m2;
+  st->mc_buf[3] = m3; st->mc_buf[4] = m4; st->mc_buf[5] = m5;
+  st->mc_count  = mc_count;
+  st->mc_inside = mc_inside;
+
+  return body_end + 1;
+}
+
+#elif defined(FASTENT_VARIANT_AVX512)
+
+/*  ----------------------------------------------------------------------
+    AVX-512 SIMD body.
+
+    Stride = 128 bytes (two 64-byte vectors).  The SCC pmaddubs-like
+    path is the same as AVX2, just widened to 512-bit lanes via
+    _mm512_madd_epi16 over u16 x i16 products.  The byte histogram
+    stays scalar 4-banked: every AVX-512 CD scatter-based variant we
+    benchmarked (Intel Opt. Manual section 15.16.1 vpermd-fold, Cordes
+    replicated 16x sub-histograms, naive popcount-scatter) lost to the
+    scalar inc-mem chain by 1.5-3x on Zen 4 because VPSCATTERDD is
+    ~16 c reciprocal throughput on this microarchitecture.  */
+
+static __attribute__((always_inline)) inline sz
+FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
+                           const u8 * FASTENT_RESTRICT buf,
+                           sz len, int fold) {
+  /*  AVX-512 stride = 128 bytes (two 64-byte vectors). Need byte +1
+      readable for the SCC shifted load on the last iter, so the body
+      stops at len - 64 (leave 64-byte read-ahead margin).  */
+  if (len < 129) return 0;
+
+  const sz body_max = len - 64;
+  sz iters = body_max / 128;
+  if (iters == 0) return 0;
+  const sz body_end = iters * 128;
+
+  u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
+  if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
+  if (st->have_carry) {
+    st->cross_product += (i64) st->carry_byte * (i64) b0_user;
+  }
+  st->have_carry = 1;
+
+  const __m512i sign_xor = _mm512_set1_epi8((char) 0x80);
+  const __m512i zero512  = _mm512_setzero_si512();
+  __m512i scc_acc64      = _mm512_setzero_si512(); /*  8 i64 lanes  */
+  __m512i lhs_sad        = _mm512_setzero_si512();
+
+  u32 * b0 = st->bank[0];
+  u32 * b1 = st->bank[1];
+  u32 * b2 = st->bank[2];
+  u32 * b3 = st->bank[3];
+
+  int mc_pos     = st->mc_pos;
+  u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
+  u8  m3 = st->mc_buf[3], m4 = st->mc_buf[4], m5 = st->mc_buf[5];
+  u64 mc_count   = st->mc_count;
+  u64 mc_inside  = st->mc_inside;
+
+  const __m512i ones16_sum = _mm512_set1_epi16(1);
+
+  #define FASTENT_PREFETCH_DIST 512
+  for (sz i = 0; i < body_end; i += 128) {
+    __builtin_prefetch(buf + i + FASTENT_PREFETCH_DIST + 0,  0, 1);
+    __builtin_prefetch(buf + i + FASTENT_PREFETCH_DIST + 64, 0, 1);
+
+    __m512i va0 = _mm512_loadu_si512((const void *) (buf + i +  0));
+    __m512i vb0 = _mm512_loadu_si512((const void *) (buf + i +  1));
+    __m512i va1 = _mm512_loadu_si512((const void *) (buf + i + 64));
+    __m512i vb1 = _mm512_loadu_si512((const void *) (buf + i + 65));
+    if (fold) {
+      va0 = FASTENT_FN(fold_vec_inline)(va0);
+      vb0 = FASTENT_FN(fold_vec_inline)(vb0);
+      va1 = FASTENT_FN(fold_vec_inline)(va1);
+      vb1 = FASTENT_FN(fold_vec_inline)(vb1);
+    }
+    __m512i vbs0 = _mm512_xor_si512(vb0, sign_xor);
+    __m512i vbs1 = _mm512_xor_si512(vb1, sign_xor);
+
+    /*  Widen each 64-byte vector into two i16 lanes (32 i16 each).  */
+    __m512i va0_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(va0));
+    __m512i va0_hi = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(va0, 1));
+    __m512i va1_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(va1));
+    __m512i va1_hi = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(va1, 1));
+    __m512i vb0_lo = _mm512_cvtepi8_epi16(_mm512_castsi512_si256(vbs0));
+    __m512i vb0_hi = _mm512_cvtepi8_epi16(_mm512_extracti64x4_epi64(vbs0, 1));
+    __m512i vb1_lo = _mm512_cvtepi8_epi16(_mm512_castsi512_si256(vbs1));
+    __m512i vb1_hi = _mm512_cvtepi8_epi16(_mm512_extracti64x4_epi64(vbs1, 1));
+
+    __m512i prod0_lo = _mm512_mullo_epi16(va0_lo, vb0_lo);
+    __m512i prod0_hi = _mm512_mullo_epi16(va0_hi, vb0_hi);
+    __m512i prod1_lo = _mm512_mullo_epi16(va1_lo, vb1_lo);
+    __m512i prod1_hi = _mm512_mullo_epi16(va1_hi, vb1_hi);
+
+    __m512i s0_lo = _mm512_madd_epi16(prod0_lo, ones16_sum);
+    __m512i s0_hi = _mm512_madd_epi16(prod0_hi, ones16_sum);
+    __m512i s1_lo = _mm512_madd_epi16(prod1_lo, ones16_sum);
+    __m512i s1_hi = _mm512_madd_epi16(prod1_hi, ones16_sum);
+
+    /*  Accumulate per-pair i32 sums as i64 lanes. Each i32 lane is the
+        sum of two byte-products in [-65280..64770]; we widen to i64
+        before accumulating across iters to avoid overflow on
+        consistent-sign inputs.  */
+    __m512i sum32 = _mm512_add_epi32(_mm512_add_epi32(s0_lo, s0_hi),
+                                     _mm512_add_epi32(s1_lo, s1_hi));
+    __m512i sum64_lo = _mm512_cvtepi32_epi64(_mm512_castsi512_si256(sum32));
+    __m512i sum64_hi = _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(sum32, 1));
+    scc_acc64 = _mm512_add_epi64(scc_acc64,
+                  _mm512_add_epi64(sum64_lo, sum64_hi));
+    /*  LHS byte sum via PSADBW for the sign correction.  */
+    __m512i sad0 = _mm512_sad_epu8(va0, zero512);
+    __m512i sad1 = _mm512_sad_epu8(va1, zero512);
+    lhs_sad = _mm512_add_epi64(lhs_sad, _mm512_add_epi64(sad0, sad1));
+
+    /*  Histogram & MC Pi stage buffer.  In fused-fold mode we go via
+        an L1-resident stack stage (with the same asm pointer laundering
+        as the AVX2 path); else we read directly from buf.  */
+    u8 stage[128] __attribute__((aligned(64)));
+    const u8 * p;
+    if (fold) {
+      _mm512_store_si512((void *) (stage +  0), va0);
+      _mm512_store_si512((void *) (stage + 64), va1);
+      const u8 * sp = stage;
+      __asm__("" : "+r"(sp) :: "memory");
+      p = sp;
+    } else {
+      p = buf + i;
+    }
+
+    /*  Scalar 4-banked inc-mem chain: 128 byte increments per iter
+        distributed across 4 bank arrays; mirrors the AVX2 path's bank
+        discipline so cross-variant tail merges line up.  */
+    #define HIST4(o) \
+      b0[p[(o) + 0]]++; b1[p[(o) + 1]]++; \
+      b2[p[(o) + 2]]++; b3[p[(o) + 3]]++
+    HIST4(  0); HIST4(  4); HIST4(  8); HIST4( 12);
+    HIST4( 16); HIST4( 20); HIST4( 24); HIST4( 28);
+    HIST4( 32); HIST4( 36); HIST4( 40); HIST4( 44);
+    HIST4( 48); HIST4( 52); HIST4( 56); HIST4( 60);
+    HIST4( 64); HIST4( 68); HIST4( 72); HIST4( 76);
+    HIST4( 80); HIST4( 84); HIST4( 88); HIST4( 92);
+    HIST4( 96); HIST4(100); HIST4(104); HIST4(108);
+    HIST4(112); HIST4(116); HIST4(120); HIST4(124);
+    #undef HIST4
+
+    /*  MC Pi: same drain + bulk + stash dance as the AVX2 body, but
+        sized for a 128-byte stride (so up to 21 hexads per iter).  */
+    u64 mi_a = 0, mi_b = 0;
+    int drain_fired = 0;
+    #define MC_HIT(d, acc) acc += ((d) <= FASTENT_INCIRC)
+    #define MC_DRAIN() do { \
+      u32 _x = ((u32) m0 << 16) | ((u32) m1 << 8) | (u32) m2; \
+      u32 _y = ((u32) m3 << 16) | ((u32) m4 << 8) | (u32) m5; \
+      u64 _d = (u64) _x * (u64) _x + (u64) _y * (u64) _y; \
+      MC_HIT(_d, mi_a); \
+      drain_fired = 1; \
+    } while (0)
+
+    unsigned p_idx;
+    switch (mc_pos) {
+      case 0: p_idx = 0; break;
+      case 1: m1 = p[0]; m2 = p[1]; m3 = p[2]; m4 = p[3]; m5 = p[4];
+              MC_DRAIN(); p_idx = 5; break;
+      case 2: m2 = p[0]; m3 = p[1]; m4 = p[2]; m5 = p[3];
+              MC_DRAIN(); p_idx = 4; break;
+      case 3: m3 = p[0]; m4 = p[1]; m5 = p[2];
+              MC_DRAIN(); p_idx = 3; break;
+      case 4: m4 = p[0]; m5 = p[1];
+              MC_DRAIN(); p_idx = 2; break;
+      default: m5 = p[0];
+              MC_DRAIN(); p_idx = 1; break;
+    }
+
+    unsigned n_hexads = (128u - p_idx) / 6u;
+    const u8 * q = p + p_idx;
+    const __m128i mc_shuf = _mm_setr_epi8(2, 1, 0, -1, 5, 4, 3, -1,
+                                          8, 7, 6, -1, 11, 10, 9, -1);
+    const __m128i mc_lim  = _mm_set1_epi64x((i64)(FASTENT_INCIRC + 1ULL));
+    unsigned k = 0;
+    /*  256-bit bulk: 4 hexads per iter (=24 bytes of source).  */
+    const __m256i mc_shuf256 = _mm256_broadcastsi128_si256(mc_shuf);
+    const __m256i mc_lim256  = _mm256_set1_epi64x((i64)(FASTENT_INCIRC + 1ULL));
+    for (; k + 4 <= n_hexads; k += 4) {
+      __m128i v0_xmm = _mm_loadu_si128((const __m128i *) (q + k * 6u));
+      __m128i v1_xmm = _mm_loadu_si128((const __m128i *) (q + k * 6u + 12u));
+      __m256i v   = _mm256_inserti128_si256(_mm256_castsi128_si256(v0_xmm),
+                                            v1_xmm, 1);
+      __m256i xy  = _mm256_shuffle_epi8(v, mc_shuf256);
+      __m256i xs  = _mm256_mul_epu32(xy, xy);
+      __m256i yshr = _mm256_srli_epi64(xy, 32);
+      __m256i ys  = _mm256_mul_epu32(yshr, yshr);
+      __m256i d   = _mm256_add_epi64(xs, ys);
+      __m256i mask = _mm256_cmpgt_epi64(mc_lim256, d);
+      int bits = _mm256_movemask_pd(_mm256_castsi256_pd(mask));
+      mi_a += (u64) __builtin_popcount(bits);
+    }
+    /*  128-bit residual: 2 hexads per iter.  */
+    for (; k + 2 <= n_hexads; k += 2) {
+      __m128i v   = _mm_loadu_si128((const __m128i *) (q + k * 6u));
+      __m128i xy  = _mm_shuffle_epi8(v, mc_shuf);
+      __m128i xs  = _mm_mul_epu32(xy, xy);
+      __m128i yshr = _mm_srli_epi64(xy, 32);
+      __m128i ys  = _mm_mul_epu32(yshr, yshr);
+      __m128i d   = _mm_add_epi64(xs, ys);
+      __m128i mask = _mm_cmpgt_epi64(mc_lim, d);
+      int bits = _mm_movemask_pd(_mm_castsi128_pd(mask));
+      mi_b += (u64) __builtin_popcount(bits);
+    }
+    /*  Scalar tail (0 or 1 hexad).  */
+    for (; k < n_hexads; k++) {
+      unsigned o = k * 6u;
+      u32 x = ((u32) q[o + 0] << 16) | ((u32) q[o + 1] << 8) | q[o + 2];
+      u32 y = ((u32) q[o + 3] << 16) | ((u32) q[o + 4] << 8) | q[o + 5];
+      u64 d = (u64) x * (u64) x + (u64) y * (u64) y;
+      mi_b += (d <= FASTENT_INCIRC);
+    }
+    mc_count  += n_hexads + (drain_fired ? 1u : 0u);
+    mc_inside += mi_a + mi_b;
+    #undef MC_DRAIN
+    #undef MC_HIT
+
+    unsigned stash_at    = p_idx + n_hexads * 6u;
+    unsigned stash_count = 128u - stash_at;
+    mc_pos = (int) stash_count;
+    if (stash_count >= 1) m0 = p[stash_at + 0];
+    if (stash_count >= 2) m1 = p[stash_at + 1];
+    if (stash_count >= 3) m2 = p[stash_at + 2];
+    if (stash_count >= 4) m3 = p[stash_at + 3];
+    if (stash_count >= 5) m4 = p[stash_at + 4];
+  }
+
+  /*  Horizontal reduce scc_acc64 (8 i64 lanes) -> scalar.  */
+  i64 scc_sum = (i64) _mm512_reduce_add_epi64(scc_acc64);
+  u64 lhs_sum = (u64) _mm512_reduce_add_epi64(lhs_sad);
+  st->cross_product += scc_sum + (i64)(128ULL * lhs_sum);
+
+  /*  Epilogue: process buf[body_end] for histogram + carry + MC.  */
+  {
+    u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
+                : buf[body_end];
+    st->total_bytes += body_end;
+    st->bank[(unsigned)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
+    st->total_bytes++;
+    st->carry_byte = b;
+    st->last_byte  = b;
+
+    switch (mc_pos) {
+      case 0: m0 = b; break;
+      case 1: m1 = b; break;
+      case 2: m2 = b; break;
+      case 3: m3 = b; break;
+      case 4: m4 = b; break;
+      default: m5 = b; break;
+    }
+    mc_pos++;
+    if (mc_pos == 6) {
+      u32 x = ((u32) m0 << 16) | ((u32) m1 << 8) | (u32) m2;
+      u32 y = ((u32) m3 << 16) | ((u32) m4 << 8) | (u32) m5;
+      u64 d = (u64) x * (u64) x + (u64) y * (u64) y;
+      mc_count++;
+      mc_inside += (d <= FASTENT_INCIRC);
+      mc_pos = 0;
+    }
+  }
+
   st->mc_pos = mc_pos;
   st->mc_buf[0] = m0; st->mc_buf[1] = m1; st->mc_buf[2] = m2;
   st->mc_buf[3] = m3; st->mc_buf[4] = m4; st->mc_buf[5] = m5;
@@ -943,16 +1231,21 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   st->have_carry = 1;
 
   /*  PSHUFB-LUT for nibble popcount. AVX2 PSHUFB is per-lane so we
-      duplicate the 16-entry table into both lanes.  */
+      duplicate the 16-entry table into both lanes.  On AVX-512 we have
+      VPOPCNTB (BITALG + VPOPCNTDQ) directly, so the LUT is unused.  */
 #if defined(FASTENT_VARIANT_AVX2)
   const FASTENT_SIMD_VEC popcnt_lut = _mm256_setr_epi8(
     0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
     0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
+#elif defined(FASTENT_VARIANT_AVX512)
+  /*  Unused on AVX-512: VPOPCNTB replaces the LUT lookups.  */
 #else
   const FASTENT_SIMD_VEC popcnt_lut = _mm_setr_epi8(
     0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
 #endif
+#if !defined(FASTENT_VARIANT_AVX512)
   const FASTENT_SIMD_VEC nibble_mask = V_SET1_EPI8(0x0F);
+#endif
   const FASTENT_SIMD_VEC mask_7f     = V_SET1_EPI8(0x7F);
   const FASTENT_SIMD_VEC mask_01     = V_SET1_EPI8(0x01);
   const FASTENT_SIMD_VEC zero        = V_SETZERO();
@@ -978,6 +1271,18 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
       vb = FASTENT_FN(fold_vec_inline)(vb);
     }
 
+#if defined(FASTENT_VARIANT_AVX512)
+    /*  Direct byte-wise popcount via VPOPCNTB; horizontal reduce to
+        qword via PSADBW.  */
+    FASTENT_SIMD_VEC pc_va = _mm512_popcnt_epi8(va);
+    acc_ones = V_ADD_EPI64(acc_ones, V_SAD_EPU8(pc_va, zero));
+
+    /*  Within-byte adjacent-1 pairs.  */
+    FASTENT_SIMD_VEC va_shr1 = V_AND(V_SRLI_EPI16(va, 1), mask_7f);
+    FASTENT_SIMD_VEC pairs   = V_AND(va, va_shr1);
+    FASTENT_SIMD_VEC pc_pairs = _mm512_popcnt_epi8(pairs);
+    acc_within = V_ADD_EPI64(acc_within, V_SAD_EPU8(pc_pairs, zero));
+#else
     /*  popcount(va) byte-wise via PSHUFB-LUT.  */
     FASTENT_SIMD_VEC lo = V_AND(va, nibble_mask);
     FASTENT_SIMD_VEC hi = V_AND(V_SRLI_EPI16(va, 4), nibble_mask);
@@ -994,6 +1299,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
     FASTENT_SIMD_VEC pc_pairs = V_ADD_EPI8(V_SHUFFLE_EPI8(popcnt_lut, plo),
                                             V_SHUFFLE_EPI8(popcnt_lut, phi));
     acc_within = V_ADD_EPI64(acc_within, V_SAD_EPU8(pc_pairs, zero));
+#endif
 
     /*  Cross-byte pair: (va.LSB & vb.MSB) per lane.
         vb.MSB = (vb >> 7) & 1 (the SRLI epi16 contaminates bit 1+ from
@@ -1051,10 +1357,10 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
                                           8, 7, 6, -1, 11, 10, 9, -1);
     const __m128i mc_lim  = _mm_set1_epi64x((i64)(FASTENT_INCIRC + 1ULL));
     unsigned k = 0;
-#if defined(FASTENT_VARIANT_AVX2)
+#if defined(FASTENT_VARIANT_AVX2) || defined(FASTENT_VARIANT_AVX512)
     /*  4 hexads per iter via 256-bit. We need 24 bytes of source readable
-        per iter; n_hexads <= 5 so at most one such iter, but the form
-        generalises.  */
+        per iter; n_hexads <= 5 (AVX2) or <= 10 (AVX-512) so we may see
+        2-3 such iters per outer iter on the wider stride.  */
     const __m256i mc_shuf256 = _mm256_broadcastsi128_si256(mc_shuf);
     const __m256i mc_lim256  = _mm256_set1_epi64x((i64)(FASTENT_INCIRC + 1ULL));
     for (; k + 4 <= n_hexads; k += 4) {
@@ -1076,7 +1382,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
         SSE4.2 cmpgt_epi64 (always present with AVX2). On SSE4.1 path
         same. On SSSE3-only we skip the SIMD and fall through to scalar
         because cmpgt_epi64 is SSE4.2.  */
-#if defined(FASTENT_VARIANT_AVX2) || defined(FASTENT_VARIANT_SSE41)
+#if defined(FASTENT_VARIANT_AVX2) || defined(FASTENT_VARIANT_SSE41) || defined(FASTENT_VARIANT_AVX512)
     for (; k + 2 <= n_hexads; k += 2) {
       __m128i v   = _mm_loadu_si128((const __m128i *) (q + k * 6u));
       __m128i xy  = _mm_shuffle_epi8(v, mc_shuf);
@@ -1113,7 +1419,11 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   }
 
   /*  Horizontal reduce acc_ones / acc_within / acc_cross (i64 lanes).  */
-#if defined(FASTENT_VARIANT_AVX2)
+#if defined(FASTENT_VARIANT_AVX512)
+  u64 sum_ones   = (u64) _mm512_reduce_add_epi64(acc_ones);
+  u64 sum_within = (u64) _mm512_reduce_add_epi64(acc_within);
+  u64 sum_cross  = (u64) _mm512_reduce_add_epi64(acc_cross);
+#elif defined(FASTENT_VARIANT_AVX2)
   __m128i lo_ones = _mm256_castsi256_si128(acc_ones);
   __m128i hi_ones = _mm256_extracti128_si256(acc_ones, 1);
   __m128i s_ones  = _mm_add_epi64(lo_ones, hi_ones);
