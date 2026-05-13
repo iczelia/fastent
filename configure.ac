@@ -70,20 +70,24 @@ AC_COMPILE_IFELSE(
   [AC_MSG_RESULT([no])
    SSSE3_CFLAGS=""])
 
-# ---- SSE4.1 ----
-CFLAGS="$save_CFLAGS -msse4.1"
-AC_MSG_CHECKING([for SSE4.1 intrinsics with $CC])
+# ---- SSE4.1 (built with -msse4.2: analyze-impl.h's 128-bit MC residual
+# uses _mm_cmpgt_epi64, which is SSE4.2. SSE4.2 is a strict superset
+# present on Nehalem+; Penryn is the only chip with 4.1 but not 4.2). ----
+CFLAGS="$save_CFLAGS -msse4.2"
+AC_MSG_CHECKING([for SSE4.1/4.2 intrinsics with $CC])
 AC_COMPILE_IFELSE(
   [AC_LANG_PROGRAM([[
     #include <smmintrin.h>
+    #include <nmmintrin.h>
   ]], [[
     __m128i a = _mm_set1_epi32(1);
     __m128i b = _mm_insert_epi64(a, 0, 1);
-    return _mm_extract_epi32(b, 0);
+    __m128i c = _mm_cmpgt_epi64(a, b);
+    return _mm_extract_epi32(c, 0);
   ]])],
   [AC_MSG_RESULT([yes])
    AC_DEFINE([HAVE_SSE41], [1], [Define if SSE4.1 intrinsics are available])
-   SSE41_CFLAGS="-msse4.1"],
+   SSE41_CFLAGS="-msse4.2"],
   [AC_MSG_RESULT([no])
    SSE41_CFLAGS=""])
 
