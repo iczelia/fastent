@@ -77,8 +77,6 @@ typedef enum {
 typedef void (* fastent_analyze_fn)(fastent_chunk_state *, const u8 *, sz);
 
 void fastent_chunk_state_init(fastent_chunk_state * st);
-void fastent_chunk_state_merge(fastent_chunk_state * dst, const fastent_chunk_state * src,
-                           u8 stitch_first_byte, int has_next);
 void fastent_finalize(fastent_chunk_state * st, int binary, fastent_result * out);
 
 /*  Variant entries (always declared; analyze.c picks one at runtime).  */

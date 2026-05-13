@@ -21,68 +21,6 @@ void fastent_chunk_state_init(fastent_chunk_state * st) {
   memset(st, 0, sizeof(*st));
 }
 
-/*  Merge `src` into `dst`. Used for joining per-thread states.
-    `stitch_first_byte` is the first byte of `src`'s region.
-    `has_next` indicates if there's another chunk after `src`.  */
-void fastent_chunk_state_merge(fastent_chunk_state * dst, const fastent_chunk_state * src,
-                           u8 stitch_first_byte, int has_next) {
-  /*  Sum banks.  */
-  Fi(FASTENT_BANKS, Fj(256, dst->bank[i][j] += src->bank[i][j]))
-
-  /*  Cross-chunk SCC product. dst's last byte (== dst->carry_byte) times
-      src's first byte (== stitch_first_byte). Only valid if dst has any
-      previously processed bytes.  */
-  if (dst->have_carry && src->have_first) {
-    dst->cross_product += (i64) dst->carry_byte * (i64) stitch_first_byte;
-  }
-  dst->cross_product += src->cross_product;
-
-  dst->total_bytes += src->total_bytes;
-
-  if (!dst->have_first && src->have_first) {
-    dst->first_byte = src->first_byte;
-    dst->have_first = 1;
-  }
-  if (src->total_bytes > 0) {
-    dst->last_byte = src->last_byte;
-    dst->carry_byte = src->last_byte;
-    dst->have_carry = 1;
-  }
-
-  /*  MC Pi: walk src's pre-existing ring drain + bulk bytes that fell
-      within src's processed range. Easiest is to take the union of the
-      mc_inside / mc_count counters and re-run the boundary fixup via
-      the dst's existing ring.
-
-      Since each per-thread state runs its own analyze() pass, its
-      mc_buf[0..mc_pos-1] holds bytes that were trailing within its
-      slab (didn't complete a hexad). To stitch:
-        1) Concatenate dst's trailing mc_buf with src's leading
-           "bytes that would have completed a hexad were it not for
-           the slab boundary" -- but those leading bytes ALREADY went
-           into src's ring. Specifically, if src's ring had a
-           non-empty leading fill at start (which it didn't because
-           it started empty), those bytes went into src's mc_pos.
-        2) The simpler model: when we merge, the only bytes we still
-           need to resolve are dst's trailing ring + the bytes that
-           were used by src as if its ring started empty.
-
-      To keep the merge simple, we require that callers feed states
-      one slab at a time in order, and that we use a stitching helper
-      that takes the boundary byte sequence explicitly. See
-      fastent_thread_stitch_mc() (callers in fastent.c).
-
-      Here we just accumulate the inside/count counters and copy
-      src's trailing ring into dst.  */
-  (void) has_next;
-  dst->mc_count  += src->mc_count;
-  dst->mc_inside += src->mc_inside;
-  if (src->mc_pos > 0) {
-    memcpy(dst->mc_buf, src->mc_buf, sizeof(dst->mc_buf));
-    dst->mc_pos = src->mc_pos;
-  }
-}
-
 /*  ----------------------------------------------------------------------
     Final reduction: turn fastent_chunk_state into fastent_result.
 

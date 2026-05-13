@@ -23,5 +23,5 @@ stamp-h1
 *.o
 *.a
 fastent
-tests/fixtures/random-*.bin
+tests/fixtures/
 tests/tmp/

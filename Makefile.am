@@ -48,7 +48,11 @@ EXTRA_DIST = README.md NEWS ChangeLog AUTHORS COPYING bootstrap \
              tests/run-tests.sh
 
 check-local:
-	$(srcdir)/tests/run-tests.sh "$(builddir)/fastent$(EXEEXT)" "$(srcdir)"
+	$(srcdir)/tests/run-tests.sh "$(builddir)/fastent$(EXEEXT)" \
+	  "$(builddir)/tests/fixtures"
+
+clean-local:
+	-rm -rf "$(builddir)/tests/fixtures"
 
 .PHONY: bench
 bench: fastent

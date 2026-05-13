@@ -68,15 +68,10 @@ int fastent_src_open(fastent_source * s, const char * path, int no_mmap) {
   struct stat st;
   if (!no_mmap && fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 0) {
 #ifdef HAVE_MMAP
-    /*  No MAP_POPULATE: with it, the kernel pre-faults the whole
-        mapping synchronously inside mmap() before we ever start the
-        analysers, costing ~0.2 us per 4 KiB page and serialising the
-        page-table setup on a single thread.  Faulting lazily during
-        analysis lets the workers parallelise the fault handling and
-        overlap it with the SIMD body.  Measured: 4 GiB / -j 16 from
-        1.21 s -> 0.81 s wall, neutral at -j 1.  MADV_SEQUENTIAL /
-        MADV_WILLNEED below already trigger kernel read-ahead so
-        cold-cache throughput is unaffected.  */
+    /*  No MAP_POPULATE: lazy faulting lets the workers parallelise
+        the page faults and overlap them with the SIMD body.  The
+        MADV_SEQUENTIAL / MADV_WILLNEED hints below still trigger
+        kernel read-ahead so cold-cache throughput is unaffected.  */
     void * p = mmap(NULL, (size_t) st.st_size,
                     PROT_READ, MAP_PRIVATE, fd, 0);
     if (p != MAP_FAILED) {

@@ -38,18 +38,10 @@
   #define M_PI 3.14159265358979323846
 #endif
 
-/*  ----------------------------------------------------------------------
-    Inline character helpers.  ASCII A-Z / a-z fold plus the Latin-1
-    upper block 0xC0-0xDE excluding the multiplication-sign sentinel
-    0xD7 (which is symbol punctuation, not a letter).  When -f is set
-    the fold is fused into the SIMD analyser body via the
-    analyze_fold_<variant> dispatch (each loaded vector is folded
-    in-register before histogram/SCC/MC Pi consume it), so no separate
-    fold pass over the buffer is needed.  */
-
+/*  Glyph-bearing characters in the C / Latin-1 supplement: printable
+    and not whitespace.  Used to decide which byte values get a
+    printed glyph in the -c histogram.  */
 static inline int fastent_is_displayable(unsigned c) {
-  /*  Glyph-bearing characters in the C / Latin-1 supplement, i.e.
-      printable AND not whitespace.  */
   return (c >= 0x21u && c <= 0x7Eu) || c >= 0xA1u;
 }
 

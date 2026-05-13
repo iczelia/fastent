@@ -22,23 +22,17 @@
       mc_inside   = number of hexads (b[6k..6k+5]) whose two 24-bit
                     components squared-and-summed are <= INCIRC.
 
-    SCC SIMD path: we want sum a_i * b_i with a, b unsigned bytes.
-    PMADDUBSW is unusable directly because its 16-bit pair-sum saturates
-    when products are large. Instead we widen to 16-bit and use signed-mul.
+    SCC SIMD path: PMADDUBSW saturates so we widen to 16-bit and use
+    signed-mul.  Pre-XOR b with 0x80 to map b -> b - 128 in i8 range;
+    mullo_epi16 gives the canonical signed product a*(b-128); madd_epi16
+    sums adjacent pairs into i32 (no saturation).  The 128*sum_a
+    correction is computed on the fly via PSADBW and added inside the
+    same loop, so st->cross_product is always the canonical sum after
+    every analyze() call.
 
-    Pre-XOR b with 0x80 so b' = b - 128 in [-128..127] (signed i8).
-    Expand a as u8 -> u16, b' as i8 -> i16. mullo_epi16 of u16 x i16
-    treated as i16 gives the canonical signed product a*(b-128) which
-    fits in [-32640..32385], so no 16-bit overflow. madd_epi16 then sums
-    adjacent pairs into i32 (no saturation). The 128*sum_a correction is
-    computed on the fly via PSADBW horizontal byte-sums of the LHS
-    operand, then added back inside the same loop. So state->cross_product
-    is always the canonical un-corrected sum after each analyze() call.
-
-    MC Pi runs in a second pass over the same buffer (cache-resident for
-    chunks <= L2). This decouples the awkward 6-byte stride from the
-    SIMD-aligned histogram/SCC body and is empirically faster than
-    interleaving.  */
+    MC Pi is interleaved into the SIMD body via a scalar drain + SIMD
+    bulk + scalar tail dance per stride; the persistent 6-byte ring
+    handles cross-call boundaries.  */
 
 #include "analyze.h"
 
@@ -210,92 +204,6 @@ static inline void FASTENT_FN(consume_byte)(fastent_chunk_state * st, u8 b,
 }
 
 /*  ----------------------------------------------------------------------
-    Monte Carlo Pi pass. Walks the buffer once, draining the persistent
-    6-byte ring left over from any previous call and consuming the new
-    bytes; every 6 buffered bytes fires one hexad.  */
-
-static inline void FASTENT_FN(monte_carlo_pass)(fastent_chunk_state * st,
-                                            const u8 * FASTENT_RESTRICT buf,
-                                            sz len) {
-  int mp = st->mc_pos;
-  u8 m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
-  u8 m3 = st->mc_buf[3], m4 = st->mc_buf[4], m5 = st->mc_buf[5];
-
-  /*  Drain prefix bytes into the ring until we have a full hexad
-      OR exhaust the buffer.  */
-  sz i = 0;
-  while (mp < 6 && i < len) {
-    switch (mp) {
-      case 0: m0 = buf[i]; break;
-      case 1: m1 = buf[i]; break;
-      case 2: m2 = buf[i]; break;
-      case 3: m3 = buf[i]; break;
-      case 4: m4 = buf[i]; break;
-      case 5: m5 = buf[i]; break;
-    }
-    mp++;
-    i++;
-    if (mp == 6) {
-      u32 x = ((u32) m0 << 16) | ((u32) m1 << 8) | (u32) m2;
-      u32 y = ((u32) m3 << 16) | ((u32) m4 << 8) | (u32) m5;
-      u64 d = (u64) x * (u64) x + (u64) y * (u64) y;
-      st->mc_count++;
-      st->mc_inside += (d <= FASTENT_INCIRC);
-      mp = 0;
-    }
-  }
-
-  /*  Bulk: as long as >= 6 bytes remain, fire hexads directly from buf.
-      Unroll by 4 for ILP -- modern OoO will keep all 4 squarings in
-      flight at once.  */
-  while (i + 24 <= len) {
-    u32 x0 = ((u32) buf[i +  0] << 16) | ((u32) buf[i +  1] << 8) | buf[i +  2];
-    u32 y0 = ((u32) buf[i +  3] << 16) | ((u32) buf[i +  4] << 8) | buf[i +  5];
-    u32 x1 = ((u32) buf[i +  6] << 16) | ((u32) buf[i +  7] << 8) | buf[i +  8];
-    u32 y1 = ((u32) buf[i +  9] << 16) | ((u32) buf[i + 10] << 8) | buf[i + 11];
-    u32 x2 = ((u32) buf[i + 12] << 16) | ((u32) buf[i + 13] << 8) | buf[i + 14];
-    u32 y2 = ((u32) buf[i + 15] << 16) | ((u32) buf[i + 16] << 8) | buf[i + 17];
-    u32 x3 = ((u32) buf[i + 18] << 16) | ((u32) buf[i + 19] << 8) | buf[i + 20];
-    u32 y3 = ((u32) buf[i + 21] << 16) | ((u32) buf[i + 22] << 8) | buf[i + 23];
-    u64 d0 = (u64) x0 * (u64) x0 + (u64) y0 * (u64) y0;
-    u64 d1 = (u64) x1 * (u64) x1 + (u64) y1 * (u64) y1;
-    u64 d2 = (u64) x2 * (u64) x2 + (u64) y2 * (u64) y2;
-    u64 d3 = (u64) x3 * (u64) x3 + (u64) y3 * (u64) y3;
-    st->mc_inside += (d0 <= FASTENT_INCIRC);
-    st->mc_inside += (d1 <= FASTENT_INCIRC);
-    st->mc_inside += (d2 <= FASTENT_INCIRC);
-    st->mc_inside += (d3 <= FASTENT_INCIRC);
-    st->mc_count  += 4;
-    i += 24;
-  }
-  while (i + 6 <= len) {
-    u32 x = ((u32) buf[i + 0] << 16) | ((u32) buf[i + 1] << 8) | buf[i + 2];
-    u32 y = ((u32) buf[i + 3] << 16) | ((u32) buf[i + 4] << 8) | buf[i + 5];
-    u64 d = (u64) x * (u64) x + (u64) y * (u64) y;
-    st->mc_count++;
-    st->mc_inside += (d <= FASTENT_INCIRC);
-    i += 6;
-  }
-
-  /*  Stash trailing < 6 bytes into the ring.  */
-  while (i < len) {
-    switch (mp) {
-      case 0: m0 = buf[i]; break;
-      case 1: m1 = buf[i]; break;
-      case 2: m2 = buf[i]; break;
-      case 3: m3 = buf[i]; break;
-      case 4: m4 = buf[i]; break;
-      case 5: m5 = buf[i]; break;
-    }
-    mp++;
-    i++;
-  }
-  st->mc_pos = mp;
-  st->mc_buf[0] = m0; st->mc_buf[1] = m1; st->mc_buf[2] = m2;
-  st->mc_buf[3] = m3; st->mc_buf[4] = m4; st->mc_buf[5] = m5;
-}
-
-/*  ----------------------------------------------------------------------
     Scalar histogram + SCC body. Used as fallback and on chunk edges.
     Templated on `fold`: when set, each byte is folded in-register
     before being fed to consume_byte. `fold` is a compile-time constant
@@ -443,20 +351,12 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m256i sad1 = _mm256_sad_epu8(va1, zero);
     lhs_sad = _mm256_add_epi64(lhs_sad, _mm256_add_epi64(sad0, sad1));
 
-    /*  Histogram: 64 byte increments across 4 banks. Direct movzbl
-        reads from the input buffer; compiler emits a tight load/inc
-        chain that pipelines through the L1d cache.  In fused-fold
-        mode `p` instead points at an L1-resident stack stage holding
-        the folded va0 / va1 vectors so the histogram, MC ring, and
-        stash all observe folded bytes.
-
-        We launder the stage pointer through an empty inline asm so
-        GCC can't track the relationship between the just-stored
-        vector and the subsequent byte reads.  Without this it tries
-        to be "clever" and serialises the histogram on a chain of
-        vpextrb instructions (~5 c latency each on Zen) instead of
-        emitting movzbl loads from L1, a ~2x slowdown on the inner
-        loop.  */
+    /*  Histogram: 64 byte increments across 4 banks via direct movzbl
+        loads (or, in fused-fold mode, movzbl loads from an L1-resident
+        stack stage of the folded va0/va1).  The asm launder on the
+        stage pointer is load-bearing: without it GCC turns the byte
+        reads into a vpextrb chain off the just-stored vector, which
+        serialises the histogram and costs ~2x.  */
     u8 stage[64] __attribute__((aligned(32)));
     const u8 * p;
     if (fold) {
@@ -965,12 +865,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m128i sad1 = _mm_sad_epu8(va1, zero);
     lhs_sad = _mm_add_epi64(lhs_sad, _mm_add_epi64(sad0, sad1));
 
-    /*  Direct byte reads -> movzx + inc, no vpextrb chain.  In
-        fused-fold mode the histogram + MC walk reads from an L1-
-        resident stack stage holding folded va0 / va1.  The asm
-        barrier hides the just-stored vector from GCC so the byte
-        reads come out as movzbl/movzbl chains instead of vpextrb
-        chains (see the AVX2 body for the full reasoning).  */
+    /*  Same stage-buffer + asm-launder pattern as the AVX2 body; the
+        asm is what forces movzbl-from-L1 instead of vpextrb.  */
     u8 stage[32] __attribute__((aligned(16)));
     const u8 * p;
     if (fold) {
@@ -1310,12 +1206,8 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
     acc_cross = V_ADD_EPI64(acc_cross, V_SAD_EPU8(cross, zero));
 
     /*  MC Pi: scalar drain + SIMD bulk hexads + scalar tail + stash.
-        AVX-2 stride 32 -> up to 5 hexads per iter; SSE stride 16 ->
-        up to 2-3 per iter. The SIMD popcounts above run independently
-        so the MC bulk SIMD adds little dependency pressure.  In
-        fused-fold mode the MC ring sees the folded byte stream via
-        an L1-resident stack stage; the asm barrier defeats GCC's
-        vpextrb-from-vector optimisation.  */
+        Same stage-buffer + asm-launder pattern as the byte-mode body
+        when fold is set (forces movzbl-from-L1, not vpextrb).  */
     u8 bits_stage[FASTENT_SIMD_VLEN] __attribute__((aligned(32)));
     const u8 * p;
     if (fold) {

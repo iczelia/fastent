@@ -5,7 +5,10 @@
 #  fastent reports the expected statistics on each.  Locale is pinned
 #  to C so float formatting is stable.
 #
-#  Usage: run-tests.sh path/to/fastent.bin srcdir
+#  Usage: run-tests.sh path/to/fastent.bin path/to/fixturedir
+#
+#  The fixture dir lives in builddir, NOT srcdir, so the source tree
+#  stays read-only-clean across out-of-tree builds and dist tarballs.
 #
 #  Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only.
 
@@ -13,9 +16,7 @@ set -eu
 export LC_ALL=C
 
 FASTENT="${1:-./fastent}"
-SRC="${2:-.}"
-TDIR="${SRC}/tests"
-FIX="${TDIR}/fixtures"
+FIX="${2:-./tests/fixtures}"
 mkdir -p "${FIX}"
 
 if [ ! -x "${FASTENT}" ]; then
