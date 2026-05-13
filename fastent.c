@@ -140,21 +140,12 @@ static int parse_args(int argc, char ** argv, fastent_options * o) {
         else if (LONG_IS("version"))      { print_version(); exit(0); }
         else if (LONG_IS("threads")) {
           if (!val) {
-            if (i + 1 >= argc) {
-              fprintf(stderr, "--threads requires an argument\n");
-              return -1;
-            }
+            if (i + 1 >= argc) { fprintf(stderr, "--threads requires an argument\n");  return -1; }
             val = argv[++i];
           }
-          if (parse_int(val, &o->threads) != 0) {
-            fprintf(stderr, "--threads: invalid count '%s'\n", val);
-            return -1;
-          }
+          if (parse_int(val, &o->threads) != 0) { fprintf(stderr, "--threads: invalid count '%s'\n", val);  return -1; }
           if (o->threads == 0) o->threads = 1;
-        } else {
-          fprintf(stderr, "--%.*s: unknown option\n", (int) nlen, name);
-          return -1;
-        }
+        } else { fprintf(stderr, "--%.*s: unknown option\n", (int) nlen, name);  return -1; }
         #undef LONG_IS
       } else {
         /*  Short option(s).  */
@@ -173,30 +164,16 @@ static int parse_args(int argc, char ** argv, fastent_options * o) {
               const char * val = NULL;
               if (a[k + 1] != '\0') {
                 val = a + k + 1;
-                if (parse_int(val, &o->threads) != 0) {
-                  fprintf(stderr, "-j: invalid count '%s'\n", val);
-                  return -1;
-                }
-                if (o->threads == 0) o->threads = 1;
-                k = (int) strlen(a) - 1; /*  break the for(k) loop  */
               } else {
-                if (i + 1 >= argc) {
-                  fprintf(stderr, "-j requires an argument\n");
-                  return -1;
-                }
+                if (i + 1 >= argc) { fprintf(stderr, "-j requires an argument\n");  return -1; }
                 val = argv[++i];
-                if (parse_int(val, &o->threads) != 0) {
-                  fprintf(stderr, "-j: invalid count '%s'\n", val);
-                  return -1;
-                }
-                if (o->threads == 0) o->threads = 1;
-                k = (int) strlen(a) - 1;
               }
+              if (parse_int(val, &o->threads) != 0) { fprintf(stderr, "-j: invalid count '%s'\n", val);  return -1; }
+              if (o->threads == 0) o->threads = 1;
+              k = (int) strlen(a) - 1;   /*  break the for(k) loop  */
               break;
             }
-            default:
-              fprintf(stderr, "-%c: unknown option\n", a[k]);
-              return -1;
+            default: fprintf(stderr, "-%c: unknown option\n", a[k]);  return -1;
           }
         }
       }

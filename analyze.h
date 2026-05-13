@@ -47,10 +47,6 @@ typedef struct {
   /*  Monte Carlo 6-byte ring:  */
   u8  mc_buf[6];
   int mc_pos;
-
-  /*  Bookkeeping for the SIMD body's "position mod 4" bank rotation
-      across multiple analyze() calls on the same state.  */
-  u64 stream_pos;
 } fastent_chunk_state;
 
 /*  Final reduced results.  */

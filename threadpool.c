@@ -40,9 +40,9 @@ static void * worker_main(void * arg) {
     while (g_gen == last_gen) pthread_cond_wait(&g_work_ready, &g_m);
     last_gen = g_gen;
     fastent_parfor_fn fn = g_fn;
-    void *       ctx = g_ctx;
-    sz           n   = g_n;
-    int          T   = g_n_threads;
+    void * ctx = g_ctx;
+    sz     n   = g_n;
+    int    T   = g_n_threads;
     pthread_mutex_unlock(&g_m);
 
     sz start = (sz) k * n / (sz) T;
@@ -65,12 +65,10 @@ static void lazy_init(void) {
     if (!g_workers) { g_n_threads = 1; return; }
     Fk(T,
        struct worker_args * a = (struct worker_args *) malloc(sizeof(*a));
-       if (!a) { g_n_threads = 1; return; }
+       if (!a) { g_n_threads = 1;  return; }
        a->k = k;
        if (pthread_create(&g_workers[k], NULL, worker_main, a) != 0) {
-         free(a);
-         g_n_threads = 1;
-         return;
+         free(a);  g_n_threads = 1;  return;
        })
   }
   g_n_threads = T;
@@ -95,9 +93,7 @@ void fastent_parallel_for(sz n, fastent_parfor_fn fn, void * ctx) {
 
   pthread_mutex_lock(&g_m);
   while (g_busy > 0) pthread_cond_wait(&g_work_done, &g_m);
-  g_fn  = fn;
-  g_ctx = ctx;
-  g_n   = n;
+  g_fn = fn;  g_ctx = ctx;  g_n = n;
   g_busy = g_n_threads;
   g_gen++;
   pthread_cond_broadcast(&g_work_ready);

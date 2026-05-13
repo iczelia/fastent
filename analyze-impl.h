@@ -265,9 +265,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   /*  Initialise first_byte / carry from scalar entry into byte 0.  */
   if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
   /*  Cross product carry * buf[0] (only if we had a previous chunk):  */
-  if (st->have_carry) {
+  if (st->have_carry)
     st->cross_product += (i64) st->carry_byte * (i64) b0_user;
-  }
   st->have_carry = 1;
 
   const __m256i sign_xor   = _mm256_set1_epi8((char) 0x80);
@@ -541,9 +540,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
   u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
   if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
-  if (st->have_carry) {
+  if (st->have_carry)
     st->cross_product += (i64) st->carry_byte * (i64) b0_user;
-  }
   st->have_carry = 1;
 
   const __m512i sign_xor = _mm512_set1_epi8((char) 0x80);
@@ -792,9 +790,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
   u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
   if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
-  if (st->have_carry) {
+  if (st->have_carry)
     st->cross_product += (i64) st->carry_byte * (i64) b0_user;
-  }
   st->have_carry = 1;
 
   const __m128i sign_xor   = _mm_set1_epi8((char) 0x80);
@@ -909,11 +906,10 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       default: m5=p[0];
               MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
     }
-    unsigned n_hexads   = (32u - p_idx) / 6u;
-    for (unsigned k = 0; k < n_hexads; k++) {
-      unsigned o = p_idx + k * 6u;
-      MC_HEXAD(p[o+0], p[o+1], p[o+2], p[o+3], p[o+4], p[o+5]);
-    }
+    int n_hexads = (int)((32u - p_idx) / 6u);
+    Fk(n_hexads,
+       unsigned o = p_idx + (unsigned) k * 6u;
+       MC_HEXAD(p[o+0], p[o+1], p[o+2], p[o+3], p[o+4], p[o+5]))
     unsigned stash_at    = p_idx + n_hexads * 6u;
     unsigned stash_count = 32u - stash_at;
     mc_pos = (int) stash_count;

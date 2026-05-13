@@ -32,9 +32,8 @@ void fastent_finalize(fastent_chunk_state * st, int binary, fastent_result * out
   memset(out, 0, sizeof(*out));
 
   /*  Add the wrap-around SCC term.  */
-  if (st->have_first && st->have_carry) {
+  if (st->have_first && st->have_carry)
     st->cross_product += (i64) st->last_byte * (i64) st->first_byte;
-  }
 
   /*  Merge banks into final histogram.  */
   if (binary) {
