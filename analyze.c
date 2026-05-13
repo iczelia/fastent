@@ -145,9 +145,7 @@ void fastent_finalize(fastent_chunk_state * st, int binary, fastent_result * out
   out->chi_square = chisq;
   out->entropy = entropy;
 
-  /*  Chi-square tail probability.  fabs() clears the sign of any NaN
-      result so a tail probability of "nan" still prints positively.  */
-  out->chi_probability = fabs(pochisq(chisq, binary ? 1 : 255));
+  out->chi_probability = fastent_chisq_tail(chisq, binary);
 
   /*  Monte Carlo Pi.  */
   out->monte_pi = 4.0 * ((f64) st->mc_inside / (f64) st->mc_count);

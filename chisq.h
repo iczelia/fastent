@@ -5,9 +5,9 @@
 #ifndef FASTENT_CHISQ_H
 #define FASTENT_CHISQ_H
 
-/*  Upper-tail probability for a chi-square statistic ax with df
-    degrees of freedom: returns Pr(X^2 > ax) under the assumption
-    that the test statistic is chi-square distributed.  */
-double pochisq(double ax, int df);
+/*  Upper-tail probability Pr(X^2 > chisq) for the chi-square statistic
+    against either the byte (df=255) or bit (df=1) null distribution.
+    The result is clamped to [0, 1].  */
+double fastent_chisq_tail(double chisq, int binary);
 
 #endif
