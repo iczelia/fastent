@@ -1,0 +1,42 @@
+fastent release notes
+=====================
+
+This file contains user-visible changes for each release.  For a
+complete source-level history, see the ChangeLog.
+
+-------------------------------------------------------------------------------
+v1.0 (May 2026)
+
+  * Initial release of fastent.
+
+  * Banked 4-way SIMD histogram in the inner loop.  Single-threaded
+    throughput on a modern AVX2 host typically exceeds 5 GB/s for
+    regular-file inputs.
+
+  * Serial correlation cross-product computed via PMADDUBSW with a
+    sign-correction term derived on the fly from PSADBW; no scalar
+    fallback per byte.
+
+  * Runtime CPU dispatch: one binary picks the highest available
+    variant among scalar / SSSE3 / SSE4.1 / AVX2 at startup via
+    __builtin_cpu_supports.  SIMD variants live in per-file static
+    convenience libraries with isolated -m... CFLAGS so the rest of
+    the binary stays at the configured baseline.
+
+  * Fast I/O: mmap(2) with MADV_SEQUENTIAL / POSIX_FADV_SEQUENTIAL
+    for regular files; a 2 MiB read(2) loop for stdin and unmappable
+    sources.  --no-mmap forces the read(2) path.
+
+  * Optional pthread worker pool (-j N / --threads N) partitioning
+    the mmap region into 6-aligned slabs so the Monte-Carlo Pi state
+    machine never crosses threads; merge order is deterministic and
+    yields byte-identical output to the single-threaded run.
+
+  * Outputs: human-readable, CSV (-t), or JSON (--json).  Adds a
+    -p / --full-precision flag that renders every float at %.17g.
+
+  * Build system: GNU autotools (configure.ac / Makefile.am) with
+    AVX2 / SSE4.1 / SSSE3 intrinsic probes and per-variant CFLAGS
+    isolation.  ./bootstrap regenerates autotools artefacts;
+    ./configure --enable-native --enable-lto enables host-specific
+    tuning and link-time optimisation.
