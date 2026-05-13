@@ -851,9 +851,10 @@ static inline sz FASTENT_FN(bits_simd_body)(fastent_chunk_state * st,
     FASTENT_SIMD_VEC cross  = V_AND(va_lsb, vb_msb);
     acc_cross = V_ADD_EPI64(acc_cross, V_SAD_EPU8(cross, zero));
 
-    /*  MC Pi: drain + bulk-scalar hexads + stash. Same pattern as SSE
-        byte-mode body; cheap because we only fire VLEN/6 = 2-5 hexads
-        per stride, and the SIMD popcounts above run independently.  */
+    /*  MC Pi: scalar drain + SIMD bulk hexads + scalar tail + stash.
+        AVX-2 stride 32 -> up to 5 hexads per iter; SSE stride 16 ->
+        up to 2-3 per iter. The SIMD popcounts above run independently
+        so the MC bulk SIMD adds little dependency pressure.  */
     const u8 * p = buf + i;
     #define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
       u32 x = ((u32)(x0) << 16) | ((u32)(x1) << 8) | (u32)(x2); \
@@ -877,10 +878,65 @@ static inline sz FASTENT_FN(bits_simd_body)(fastent_chunk_state * st,
               MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
     }
     unsigned n_hexads = ((unsigned) FASTENT_SIMD_VLEN - p_idx) / 6u;
-    for (unsigned k = 0; k < n_hexads; k++) {
-      unsigned o = p_idx + k * 6u;
-      MC_HEXAD(p[o+0], p[o+1], p[o+2], p[o+3], p[o+4], p[o+5]);
+    /*  SIMD bulk: same intrinsic pattern as the byte-mode bodies.
+        Accounts for in-circle hits via mi_simd; mc_count gets all
+        n_hexads added below.  */
+    u64 mi_simd = 0;
+    const u8 * q = p + p_idx;
+    const __m128i mc_shuf = _mm_setr_epi8(2, 1, 0, -1, 5, 4, 3, -1,
+                                          8, 7, 6, -1, 11, 10, 9, -1);
+    const __m128i mc_lim  = _mm_set1_epi64x((i64)(FASTENT_INCIRC + 1ULL));
+    unsigned k = 0;
+#if defined(FASTENT_VARIANT_AVX2)
+    /*  4 hexads per iter via 256-bit. We need 24 bytes of source readable
+        per iter; n_hexads <= 5 so at most one such iter, but the form
+        generalises.  */
+    const __m256i mc_shuf256 = _mm256_broadcastsi128_si256(mc_shuf);
+    const __m256i mc_lim256  = _mm256_set1_epi64x((i64)(FASTENT_INCIRC + 1ULL));
+    for (; k + 4 <= n_hexads; k += 4) {
+      __m128i v0_xmm = _mm_loadu_si128((const __m128i *) (q + k * 6u));
+      __m128i v1_xmm = _mm_loadu_si128((const __m128i *) (q + k * 6u + 12u));
+      __m256i v   = _mm256_inserti128_si256(_mm256_castsi128_si256(v0_xmm),
+                                            v1_xmm, 1);
+      __m256i xy  = _mm256_shuffle_epi8(v, mc_shuf256);
+      __m256i xs  = _mm256_mul_epu32(xy, xy);
+      __m256i yshr = _mm256_srli_epi64(xy, 32);
+      __m256i ys  = _mm256_mul_epu32(yshr, yshr);
+      __m256i d   = _mm256_add_epi64(xs, ys);
+      __m256i mask = _mm256_cmpgt_epi64(mc_lim256, d);
+      int bits = _mm256_movemask_pd(_mm256_castsi256_pd(mask));
+      mi_simd += (u64) __builtin_popcount(bits);
     }
+#endif
+    /*  128-bit residual: 2 hexads per iter. On AVX-2 path requires
+        SSE4.2 cmpgt_epi64 (always present with AVX2). On SSE4.1 path
+        same. On SSSE3-only we skip the SIMD and fall through to scalar
+        because cmpgt_epi64 is SSE4.2.  */
+#if defined(FASTENT_VARIANT_AVX2) || defined(FASTENT_VARIANT_SSE41)
+    for (; k + 2 <= n_hexads; k += 2) {
+      __m128i v   = _mm_loadu_si128((const __m128i *) (q + k * 6u));
+      __m128i xy  = _mm_shuffle_epi8(v, mc_shuf);
+      __m128i xs  = _mm_mul_epu32(xy, xy);
+      __m128i yshr = _mm_srli_epi64(xy, 32);
+      __m128i ys  = _mm_mul_epu32(yshr, yshr);
+      __m128i d   = _mm_add_epi64(xs, ys);
+      __m128i mask = _mm_cmpgt_epi64(mc_lim, d);
+      int bits = _mm_movemask_pd(_mm_castsi128_pd(mask));
+      mi_simd += (u64) __builtin_popcount(bits);
+    }
+#else
+    (void) mc_shuf; (void) mc_lim;
+#endif
+    /*  Scalar tail (0/1 hexad on AVX2+SSE41; full on SSSE3).  */
+    for (; k < n_hexads; k++) {
+      unsigned o = k * 6u;
+      u32 x = ((u32) q[o + 0] << 16) | ((u32) q[o + 1] << 8) | q[o + 2];
+      u32 y = ((u32) q[o + 3] << 16) | ((u32) q[o + 4] << 8) | q[o + 5];
+      u64 d = (u64) x * (u64) x + (u64) y * (u64) y;
+      mi_simd += (d <= FASTENT_INCIRC);
+    }
+    mc_count  += n_hexads;
+    mc_inside += mi_simd;
     unsigned stash_at    = p_idx + n_hexads * 6u;
     unsigned stash_count = (unsigned) FASTENT_SIMD_VLEN - stash_at;
     mc_pos = (int) stash_count;
