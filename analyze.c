@@ -199,62 +199,68 @@ const char * fastent_variant_name(fastent_variant v) {
   return "scalar";
 }
 
-/*  ----------------------------------------------------------------------
-    Bit-mode analyser (scalar). Each input byte produces 8 bit samples,
-    MSB-first. The histogram has 2 bins (0 and 1). The SCC cross-product
-    counts adjacent (1, 1) pairs in the bit stream. MC Pi is still
-    byte-driven (one trial per 6 input bytes, just like byte mode).  */
+/*  Bit-mode picker.  Mirrors fastent_pick_variant exactly.  The actual
+    analyze_bits_<variant> bodies live in analyze-impl.h and are emitted
+    alongside the byte-mode bodies in each per-ISA TU.  */
+fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which) {
+  fastent_variant v = FASTENT_VAR_SCALAR;
+  fastent_analyze_fn fn = analyze_bits_scalar;
 
-void analyze_bits_scalar(fastent_chunk_state * st, const u8 * buf, sz len) {
-  if (len == 0) return;
+#if defined(__GNUC__) || defined(__clang__)
+  __builtin_cpu_init();
 
-  /*  For SCC in bit mode, we need:
-        - count of (1,1) adjacent bit pairs across the whole bit stream
-        - first bit (= MSB of first byte)
-        - last bit  (= LSB of last byte)
-      Cross product = sum b[i]*b[i+1] in the bit stream (no wrap yet).
-      Within-byte pair count for byte b: popcount(b & (b >> 1)).
-      Cross-byte pair: (prev_LSB & curr_MSB).
-      Histogram updates: hist[1] += popcount(byte), hist[0] += 8-popcount.  */
-
-  for (sz i = 0; i < len; i++) {
-    const u8 byte = buf[i];
-
-    /*  Bit histogram in u64 (bank[] is u32; would overflow > 500 MiB).  */
-    const unsigned ones_in_byte = (unsigned) __builtin_popcount(byte);
-    st->bit_hist[1] += ones_in_byte;
-    st->bit_hist[0] += 8u - ones_in_byte;
-
-    /*  Within-byte (1,1) adjacent pairs.  */
-    const unsigned within = (unsigned) __builtin_popcount(byte & (byte >> 1));
-    st->cross_product += (i64) within;
-
-    /*  Cross-byte pair.  */
-    if (st->have_carry) {
-      const unsigned prev_lsb  = (unsigned)(st->carry_byte & 1u);
-      const unsigned curr_msb  = (unsigned)((byte >> 7) & 1u);
-      st->cross_product += (i64)(prev_lsb & curr_msb);
-    } else {
-      /*  First byte ever: record first bit (MSB).  */
-      st->first_byte = (u8)((byte >> 7) & 1u);  /*  store the bit value  */
-      st->have_first = 1;
+  #ifdef HAVE_SSSE3
+    if (__builtin_cpu_supports("ssse3")) {
+      v = FASTENT_VAR_SSSE3_;
+      fn = analyze_bits_ssse3;
     }
-    st->carry_byte = byte;
-    st->last_byte  = (u8)(byte & 1u);  /*  last bit value  */
-    st->have_carry = 1;
-    st->total_bytes += 8;
-
-    /*  Monte Carlo Pi (byte-driven, same as byte mode).  */
-    st->mc_buf[st->mc_pos++] = byte;
-    if (st->mc_pos >= 6) {
-      const u32 x = ((u32) st->mc_buf[0] << 16) | ((u32) st->mc_buf[1] << 8)
-                  |  (u32) st->mc_buf[2];
-      const u32 y = ((u32) st->mc_buf[3] << 16) | ((u32) st->mc_buf[4] << 8)
-                  |  (u32) st->mc_buf[5];
-      const u64 d = (u64) x * (u64) x + (u64) y * (u64) y;
-      st->mc_count++;
-      st->mc_inside += (d <= FASTENT_INCIRC);
-      st->mc_pos = 0;
+  #endif
+  #ifdef HAVE_SSE41
+    if (__builtin_cpu_supports("sse4.1")) {
+      v = FASTENT_VAR_SSE41_;
+      fn = analyze_bits_sse41;
     }
-  }
+  #endif
+  #ifdef HAVE_AVX2
+    if (__builtin_cpu_supports("avx2")) {
+      v = FASTENT_VAR_AVX2_;
+      fn = analyze_bits_avx2;
+    }
+  #endif
+#endif
+
+  if (which) *which = v;
+  return fn;
+}
+
+/*  Case-fold picker.  */
+fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which) {
+  fastent_variant v = FASTENT_VAR_SCALAR;
+  fastent_fold_fn fn = fold_scalar;
+
+#if defined(__GNUC__) || defined(__clang__)
+  __builtin_cpu_init();
+
+  #ifdef HAVE_SSSE3
+    if (__builtin_cpu_supports("ssse3")) {
+      v = FASTENT_VAR_SSSE3_;
+      fn = fold_ssse3;
+    }
+  #endif
+  #ifdef HAVE_SSE41
+    if (__builtin_cpu_supports("sse4.1")) {
+      v = FASTENT_VAR_SSE41_;
+      fn = fold_sse41;
+    }
+  #endif
+  #ifdef HAVE_AVX2
+    if (__builtin_cpu_supports("avx2")) {
+      v = FASTENT_VAR_AVX2_;
+      fn = fold_avx2;
+    }
+  #endif
+#endif
+
+  if (which) *which = v;
+  return fn;
 }

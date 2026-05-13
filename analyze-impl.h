@@ -50,14 +50,56 @@
   #define FASTENT_VAR_SUFFIX _avx2
   #define FASTENT_SIMD_VEC   __m256i
   #define FASTENT_SIMD_VLEN  32
+  #define V_SET1_EPI8(x)       _mm256_set1_epi8((char)(x))
+  #define V_SETZERO()          _mm256_setzero_si256()
+  #define V_LOAD(p)            _mm256_loadu_si256((const __m256i *)(p))
+  #define V_STORE(p, v)        _mm256_storeu_si256((__m256i *)(p), (v))
+  #define V_AND(a, b)          _mm256_and_si256((a), (b))
+  #define V_OR(a, b)           _mm256_or_si256((a), (b))
+  #define V_ANDNOT(a, b)       _mm256_andnot_si256((a), (b))
+  #define V_ADD_EPI8(a, b)     _mm256_add_epi8((a), (b))
+  #define V_ADD_EPI64(a, b)    _mm256_add_epi64((a), (b))
+  #define V_SUBS_EPU8(a, b)    _mm256_subs_epu8((a), (b))
+  #define V_CMPEQ_EPI8(a, b)   _mm256_cmpeq_epi8((a), (b))
+  #define V_SRLI_EPI16(a, n)   _mm256_srli_epi16((a), (n))
+  #define V_SHUFFLE_EPI8(t, i) _mm256_shuffle_epi8((t), (i))
+  #define V_SAD_EPU8(a, b)     _mm256_sad_epu8((a), (b))
 #elif defined(FASTENT_VARIANT_SSE41)
   #define FASTENT_VAR_SUFFIX _sse41
   #define FASTENT_SIMD_VEC   __m128i
   #define FASTENT_SIMD_VLEN  16
+  #define V_SET1_EPI8(x)       _mm_set1_epi8((char)(x))
+  #define V_SETZERO()          _mm_setzero_si128()
+  #define V_LOAD(p)            _mm_loadu_si128((const __m128i *)(p))
+  #define V_STORE(p, v)        _mm_storeu_si128((__m128i *)(p), (v))
+  #define V_AND(a, b)          _mm_and_si128((a), (b))
+  #define V_OR(a, b)           _mm_or_si128((a), (b))
+  #define V_ANDNOT(a, b)       _mm_andnot_si128((a), (b))
+  #define V_ADD_EPI8(a, b)     _mm_add_epi8((a), (b))
+  #define V_ADD_EPI64(a, b)    _mm_add_epi64((a), (b))
+  #define V_SUBS_EPU8(a, b)    _mm_subs_epu8((a), (b))
+  #define V_CMPEQ_EPI8(a, b)   _mm_cmpeq_epi8((a), (b))
+  #define V_SRLI_EPI16(a, n)   _mm_srli_epi16((a), (n))
+  #define V_SHUFFLE_EPI8(t, i) _mm_shuffle_epi8((t), (i))
+  #define V_SAD_EPU8(a, b)     _mm_sad_epu8((a), (b))
 #elif defined(FASTENT_VARIANT_SSSE3)
   #define FASTENT_VAR_SUFFIX _ssse3
   #define FASTENT_SIMD_VEC   __m128i
   #define FASTENT_SIMD_VLEN  16
+  #define V_SET1_EPI8(x)       _mm_set1_epi8((char)(x))
+  #define V_SETZERO()          _mm_setzero_si128()
+  #define V_LOAD(p)            _mm_loadu_si128((const __m128i *)(p))
+  #define V_STORE(p, v)        _mm_storeu_si128((__m128i *)(p), (v))
+  #define V_AND(a, b)          _mm_and_si128((a), (b))
+  #define V_OR(a, b)           _mm_or_si128((a), (b))
+  #define V_ANDNOT(a, b)       _mm_andnot_si128((a), (b))
+  #define V_ADD_EPI8(a, b)     _mm_add_epi8((a), (b))
+  #define V_ADD_EPI64(a, b)    _mm_add_epi64((a), (b))
+  #define V_SUBS_EPU8(a, b)    _mm_subs_epu8((a), (b))
+  #define V_CMPEQ_EPI8(a, b)   _mm_cmpeq_epi8((a), (b))
+  #define V_SRLI_EPI16(a, n)   _mm_srli_epi16((a), (n))
+  #define V_SHUFFLE_EPI8(t, i) _mm_shuffle_epi8((t), (i))
+  #define V_SAD_EPU8(a, b)     _mm_sad_epu8((a), (b))
 #else
   #define FASTENT_VAR_SUFFIX _scalar
 #endif
@@ -652,4 +694,325 @@ void FASTENT_FN(analyze)(fastent_chunk_state * st, const u8 * FASTENT_RESTRICT b
 #endif
   /*  MC Pi has been folded into the histogram/SCC pass and into
       consume_byte; no separate walk required.  */
+}
+
+/*  ----------------------------------------------------------------------
+    Case fold: ASCII A-Z and Latin-1 0xC0-0xDE (excluding 0xD7) folded
+    to lower-case in place. Range tests use saturating unsigned subtract
+    so we stay on SSSE3-grade integer ops only.  */
+
+static inline int FASTENT_FN(fold_is_upper_scalar)(unsigned c) {
+  return ((unsigned)(c - 'A')  < 26u) ||
+         ((unsigned)(c - 0xC0u) < 31u && c != 0xD7u);
+}
+
+void FASTENT_FN(fold)(u8 * buf, sz len) {
+  sz i = 0;
+#ifdef FASTENT_HAVE_SIMD
+  if (len >= FASTENT_SIMD_VLEN) {
+    const FASTENT_SIMD_VEC zero    = V_SETZERO();
+    const FASTENT_SIMD_VEC v_amin  = V_SET1_EPI8('A');      /*  0x41  */
+    const FASTENT_SIMD_VEC v_zmax  = V_SET1_EPI8('Z');      /*  0x5A  */
+    const FASTENT_SIMD_VEC v_c0min = V_SET1_EPI8(0xC0);
+    const FASTENT_SIMD_VEC v_demax = V_SET1_EPI8(0xDE);
+    const FASTENT_SIMD_VEC v_d7    = V_SET1_EPI8(0xD7);
+    const FASTENT_SIMD_VEC v_0x20  = V_SET1_EPI8(0x20);
+
+    const sz simd_end = len - (len % FASTENT_SIMD_VLEN);
+    for (; i < simd_end; i += FASTENT_SIMD_VLEN) {
+      FASTENT_SIMD_VEC c = V_LOAD(buf + i);
+
+      /*  ASCII: c in ['A', 'Z'].
+          subs_epu8(K, c) saturates to 0 iff c >= K (because then
+          K - c <= 0).  So s_ge_a == 0 iff c >= 'A', s_le_z == 0 iff
+          c <= 'Z'.  Both zero <=> in range.  */
+      FASTENT_SIMD_VEC s_ge_a  = V_SUBS_EPU8(v_amin, c);
+      FASTENT_SIMD_VEC s_le_z  = V_SUBS_EPU8(c, v_zmax);
+      FASTENT_SIMD_VEC m_ascii = V_CMPEQ_EPI8(V_OR(s_ge_a, s_le_z), zero);
+
+      /*  Latin-1: c in [0xC0, 0xDE] and c != 0xD7.  */
+      FASTENT_SIMD_VEC s_ge_c0 = V_SUBS_EPU8(v_c0min, c);
+      FASTENT_SIMD_VEC s_le_de = V_SUBS_EPU8(c, v_demax);
+      FASTENT_SIMD_VEC m_lat   = V_CMPEQ_EPI8(V_OR(s_ge_c0, s_le_de), zero);
+      FASTENT_SIMD_VEC m_d7    = V_CMPEQ_EPI8(c, v_d7);
+      m_lat = V_ANDNOT(m_d7, m_lat);
+
+      FASTENT_SIMD_VEC mask  = V_OR(m_ascii, m_lat);
+      FASTENT_SIMD_VEC delta = V_AND(mask, v_0x20);
+      V_STORE(buf + i, V_ADD_EPI8(c, delta));
+    }
+  }
+#endif
+  for (; i < len; i++) {
+    unsigned c = buf[i];
+    if (FASTENT_FN(fold_is_upper_scalar)(c)) buf[i] = (u8)(c + 0x20u);
+  }
+}
+
+/*  ----------------------------------------------------------------------
+    Bit-mode analyser.
+
+    For an input byte stream b[0..N-1] the bit stream interleaves bits
+    MSB-first (b[i] bit 7, bit 6, ..., bit 0, b[i+1] bit 7, ...). We
+    compute, in one pass over the byte buffer:
+
+      bit_hist[1]  += sum_i popcount(b[i])
+      bit_hist[0]  += 8*N - bit_hist[1]
+      cross_product +=  sum_i popcount(b[i] & (b[i] >> 1))   /-- within-byte
+                      + sum_{i<N-1} (b[i] & 1) & (b[i+1] >> 7)   /-- cross-byte
+      MC Pi is byte-driven (one trial per 6 input bytes, same as byte
+      mode).
+
+    The SIMD body vectorises the three counters via PSHUFB-LUT popcount
+    + PSADBW reduction. Per VLEN bytes we issue ~3 popcounts and 3 SADs.
+    Carry / first / last are stored as bit values (0 or 1) so that the
+    existing run_mmap_mt merge (carry * first) is exactly the cross-slab
+    bit-pair contribution -- no separate bit-mode merge is needed.  */
+
+#ifdef FASTENT_HAVE_SIMD
+
+static inline sz FASTENT_FN(bits_simd_body)(fastent_chunk_state * st,
+                                            const u8 * FASTENT_RESTRICT buf,
+                                            sz len) {
+  /*  We need buf[i+VLEN] readable in the last iter for the +1 shifted
+      load (used by the cross-byte computation), so the body stops at
+      len - VLEN.  */
+  if (len < (sz) FASTENT_SIMD_VLEN + 1) return 0;
+  const sz body_max = len - FASTENT_SIMD_VLEN;
+  sz iters = body_max / FASTENT_SIMD_VLEN;
+  if (iters == 0) return 0;
+  const sz body_end = iters * FASTENT_SIMD_VLEN;
+
+  if (!st->have_first) {
+    st->first_byte = (u8)((buf[0] >> 7) & 1u);
+    st->have_first = 1;
+  }
+  if (st->have_carry) {
+    unsigned prev_lsb = (unsigned)(st->carry_byte & 1u);
+    unsigned curr_msb = (unsigned)((buf[0] >> 7) & 1u);
+    st->cross_product += (i64)(prev_lsb & curr_msb);
+  }
+  st->have_carry = 1;
+
+  /*  PSHUFB-LUT for nibble popcount. AVX2 PSHUFB is per-lane so we
+      duplicate the 16-entry table into both lanes.  */
+#if defined(FASTENT_VARIANT_AVX2)
+  const FASTENT_SIMD_VEC popcnt_lut = _mm256_setr_epi8(
+    0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
+    0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
+#else
+  const FASTENT_SIMD_VEC popcnt_lut = _mm_setr_epi8(
+    0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
+#endif
+  const FASTENT_SIMD_VEC nibble_mask = V_SET1_EPI8(0x0F);
+  const FASTENT_SIMD_VEC mask_7f     = V_SET1_EPI8(0x7F);
+  const FASTENT_SIMD_VEC mask_01     = V_SET1_EPI8(0x01);
+  const FASTENT_SIMD_VEC zero        = V_SETZERO();
+
+  FASTENT_SIMD_VEC acc_ones   = V_SETZERO();
+  FASTENT_SIMD_VEC acc_within = V_SETZERO();
+  FASTENT_SIMD_VEC acc_cross  = V_SETZERO();
+
+  /*  MC Pi state hoisted into locals.  */
+  int mc_pos     = st->mc_pos;
+  u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
+  u8  m3 = st->mc_buf[3], m4 = st->mc_buf[4], m5 = st->mc_buf[5];
+  u64 mc_count   = st->mc_count;
+  u64 mc_inside  = st->mc_inside;
+
+  for (sz i = 0; i < body_end; i += FASTENT_SIMD_VLEN) {
+    __builtin_prefetch(buf + i + 512, 0, 1);
+
+    FASTENT_SIMD_VEC va = V_LOAD(buf + i);
+    FASTENT_SIMD_VEC vb = V_LOAD(buf + i + 1);
+
+    /*  popcount(va) byte-wise via PSHUFB-LUT.  */
+    FASTENT_SIMD_VEC lo = V_AND(va, nibble_mask);
+    FASTENT_SIMD_VEC hi = V_AND(V_SRLI_EPI16(va, 4), nibble_mask);
+    FASTENT_SIMD_VEC pc_va = V_ADD_EPI8(V_SHUFFLE_EPI8(popcnt_lut, lo),
+                                         V_SHUFFLE_EPI8(popcnt_lut, hi));
+    acc_ones = V_ADD_EPI64(acc_ones, V_SAD_EPU8(pc_va, zero));
+
+    /*  Within-byte adjacent-1 pairs: popcount(va & (va >> 1)).
+        SRLI_EPI16 + AND 0x7F gives byte-wise >> 1.  */
+    FASTENT_SIMD_VEC va_shr1 = V_AND(V_SRLI_EPI16(va, 1), mask_7f);
+    FASTENT_SIMD_VEC pairs   = V_AND(va, va_shr1);
+    FASTENT_SIMD_VEC plo = V_AND(pairs, nibble_mask);
+    FASTENT_SIMD_VEC phi = V_AND(V_SRLI_EPI16(pairs, 4), nibble_mask);
+    FASTENT_SIMD_VEC pc_pairs = V_ADD_EPI8(V_SHUFFLE_EPI8(popcnt_lut, plo),
+                                            V_SHUFFLE_EPI8(popcnt_lut, phi));
+    acc_within = V_ADD_EPI64(acc_within, V_SAD_EPU8(pc_pairs, zero));
+
+    /*  Cross-byte pair: (va.LSB & vb.MSB) per lane.
+        vb.MSB = (vb >> 7) & 1 (the SRLI epi16 contaminates bit 1+ from
+        the adjacent byte but the AND 1 keeps only bit 0).  */
+    FASTENT_SIMD_VEC va_lsb = V_AND(va, mask_01);
+    FASTENT_SIMD_VEC vb_msb = V_AND(V_SRLI_EPI16(vb, 7), mask_01);
+    FASTENT_SIMD_VEC cross  = V_AND(va_lsb, vb_msb);
+    acc_cross = V_ADD_EPI64(acc_cross, V_SAD_EPU8(cross, zero));
+
+    /*  MC Pi: drain + bulk-scalar hexads + stash. Same pattern as SSE
+        byte-mode body; cheap because we only fire VLEN/6 = 2-5 hexads
+        per stride, and the SIMD popcounts above run independently.  */
+    const u8 * p = buf + i;
+    #define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
+      u32 x = ((u32)(x0) << 16) | ((u32)(x1) << 8) | (u32)(x2); \
+      u32 y = ((u32)(y0) << 16) | ((u32)(y1) << 8) | (u32)(y2); \
+      u64 d = (u64) x * (u64) x + (u64) y * (u64) y; \
+      mc_count++; \
+      mc_inside += (d <= FASTENT_INCIRC); \
+    } while (0)
+    unsigned p_idx;
+    switch (mc_pos) {
+      case 0: p_idx = 0; break;
+      case 1: m1=p[0]; m2=p[1]; m3=p[2]; m4=p[3]; m5=p[4];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 5; break;
+      case 2: m2=p[0]; m3=p[1]; m4=p[2]; m5=p[3];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 4; break;
+      case 3: m3=p[0]; m4=p[1]; m5=p[2];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 3; break;
+      case 4: m4=p[0]; m5=p[1];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 2; break;
+      default: m5=p[0];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
+    }
+    unsigned n_hexads = ((unsigned) FASTENT_SIMD_VLEN - p_idx) / 6u;
+    for (unsigned k = 0; k < n_hexads; k++) {
+      unsigned o = p_idx + k * 6u;
+      MC_HEXAD(p[o+0], p[o+1], p[o+2], p[o+3], p[o+4], p[o+5]);
+    }
+    unsigned stash_at    = p_idx + n_hexads * 6u;
+    unsigned stash_count = (unsigned) FASTENT_SIMD_VLEN - stash_at;
+    mc_pos = (int) stash_count;
+    if (stash_count >= 1) m0 = p[stash_at + 0];
+    if (stash_count >= 2) m1 = p[stash_at + 1];
+    if (stash_count >= 3) m2 = p[stash_at + 2];
+    if (stash_count >= 4) m3 = p[stash_at + 3];
+    if (stash_count >= 5) m4 = p[stash_at + 4];
+    #undef MC_HEXAD
+  }
+
+  /*  Horizontal reduce acc_ones / acc_within / acc_cross (i64 lanes).  */
+#if defined(FASTENT_VARIANT_AVX2)
+  __m128i lo_ones = _mm256_castsi256_si128(acc_ones);
+  __m128i hi_ones = _mm256_extracti128_si256(acc_ones, 1);
+  __m128i s_ones  = _mm_add_epi64(lo_ones, hi_ones);
+  u64 sum_ones = (u64) _mm_cvtsi128_si64(s_ones)
+              + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(s_ones, s_ones));
+  __m128i lo_w = _mm256_castsi256_si128(acc_within);
+  __m128i hi_w = _mm256_extracti128_si256(acc_within, 1);
+  __m128i s_w  = _mm_add_epi64(lo_w, hi_w);
+  u64 sum_within = (u64) _mm_cvtsi128_si64(s_w)
+              + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(s_w, s_w));
+  __m128i lo_c = _mm256_castsi256_si128(acc_cross);
+  __m128i hi_c = _mm256_extracti128_si256(acc_cross, 1);
+  __m128i s_c  = _mm_add_epi64(lo_c, hi_c);
+  u64 sum_cross = (u64) _mm_cvtsi128_si64(s_c)
+              + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(s_c, s_c));
+#else
+  u64 sum_ones = (u64) _mm_cvtsi128_si64(acc_ones)
+              + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(acc_ones, acc_ones));
+  u64 sum_within = (u64) _mm_cvtsi128_si64(acc_within)
+              + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(acc_within, acc_within));
+  u64 sum_cross = (u64) _mm_cvtsi128_si64(acc_cross)
+              + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(acc_cross, acc_cross));
+#endif
+
+  st->bit_hist[1]   += sum_ones;
+  st->bit_hist[0]   += (u64) body_end * 8u - sum_ones;
+  st->cross_product += (i64) sum_within + (i64) sum_cross;
+  st->total_bytes   += (u64) body_end * 8u;
+
+  /*  Epilogue: byte buf[body_end] hasn't yet been histogrammed or fed
+      to MC Pi (its cross-byte pair with buf[body_end-1] WAS counted via
+      the last iter's shifted load). Process it scalarly.  */
+  {
+    u8 b = buf[body_end];
+    unsigned ones_b = (unsigned) __builtin_popcount(b);
+    st->bit_hist[1] += ones_b;
+    st->bit_hist[0] += 8u - ones_b;
+    unsigned within_b = (unsigned) __builtin_popcount(b & (b >> 1));
+    st->cross_product += (i64) within_b;
+    st->carry_byte = (u8)(b & 1u);
+    st->last_byte  = (u8)(b & 1u);
+    st->total_bytes += 8;
+
+    switch (mc_pos) {
+      case 0: m0 = b; break;
+      case 1: m1 = b; break;
+      case 2: m2 = b; break;
+      case 3: m3 = b; break;
+      case 4: m4 = b; break;
+      default: m5 = b; break;
+    }
+    mc_pos++;
+    if (mc_pos == 6) {
+      u32 x = ((u32) m0 << 16) | ((u32) m1 << 8) | (u32) m2;
+      u32 y = ((u32) m3 << 16) | ((u32) m4 << 8) | (u32) m5;
+      u64 d = (u64) x * (u64) x + (u64) y * (u64) y;
+      mc_count++;
+      mc_inside += (d <= FASTENT_INCIRC);
+      mc_pos = 0;
+    }
+  }
+
+  st->mc_pos = mc_pos;
+  st->mc_buf[0] = m0; st->mc_buf[1] = m1; st->mc_buf[2] = m2;
+  st->mc_buf[3] = m3; st->mc_buf[4] = m4; st->mc_buf[5] = m5;
+  st->mc_count  = mc_count;
+  st->mc_inside = mc_inside;
+
+  return body_end + 1;
+}
+
+#endif  /*  FASTENT_HAVE_SIMD  */
+
+/*  Scalar bit-mode walker: one byte at a time. Used by the scalar
+    variant entry and as the tail of every SIMD body.  */
+static inline void FASTENT_FN(bits_scalar_body)(fastent_chunk_state * st,
+                                                const u8 * FASTENT_RESTRICT buf,
+                                                sz len) {
+  for (sz i = 0; i < len; i++) {
+    const u8 byte = buf[i];
+    const unsigned ones_in_byte = (unsigned) __builtin_popcount(byte);
+    st->bit_hist[1] += ones_in_byte;
+    st->bit_hist[0] += 8u - ones_in_byte;
+    const unsigned within = (unsigned) __builtin_popcount(byte & (byte >> 1));
+    st->cross_product += (i64) within;
+    if (st->have_carry) {
+      const unsigned prev_lsb = (unsigned)(st->carry_byte & 1u);
+      const unsigned curr_msb = (unsigned)((byte >> 7) & 1u);
+      st->cross_product += (i64)(prev_lsb & curr_msb);
+    } else {
+      st->first_byte = (u8)((byte >> 7) & 1u);
+      st->have_first = 1;
+    }
+    st->carry_byte = (u8)(byte & 1u);
+    st->last_byte  = (u8)(byte & 1u);
+    st->have_carry = 1;
+    st->total_bytes += 8;
+
+    st->mc_buf[st->mc_pos++] = byte;
+    if (st->mc_pos >= 6) {
+      const u32 x = ((u32) st->mc_buf[0] << 16) | ((u32) st->mc_buf[1] << 8)
+                  |  (u32) st->mc_buf[2];
+      const u32 y = ((u32) st->mc_buf[3] << 16) | ((u32) st->mc_buf[4] << 8)
+                  |  (u32) st->mc_buf[5];
+      const u64 d = (u64) x * (u64) x + (u64) y * (u64) y;
+      st->mc_count++;
+      st->mc_inside += (d <= FASTENT_INCIRC);
+      st->mc_pos = 0;
+    }
+  }
+}
+
+void FASTENT_FN(analyze_bits)(fastent_chunk_state * st,
+                              const u8 * FASTENT_RESTRICT buf, sz len) {
+  if (len == 0) return;
+#ifdef FASTENT_HAVE_SIMD
+  sz body = FASTENT_FN(bits_simd_body)(st, buf, len);
+  FASTENT_FN(bits_scalar_body)(st, buf + body, len - body);
+#else
+  FASTENT_FN(bits_scalar_body)(st, buf, len);
+#endif
 }

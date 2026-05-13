@@ -95,8 +95,36 @@ void analyze_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which);
 const char *   fastent_variant_name(fastent_variant v);
 
-/*  Bit-mode analyser. Always scalar; bit mode is rare and not perf-critical.
-    Updates a bit-mode equivalent state structure.  */
+/*  Bit-mode analysers. The scalar version is the fallback; SIMD versions
+    are emitted from analyze-impl.h alongside the byte-mode SIMD body.  */
 void analyze_bits_scalar(fastent_chunk_state * st, const u8 * buf, sz len);
+#ifdef HAVE_SSSE3
+void analyze_bits_ssse3(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_SSE41
+void analyze_bits_sse41(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_AVX2
+void analyze_bits_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+
+fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which);
+
+/*  In-place ASCII + Latin-1 upper -> lower case fold. One variant per
+    ISA, picked at startup.  The scalar variant is also the canonical
+    fallback for non-SIMD builds.  */
+typedef void (*fastent_fold_fn)(u8 * buf, sz len);
+void fold_scalar(u8 * buf, sz len);
+#ifdef HAVE_SSSE3
+void fold_ssse3(u8 * buf, sz len);
+#endif
+#ifdef HAVE_SSE41
+void fold_sse41(u8 * buf, sz len);
+#endif
+#ifdef HAVE_AVX2
+void fold_avx2(u8 * buf, sz len);
+#endif
+
+fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which);
 
 #endif
