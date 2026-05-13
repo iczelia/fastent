@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+#  Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only.
+set -e
+autoreconf --install

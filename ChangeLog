@@ -1,0 +1,8 @@
+2026-05-13  Kamila Szewczyk  <k@iczelia.net>
+
+	v1.0:  Initial release of fastent.  Banked SIMD histogram,
+	sign-corrected VPMADDUBSW cross-product, runtime CPU dispatch
+	over scalar / SSSE3 / SSE4.1 / AVX2.  mmap fast path with
+	MADV_SEQUENTIAL.  Optional pthread workers (-j N).  Human,
+	CSV (-t), and JSON (--json) outputs.  -p / --full-precision,
+	--no-mmap, -j / --threads, -V / --version flags.
