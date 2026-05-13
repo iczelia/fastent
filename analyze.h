@@ -92,7 +92,23 @@ void analyze_sse41(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
+/*  Fused fold+analyse entries: same SIMD body as analyze_<variant> but
+    each loaded vector is case-folded in-register before histogram /
+    SCC / MC Pi consume it.  Drops the 32 KiB staging-copy pass used
+    by the old fold_then_analyze_slab path.  */
+void analyze_fold_scalar(fastent_chunk_state * st, const u8 * buf, sz len);
+#ifdef HAVE_SSSE3
+void analyze_fold_ssse3(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_SSE41
+void analyze_fold_sse41(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_AVX2
+void analyze_fold_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which);
+fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which);
 const char *   fastent_variant_name(fastent_variant v);
 
 /*  Bit-mode analysers. The scalar version is the fallback; SIMD versions
@@ -108,7 +124,20 @@ void analyze_bits_sse41(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_bits_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
+/*  Fused fold + bit-mode analysers.  */
+void analyze_bits_fold_scalar(fastent_chunk_state * st, const u8 * buf, sz len);
+#ifdef HAVE_SSSE3
+void analyze_bits_fold_ssse3(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_SSE41
+void analyze_bits_fold_sse41(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_AVX2
+void analyze_bits_fold_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+
 fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which);
+fastent_analyze_fn fastent_pick_fold_bits_variant(fastent_variant * which);
 
 /*  In-place ASCII + Latin-1 upper -> lower case fold. One variant per
     ISA, picked at startup.  The scalar variant is also the canonical

@@ -41,9 +41,11 @@
 /*  ----------------------------------------------------------------------
     Inline character helpers.  ASCII A-Z / a-z fold plus the Latin-1
     upper block 0xC0-0xDE excluding the multiplication-sign sentinel
-    0xD7 (which is symbol punctuation, not a letter).  The actual fold
-    pass is dispatched at runtime to fold_<variant> (SIMD where
-    available); see fastent_pick_fold_variant.  */
+    0xD7 (which is symbol punctuation, not a letter).  When -f is set
+    the fold is fused into the SIMD analyser body via the
+    analyze_fold_<variant> dispatch (each loaded vector is folded
+    in-register before histogram/SCC/MC Pi consume it), so no separate
+    fold pass over the buffer is needed.  */
 
 static inline int fastent_is_displayable(unsigned c) {
   /*  Glyph-bearing characters in the C / Latin-1 supplement, i.e.
@@ -220,50 +222,18 @@ static int parse_args(int argc, char ** argv, fastent_options * o) {
 }
 
 /*  ----------------------------------------------------------------------
-    Fold-then-analyse helper.  Walks a slab in L1-resident staging
-    chunks, doing memcpy -> fn_fold -> body per chunk.  Used by both
-    the single-threaded run_mmap_fold_st and per-worker in the threaded
-    fold path.  The 32 KiB chunk size keeps the staging buffer
-    L1d-resident on every modern x86 (typical L1d is 32-48 KiB).  */
-#define FASTENT_FOLD_STAGING_BYTES  (32u * 1024u)
-
-static u8 * fold_staging_alloc(void) {
-  void * p = NULL;
-#if HAVE_POSIX_MEMALIGN
-  if (posix_memalign(&p, 64, FASTENT_FOLD_STAGING_BYTES) != 0) p = NULL;
-#else
-  p = malloc(FASTENT_FOLD_STAGING_BYTES);
-#endif
-  if (!p) { fprintf(stderr, "out of memory\n"); exit(2); }
-  return (u8 *) p;
-}
-
-static void fold_then_analyze_slab(fastent_chunk_state * st,
-                                   fastent_fold_fn fn_fold,
-                                   fastent_analyze_fn body,
-                                   u8 * tmp,
-                                   const u8 * src, sz n) {
-  sz off = 0;
-  while (off < n) {
-    sz w = (n - off) < FASTENT_FOLD_STAGING_BYTES
-             ? (n - off) : FASTENT_FOLD_STAGING_BYTES;
-    memcpy(tmp, src + off, w);
-    fn_fold(tmp, w);
-    body(st, tmp, w);
-    off += w;
-  }
-}
-
-/*  ----------------------------------------------------------------------
-    Analysis drivers.  */
+    Analysis drivers.  The fused fold + analyse entry points
+    (analyze_fold_<variant> / analyze_bits_fold_<variant>) case-fold
+    each loaded SIMD vector in-register, so the threaded mmap path no
+    longer needs a per-worker 32 KiB staging buffer or a separate
+    memcpy + fold pre-pass.  */
 
 #ifdef FASTENT_HAVE_PTHREAD
 typedef struct {
   const u8 *     data;
   const u64 *    bounds;     /*  N+1 entries, multiples of 6 except last  */
   fastent_chunk_state * states;
-  fastent_analyze_fn fn;
-  fastent_fold_fn    fn_fold;   /*  NULL = no fold preprocess  */
+  fastent_analyze_fn fn;     /*  Already specialised: fused or plain.  */
 } mt_ctx;
 
 static void mt_worker(sz k, void * vctx) {
@@ -271,18 +241,11 @@ static void mt_worker(sz k, void * vctx) {
   u64 start = c->bounds[k];
   u64 end   = c->bounds[k + 1];
   fastent_chunk_state_init(&c->states[k]);
-  if (c->fn_fold) {
-    u8 * tmp = fold_staging_alloc();
-    fold_then_analyze_slab(&c->states[k], c->fn_fold, c->fn,
-                           tmp, c->data + start, (sz)(end - start));
-    free(tmp);
-  } else {
-    c->fn(&c->states[k], c->data + start, (sz)(end - start));
-  }
+  c->fn(&c->states[k], c->data + start, (sz)(end - start));
 }
 
 static void run_mmap_mt(fastent_chunk_state * out, const fastent_options * o,
-                        fastent_analyze_fn fn, fastent_fold_fn fn_fold,
+                        fastent_analyze_fn fn,
                         const u8 * data, u64 size) {
   int N = o->threads;
   fastent_set_num_threads(N);
@@ -307,7 +270,6 @@ static void run_mmap_mt(fastent_chunk_state * out, const fastent_options * o,
   ctx.bounds  = bounds;
   ctx.states  = states;
   ctx.fn      = fn;
-  ctx.fn_fold = fn_fold;
   fastent_parallel_for((sz) N, mt_worker, &ctx);
 
   /*  Merge per-thread states into `out`.  Slab 0 supplies first_byte;
@@ -350,32 +312,31 @@ static void run_mmap_mt(fastent_chunk_state * out, const fastent_options * o,
 
 static void run_mmap(fastent_chunk_state * st, const fastent_options * o,
                      fastent_analyze_fn fn_byte, fastent_analyze_fn fn_bits,
-                     fastent_fold_fn fn_fold,
+                     fastent_analyze_fn fn_byte_fold,
+                     fastent_analyze_fn fn_bits_fold,
                      const u8 * data, u64 size) {
-  fastent_analyze_fn body = o->binary ? fn_bits : fn_byte;
+  fastent_analyze_fn body = o->binary
+    ? (o->fold ? fn_bits_fold : fn_bits)
+    : (o->fold ? fn_byte_fold : fn_byte);
 
 #ifdef FASTENT_HAVE_PTHREAD
   if (o->threads > 1 && size >= (u64)(o->threads) * 1024u * 1024u) {
-    run_mmap_mt(st, o, body, o->fold ? fn_fold : NULL, data, size);
+    run_mmap_mt(st, o, body, data, size);
     return;
   }
 #endif
-
-  if (o->fold) {
-    u8 * tmp = fold_staging_alloc();
-    fold_then_analyze_slab(st, fn_fold, body, tmp, data, (sz) size);
-    free(tmp);
-    return;
-  }
 
   body(st, data, (sz) size);
 }
 
 static void run_stream(fastent_chunk_state * st, const fastent_options * o,
                        fastent_analyze_fn fn_byte, fastent_analyze_fn fn_bits,
-                       fastent_fold_fn fn_fold,
+                       fastent_analyze_fn fn_byte_fold,
+                       fastent_analyze_fn fn_bits_fold,
                        fastent_source * src) {
-  fastent_analyze_fn body = o->binary ? fn_bits : fn_byte;
+  fastent_analyze_fn body = o->binary
+    ? (o->fold ? fn_bits_fold : fn_bits)
+    : (o->fold ? fn_byte_fold : fn_byte);
   for (;;) {
     sz n = fastent_src_read(src);
     if (n == (sz) -1) {
@@ -383,7 +344,6 @@ static void run_stream(fastent_chunk_state * st, const fastent_options * o,
       exit(2);
     }
     if (n == 0) break;
-    if (o->fold) fn_fold(src->stream_buf, n);
     body(st, src->stream_buf, n);
   }
 }
@@ -555,21 +515,23 @@ int main(int argc, char ** argv) {
   }
 
   /*  Pick best variant for each kernel: byte-mode analyse, bit-mode
-      analyse, and in-place case fold.  Each picker confirms ISA
-      support at runtime via __builtin_cpu_supports.  */
+      analyse, and the fused fold + analyse pair used when -f is set.
+      Each picker confirms ISA support at runtime via
+      __builtin_cpu_supports.  */
   fastent_variant var = FASTENT_VAR_SCALAR;
-  fastent_analyze_fn fn_byte = fastent_pick_variant(&var);
-  fastent_analyze_fn fn_bits = fastent_pick_bits_variant(NULL);
-  fastent_fold_fn    fn_fold = fastent_pick_fold_variant(NULL);
+  fastent_analyze_fn fn_byte      = fastent_pick_variant(&var);
+  fastent_analyze_fn fn_bits      = fastent_pick_bits_variant(NULL);
+  fastent_analyze_fn fn_byte_fold = fastent_pick_fold_byte_variant(NULL);
+  fastent_analyze_fn fn_bits_fold = fastent_pick_fold_bits_variant(NULL);
 
   fastent_chunk_state st;
   fastent_chunk_state_init(&st);
 
   if (src.kind == FASTENT_SRC_MMAP) {
-    run_mmap(&st, &o, fn_byte, fn_bits, fn_fold,
+    run_mmap(&st, &o, fn_byte, fn_bits, fn_byte_fold, fn_bits_fold,
              (const u8 *) src.map, src.size);
   } else {
-    run_stream(&st, &o, fn_byte, fn_bits, fn_fold, &src);
+    run_stream(&st, &o, fn_byte, fn_bits, fn_byte_fold, fn_bits_fold, &src);
   }
 
   fastent_src_close(&src);

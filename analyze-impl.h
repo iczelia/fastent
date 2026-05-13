@@ -109,6 +109,51 @@
 #define FASTENT_FN(name)   FASTENT_CAT(name, FASTENT_VAR_SUFFIX)
 
 /*  ----------------------------------------------------------------------
+    In-register case fold helpers. These produce a byte (or vector of
+    bytes) that has ASCII A-Z and Latin-1 0xC0-0xDE (excluding 0xD7)
+    mapped to lower-case; every other byte passes through unchanged.
+    Both helpers are private to this TU and used by the fused
+    fold + analyse path so we never have to materialise a staging copy
+    of the input buffer.  See also the standalone fold() body further
+    down, which calls fold_vec_inline directly.  */
+
+static inline int FASTENT_FN(fold_is_upper_inline)(unsigned c) {
+  return ((unsigned)(c - 'A')   < 26u) ||
+         ((unsigned)(c - 0xC0u) < 31u && c != 0xD7u);
+}
+
+static inline u8 FASTENT_FN(fold_byte_inline)(u8 b) {
+  unsigned c = b;
+  if (FASTENT_FN(fold_is_upper_inline)(c)) return (u8)(c + 0x20u);
+  return b;
+}
+
+#ifdef FASTENT_HAVE_SIMD
+static __attribute__((always_inline)) inline FASTENT_SIMD_VEC
+FASTENT_FN(fold_vec_inline)(FASTENT_SIMD_VEC c) {
+  const FASTENT_SIMD_VEC zero    = V_SETZERO();
+  const FASTENT_SIMD_VEC v_amin  = V_SET1_EPI8('A');
+  const FASTENT_SIMD_VEC v_zmax  = V_SET1_EPI8('Z');
+  const FASTENT_SIMD_VEC v_c0min = V_SET1_EPI8((char) 0xC0);
+  const FASTENT_SIMD_VEC v_demax = V_SET1_EPI8((char) 0xDE);
+  const FASTENT_SIMD_VEC v_d7    = V_SET1_EPI8((char) 0xD7);
+  const FASTENT_SIMD_VEC v_0x20  = V_SET1_EPI8(0x20);
+
+  FASTENT_SIMD_VEC s_ge_a  = V_SUBS_EPU8(v_amin, c);
+  FASTENT_SIMD_VEC s_le_z  = V_SUBS_EPU8(c, v_zmax);
+  FASTENT_SIMD_VEC m_ascii = V_CMPEQ_EPI8(V_OR(s_ge_a, s_le_z), zero);
+  FASTENT_SIMD_VEC s_ge_c0 = V_SUBS_EPU8(v_c0min, c);
+  FASTENT_SIMD_VEC s_le_de = V_SUBS_EPU8(c, v_demax);
+  FASTENT_SIMD_VEC m_lat   = V_CMPEQ_EPI8(V_OR(s_ge_c0, s_le_de), zero);
+  FASTENT_SIMD_VEC m_d7    = V_CMPEQ_EPI8(c, v_d7);
+  m_lat = V_ANDNOT(m_d7, m_lat);
+  FASTENT_SIMD_VEC mask  = V_OR(m_ascii, m_lat);
+  FASTENT_SIMD_VEC delta = V_AND(mask, v_0x20);
+  return V_ADD_EPI8(c, delta);
+}
+#endif
+
+/*  ----------------------------------------------------------------------
     Scalar single-byte update: histogram + SCC + MC Pi + first/last
     tracking. Used by head/tail of all variants and entire body of scalar
     variant. MC is folded in so we don't need a second pass over the
@@ -229,14 +274,27 @@ static inline void FASTENT_FN(monte_carlo_pass)(fastent_chunk_state * st,
 }
 
 /*  ----------------------------------------------------------------------
-    Scalar histogram + SCC body. Used as fallback and on chunk edges.  */
+    Scalar histogram + SCC body. Used as fallback and on chunk edges.
+    Templated on `fold`: when set, each byte is folded in-register
+    before being fed to consume_byte. `fold` is a compile-time constant
+    at every call site so the branch dead-eliminates.  */
+
+static __attribute__((always_inline)) inline sz
+FASTENT_FN(scalar_body_impl)(fastent_chunk_state * st,
+                             const u8 * FASTENT_RESTRICT buf,
+                             sz len, sz start_bank, int fold) {
+  sz i;
+  for (i = 0; i < len; i++) {
+    u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[i]) : buf[i];
+    FASTENT_FN(consume_byte)(st, b, start_bank + i);
+  }
+  return i;
+}
 
 static inline sz FASTENT_FN(scalar_body)(fastent_chunk_state * st,
                                      const u8 * FASTENT_RESTRICT buf,
                                      sz len, sz start_bank) {
-  sz i;
-  for (i = 0; i < len; i++) FASTENT_FN(consume_byte)(st, buf[i], start_bank + i);
-  return i;
+  return FASTENT_FN(scalar_body_impl)(st, buf, len, start_bank, 0);
 }
 
 /*  ----------------------------------------------------------------------
@@ -246,9 +304,10 @@ static inline sz FASTENT_FN(scalar_body)(fastent_chunk_state * st,
 
 #if defined(FASTENT_VARIANT_AVX2)
 
-static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
-                                   const u8 * FASTENT_RESTRICT buf,
-                                   sz len) {
+static __attribute__((always_inline)) inline sz
+FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
+                           const u8 * FASTENT_RESTRICT buf,
+                           sz len, int fold) {
   /*  AVX2 stride = 64 bytes (two 32-byte vectors). We need byte +1
       readable for the SCC pmaddubs shifted load, so the body stops
       at len - 32 (leave 32-byte read-ahead margin).  */
@@ -268,11 +327,16 @@ static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
       which yields products buf[0]*buf[1], buf[1]*buf[2], ...,
       buf[body_end-1]*buf[body_end].  */
 
+  /*  In fused-fold mode all the per-byte scalar inputs (first_byte
+      seed, SCC carry, epilogue byte) must observe folded values so
+      they agree with what the SIMD loop sees.  */
+  u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
+
   /*  Initialise first_byte / carry from scalar entry into byte 0.  */
-  if (!st->have_first) { st->first_byte = buf[0]; st->have_first = 1; }
+  if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
   /*  Cross product carry * buf[0] (only if we had a previous chunk):  */
   if (st->have_carry) {
-    st->cross_product += (i64) st->carry_byte * (i64) buf[0];
+    st->cross_product += (i64) st->carry_byte * (i64) b0_user;
   }
   st->have_carry = 1;
 
@@ -303,11 +367,19 @@ static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
   #define FASTENT_PREFETCH_DIST 512
   for (sz i = 0; i < body_end; i += 64) {
     __builtin_prefetch(buf + i + FASTENT_PREFETCH_DIST, 0, 1);
-    /*  SCC: two 32-byte chunks, widen-mul-madd path (no saturation).  */
+    /*  SCC: two 32-byte chunks, widen-mul-madd path (no saturation).
+        In fused-fold mode every loaded vector is folded in-register
+        before any downstream op consumes it.  */
     __m256i va0 = _mm256_loadu_si256((const __m256i *) (buf + i +  0));
     __m256i vb0 = _mm256_loadu_si256((const __m256i *) (buf + i +  1));
     __m256i va1 = _mm256_loadu_si256((const __m256i *) (buf + i + 32));
     __m256i vb1 = _mm256_loadu_si256((const __m256i *) (buf + i + 33));
+    if (fold) {
+      va0 = FASTENT_FN(fold_vec_inline)(va0);
+      vb0 = FASTENT_FN(fold_vec_inline)(vb0);
+      va1 = FASTENT_FN(fold_vec_inline)(va1);
+      vb1 = FASTENT_FN(fold_vec_inline)(vb1);
+    }
     __m256i vbs0 = _mm256_xor_si256(vb0, sign_xor);
     __m256i vbs1 = _mm256_xor_si256(vb1, sign_xor);
 
@@ -351,8 +423,29 @@ static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
 
     /*  Histogram: 64 byte increments across 4 banks. Direct movzbl
         reads from the input buffer; compiler emits a tight load/inc
-        chain that pipelines through the L1d cache.  */
-    const u8 * p = buf + i;
+        chain that pipelines through the L1d cache.  In fused-fold
+        mode `p` instead points at an L1-resident stack stage holding
+        the folded va0 / va1 vectors so the histogram, MC ring, and
+        stash all observe folded bytes.
+
+        We launder the stage pointer through an empty inline asm so
+        GCC can't track the relationship between the just-stored
+        vector and the subsequent byte reads -- without this it tries
+        to be "clever" and serialises the histogram on a chain of
+        vpextrb instructions (~5 c latency each on Zen) instead of
+        emitting movzbl loads from L1, a ~2x slowdown on the inner
+        loop.  */
+    u8 stage[64] __attribute__((aligned(32)));
+    const u8 * p;
+    if (fold) {
+      _mm256_store_si256((__m256i *) (stage +  0), va0);
+      _mm256_store_si256((__m256i *) (stage + 32), va1);
+      const u8 * sp = stage;
+      __asm__("" : "+r"(sp) :: "memory");
+      p = sp;
+    } else {
+      p = buf + i;
+    }
     #define HIST4(o) \
       b0[p[(o) + 0]]++; b1[p[(o) + 1]]++; \
       b2[p[(o) + 2]]++; b3[p[(o) + 3]]++
@@ -457,7 +550,8 @@ static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
       buf[body_end-1] is already in cross_product) but not yet
       histogrammed or fed to MC Pi.  */
   {
-    u8 b = buf[body_end];
+    u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
+                : buf[body_end];
     st->total_bytes += body_end;
     st->bank[(unsigned)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
     st->total_bytes++;
@@ -497,9 +591,10 @@ static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
 
 #elif defined(FASTENT_VARIANT_SSE41) || defined(FASTENT_VARIANT_SSSE3)
 
-static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
-                                   const u8 * FASTENT_RESTRICT buf,
-                                   sz len) {
+static __attribute__((always_inline)) inline sz
+FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
+                           const u8 * FASTENT_RESTRICT buf,
+                           sz len, int fold) {
   /*  SSE stride = 32 bytes (two 16-byte vectors). Need 16-byte read-ahead.  */
   if (len < 33) return 0;
   const sz body_max = len - 16;
@@ -507,9 +602,10 @@ static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
   if (iters == 0) return 0;
   const sz body_end = iters * 32;
 
-  if (!st->have_first) { st->first_byte = buf[0]; st->have_first = 1; }
+  u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
+  if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
   if (st->have_carry) {
-    st->cross_product += (i64) st->carry_byte * (i64) buf[0];
+    st->cross_product += (i64) st->carry_byte * (i64) b0_user;
   }
   st->have_carry = 1;
 
@@ -536,6 +632,12 @@ static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
     __m128i vb0 = _mm_loadu_si128((const __m128i *) (buf + i +  1));
     __m128i va1 = _mm_loadu_si128((const __m128i *) (buf + i + 16));
     __m128i vb1 = _mm_loadu_si128((const __m128i *) (buf + i + 17));
+    if (fold) {
+      va0 = FASTENT_FN(fold_vec_inline)(va0);
+      vb0 = FASTENT_FN(fold_vec_inline)(vb0);
+      va1 = FASTENT_FN(fold_vec_inline)(va1);
+      vb1 = FASTENT_FN(fold_vec_inline)(vb1);
+    }
     __m128i vbs0 = _mm_xor_si128(vb0, sign_xor);
     __m128i vbs1 = _mm_xor_si128(vb1, sign_xor);
 
@@ -575,8 +677,23 @@ static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
     __m128i sad1 = _mm_sad_epu8(va1, zero);
     lhs_sad = _mm_add_epi64(lhs_sad, _mm_add_epi64(sad0, sad1));
 
-    /*  Direct byte reads -> movzx + inc, no vpextrb chain.  */
-    const u8 * p = buf + i;
+    /*  Direct byte reads -> movzx + inc, no vpextrb chain.  In
+        fused-fold mode the histogram + MC walk reads from an L1-
+        resident stack stage holding folded va0 / va1.  The asm
+        barrier hides the just-stored vector from GCC so the byte
+        reads come out as movzbl/movzbl chains instead of vpextrb
+        chains (see the AVX2 body for the full reasoning).  */
+    u8 stage[32] __attribute__((aligned(16)));
+    const u8 * p;
+    if (fold) {
+      _mm_store_si128((__m128i *) (stage +  0), va0);
+      _mm_store_si128((__m128i *) (stage + 16), va1);
+      const u8 * sp = stage;
+      __asm__("" : "+r"(sp) :: "memory");
+      p = sp;
+    } else {
+      p = buf + i;
+    }
     #define HIST4(o) \
       b0[p[(o) + 0]]++; b1[p[(o) + 1]]++; \
       b2[p[(o) + 2]]++; b3[p[(o) + 3]]++
@@ -634,8 +751,11 @@ static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
 
   /*  Epilogue: histogram + MC for buf[body_end] (SCC product already
       added by the shifted load in the last pmaddubs iter).  */
+  u8 last_b;
   {
-    u8 b = buf[body_end];
+    u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
+                : buf[body_end];
+    last_b = b;
     st->total_bytes += body_end;
     st->bank[(unsigned)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
     st->total_bytes++;
@@ -664,36 +784,62 @@ static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
   st->mc_count  = mc_count;
   st->mc_inside = mc_inside;
 
-  /*  carry/last get the value from buf[body_end].  */
-  st->carry_byte = buf[body_end];
-  st->last_byte  = buf[body_end];
+  /*  carry/last get the value from buf[body_end] (folded if -f).  */
+  st->carry_byte = last_b;
+  st->last_byte  = last_b;
 
   return body_end + 1;
 }
 
 #endif
 
+/*  SIMD trampolines: the simd_body_impl above is templated on the
+    compile-time `fold` constant; these inline trampolines pin it for
+    the two analyse entry points.  Emitted for both AVX2 and SSE
+    variants (whichever owns simd_body_impl in this TU).  */
+#ifdef FASTENT_HAVE_SIMD
+static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
+                                       const u8 * FASTENT_RESTRICT buf, sz len) {
+  return FASTENT_FN(simd_body_impl)(st, buf, len, 0);
+}
+static inline sz FASTENT_FN(simd_body_fold)(fastent_chunk_state * st,
+                                            const u8 * FASTENT_RESTRICT buf, sz len) {
+  return FASTENT_FN(simd_body_impl)(st, buf, len, 1);
+}
+#endif
+
 /*  ----------------------------------------------------------------------
     Public entry point.  */
 
-void FASTENT_FN(analyze)(fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
+static __attribute__((always_inline)) inline void
+FASTENT_FN(analyze_impl)(fastent_chunk_state * st,
+                         const u8 * FASTENT_RESTRICT buf, sz len, int fold) {
   if (len == 0) return;
 
 #ifdef FASTENT_HAVE_SIMD
-  sz body = FASTENT_FN(simd_body)(st, buf, len);
+  sz body = fold ? FASTENT_FN(simd_body_fold)(st, buf, len)
+                 : FASTENT_FN(simd_body)(st, buf, len);
   if (body > 0) {
     sz start_bank = st->total_bytes;
-    FASTENT_FN(scalar_body)(st, buf + body, len - body, start_bank);
+    FASTENT_FN(scalar_body_impl)(st, buf + body, len - body, start_bank, fold);
   } else {
     sz start_bank = st->total_bytes;
-    FASTENT_FN(scalar_body)(st, buf, len, start_bank);
+    FASTENT_FN(scalar_body_impl)(st, buf, len, start_bank, fold);
   }
 #else
   sz start_bank = st->total_bytes;
-  FASTENT_FN(scalar_body)(st, buf, len, start_bank);
+  FASTENT_FN(scalar_body_impl)(st, buf, len, start_bank, fold);
 #endif
   /*  MC Pi has been folded into the histogram/SCC pass and into
       consume_byte; no separate walk required.  */
+}
+
+void FASTENT_FN(analyze)(fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
+  FASTENT_FN(analyze_impl)(st, buf, len, 0);
+}
+
+void FASTENT_FN(analyze_fold)(fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
+  FASTENT_FN(analyze_impl)(st, buf, len, 1);
 }
 
 /*  ----------------------------------------------------------------------
@@ -771,9 +917,10 @@ void FASTENT_FN(fold)(u8 * buf, sz len) {
 
 #ifdef FASTENT_HAVE_SIMD
 
-static inline sz FASTENT_FN(bits_simd_body)(fastent_chunk_state * st,
-                                            const u8 * FASTENT_RESTRICT buf,
-                                            sz len) {
+static __attribute__((always_inline)) inline sz
+FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
+                                const u8 * FASTENT_RESTRICT buf,
+                                sz len, int fold) {
   /*  We need buf[i+VLEN] readable in the last iter for the +1 shifted
       load (used by the cross-byte computation), so the body stops at
       len - VLEN.  */
@@ -783,13 +930,14 @@ static inline sz FASTENT_FN(bits_simd_body)(fastent_chunk_state * st,
   if (iters == 0) return 0;
   const sz body_end = iters * FASTENT_SIMD_VLEN;
 
+  u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
   if (!st->have_first) {
-    st->first_byte = (u8)((buf[0] >> 7) & 1u);
+    st->first_byte = (u8)((b0_user >> 7) & 1u);
     st->have_first = 1;
   }
   if (st->have_carry) {
     unsigned prev_lsb = (unsigned)(st->carry_byte & 1u);
-    unsigned curr_msb = (unsigned)((buf[0] >> 7) & 1u);
+    unsigned curr_msb = (unsigned)((b0_user >> 7) & 1u);
     st->cross_product += (i64)(prev_lsb & curr_msb);
   }
   st->have_carry = 1;
@@ -825,6 +973,10 @@ static inline sz FASTENT_FN(bits_simd_body)(fastent_chunk_state * st,
 
     FASTENT_SIMD_VEC va = V_LOAD(buf + i);
     FASTENT_SIMD_VEC vb = V_LOAD(buf + i + 1);
+    if (fold) {
+      va = FASTENT_FN(fold_vec_inline)(va);
+      vb = FASTENT_FN(fold_vec_inline)(vb);
+    }
 
     /*  popcount(va) byte-wise via PSHUFB-LUT.  */
     FASTENT_SIMD_VEC lo = V_AND(va, nibble_mask);
@@ -854,8 +1006,20 @@ static inline sz FASTENT_FN(bits_simd_body)(fastent_chunk_state * st,
     /*  MC Pi: scalar drain + SIMD bulk hexads + scalar tail + stash.
         AVX-2 stride 32 -> up to 5 hexads per iter; SSE stride 16 ->
         up to 2-3 per iter. The SIMD popcounts above run independently
-        so the MC bulk SIMD adds little dependency pressure.  */
-    const u8 * p = buf + i;
+        so the MC bulk SIMD adds little dependency pressure.  In
+        fused-fold mode the MC ring sees the folded byte stream via
+        an L1-resident stack stage; the asm barrier defeats GCC's
+        vpextrb-from-vector optimisation.  */
+    u8 bits_stage[FASTENT_SIMD_VLEN] __attribute__((aligned(32)));
+    const u8 * p;
+    if (fold) {
+      V_STORE(bits_stage, va);
+      const u8 * sp = bits_stage;
+      __asm__("" : "+r"(sp) :: "memory");
+      p = sp;
+    } else {
+      p = buf + i;
+    }
     #define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
       u32 x = ((u32)(x0) << 16) | ((u32)(x1) << 8) | (u32)(x2); \
       u32 y = ((u32)(y0) << 16) | ((u32)(y1) << 8) | (u32)(y2); \
@@ -983,7 +1147,8 @@ static inline sz FASTENT_FN(bits_simd_body)(fastent_chunk_state * st,
       to MC Pi (its cross-byte pair with buf[body_end-1] WAS counted via
       the last iter's shifted load). Process it scalarly.  */
   {
-    u8 b = buf[body_end];
+    u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
+                : buf[body_end];
     unsigned ones_b = (unsigned) __builtin_popcount(b);
     st->bit_hist[1] += ones_b;
     st->bit_hist[0] += 8u - ones_b;
@@ -1021,15 +1186,28 @@ static inline sz FASTENT_FN(bits_simd_body)(fastent_chunk_state * st,
   return body_end + 1;
 }
 
+/*  Bit-mode SIMD trampolines.  */
+static inline sz FASTENT_FN(bits_simd_body)(fastent_chunk_state * st,
+                                            const u8 * FASTENT_RESTRICT buf, sz len) {
+  return FASTENT_FN(bits_simd_body_impl)(st, buf, len, 0);
+}
+static inline sz FASTENT_FN(bits_simd_body_fold)(fastent_chunk_state * st,
+                                                 const u8 * FASTENT_RESTRICT buf, sz len) {
+  return FASTENT_FN(bits_simd_body_impl)(st, buf, len, 1);
+}
+
 #endif  /*  FASTENT_HAVE_SIMD  */
 
 /*  Scalar bit-mode walker: one byte at a time. Used by the scalar
-    variant entry and as the tail of every SIMD body.  */
-static inline void FASTENT_FN(bits_scalar_body)(fastent_chunk_state * st,
-                                                const u8 * FASTENT_RESTRICT buf,
-                                                sz len) {
+    variant entry and as the tail of every SIMD body.  Templated on
+    `fold` so the fused -f -b path can drive a single-pass scalar
+    walker too.  */
+static __attribute__((always_inline)) inline void
+FASTENT_FN(bits_scalar_body_impl)(fastent_chunk_state * st,
+                                  const u8 * FASTENT_RESTRICT buf,
+                                  sz len, int fold) {
   for (sz i = 0; i < len; i++) {
-    const u8 byte = buf[i];
+    const u8 byte = fold ? FASTENT_FN(fold_byte_inline)(buf[i]) : buf[i];
     const unsigned ones_in_byte = (unsigned) __builtin_popcount(byte);
     st->bit_hist[1] += ones_in_byte;
     st->bit_hist[0] += 8u - ones_in_byte;
@@ -1062,13 +1240,31 @@ static inline void FASTENT_FN(bits_scalar_body)(fastent_chunk_state * st,
   }
 }
 
-void FASTENT_FN(analyze_bits)(fastent_chunk_state * st,
-                              const u8 * FASTENT_RESTRICT buf, sz len) {
+static inline void FASTENT_FN(bits_scalar_body)(fastent_chunk_state * st,
+                                                const u8 * FASTENT_RESTRICT buf,
+                                                sz len) {
+  FASTENT_FN(bits_scalar_body_impl)(st, buf, len, 0);
+}
+
+static __attribute__((always_inline)) inline void
+FASTENT_FN(analyze_bits_impl)(fastent_chunk_state * st,
+                              const u8 * FASTENT_RESTRICT buf, sz len, int fold) {
   if (len == 0) return;
 #ifdef FASTENT_HAVE_SIMD
-  sz body = FASTENT_FN(bits_simd_body)(st, buf, len);
-  FASTENT_FN(bits_scalar_body)(st, buf + body, len - body);
+  sz body = fold ? FASTENT_FN(bits_simd_body_fold)(st, buf, len)
+                 : FASTENT_FN(bits_simd_body)(st, buf, len);
+  FASTENT_FN(bits_scalar_body_impl)(st, buf + body, len - body, fold);
 #else
-  FASTENT_FN(bits_scalar_body)(st, buf, len);
+  FASTENT_FN(bits_scalar_body_impl)(st, buf, len, fold);
 #endif
+}
+
+void FASTENT_FN(analyze_bits)(fastent_chunk_state * st,
+                              const u8 * FASTENT_RESTRICT buf, sz len) {
+  FASTENT_FN(analyze_bits_impl)(st, buf, len, 0);
+}
+
+void FASTENT_FN(analyze_bits_fold)(fastent_chunk_state * st,
+                                   const u8 * FASTENT_RESTRICT buf, sz len) {
+  FASTENT_FN(analyze_bits_impl)(st, buf, len, 1);
 }

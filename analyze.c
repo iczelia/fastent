@@ -233,6 +233,70 @@ fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which) {
   return fn;
 }
 
+/*  Fused fold + byte-mode analyse picker.  Mirrors fastent_pick_variant.  */
+fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which) {
+  fastent_variant v = FASTENT_VAR_SCALAR;
+  fastent_analyze_fn fn = analyze_fold_scalar;
+
+#if defined(__GNUC__) || defined(__clang__)
+  __builtin_cpu_init();
+
+  #ifdef HAVE_SSSE3
+    if (__builtin_cpu_supports("ssse3")) {
+      v = FASTENT_VAR_SSSE3_;
+      fn = analyze_fold_ssse3;
+    }
+  #endif
+  #ifdef HAVE_SSE41
+    if (__builtin_cpu_supports("sse4.1")) {
+      v = FASTENT_VAR_SSE41_;
+      fn = analyze_fold_sse41;
+    }
+  #endif
+  #ifdef HAVE_AVX2
+    if (__builtin_cpu_supports("avx2")) {
+      v = FASTENT_VAR_AVX2_;
+      fn = analyze_fold_avx2;
+    }
+  #endif
+#endif
+
+  if (which) *which = v;
+  return fn;
+}
+
+/*  Fused fold + bit-mode analyse picker.  */
+fastent_analyze_fn fastent_pick_fold_bits_variant(fastent_variant * which) {
+  fastent_variant v = FASTENT_VAR_SCALAR;
+  fastent_analyze_fn fn = analyze_bits_fold_scalar;
+
+#if defined(__GNUC__) || defined(__clang__)
+  __builtin_cpu_init();
+
+  #ifdef HAVE_SSSE3
+    if (__builtin_cpu_supports("ssse3")) {
+      v = FASTENT_VAR_SSSE3_;
+      fn = analyze_bits_fold_ssse3;
+    }
+  #endif
+  #ifdef HAVE_SSE41
+    if (__builtin_cpu_supports("sse4.1")) {
+      v = FASTENT_VAR_SSE41_;
+      fn = analyze_bits_fold_sse41;
+    }
+  #endif
+  #ifdef HAVE_AVX2
+    if (__builtin_cpu_supports("avx2")) {
+      v = FASTENT_VAR_AVX2_;
+      fn = analyze_bits_fold_avx2;
+    }
+  #endif
+#endif
+
+  if (which) *which = v;
+  return fn;
+}
+
 /*  Case-fold picker.  */
 fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which) {
   fastent_variant v = FASTENT_VAR_SCALAR;
