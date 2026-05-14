@@ -10,7 +10,7 @@ AC_LANG([C])
 AC_CONFIG_MACRO_DIR([m4])
 
 AC_CANONICAL_TARGET
-AM_INIT_AUTOMAKE([-Wall foreign color-tests subdir-objects \
+AM_INIT_AUTOMAKE([-Wall color-tests subdir-objects \
                   dist-bzip2 dist-xz dist-zip dist-bzip3])
 
 AC_PROG_INSTALL
