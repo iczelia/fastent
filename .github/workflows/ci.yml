@@ -115,14 +115,16 @@ jobs:
           - { id: linux-i386,             zig: x86-linux-musl,            host: x86-unknown-linux-musl,            lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-i386-static       }
           - { id: linux-aarch64,          zig: aarch64-linux-musl,        host: aarch64-unknown-linux-musl,        lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-aarch64-static    }
           - { id: linux-armhf,            zig: arm-linux-musleabihf,      host: arm-unknown-linux-musleabihf,      lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-arm-static        }
-          # LTO is disabled on riscv64: LLVM ld.lld currently rejects
-          # mixed lp64d target-abi metadata flavours when LTO links
-          # the precompiled-bitcode crt with the freshly emitted IR.
+          # LTO is disabled on riscv64 and loongarch64: with the LLVM
+          # 18 shipped by zig 0.14.0, ld.lld rejects mixing the
+          # freshly-emitted IR's target-abi metadata against the
+          # precompiled crt1.o (lp64d on both archs).  Re-enable when
+          # the toolchain bump lands.
           - { id: linux-riscv64,          zig: riscv64-linux-musl,        host: riscv64-unknown-linux-musl,        lto: 0, ldflags: "-static -s", bin: fastent,     qemu: qemu-riscv64-static    }
           - { id: linux-powerpc64le,      zig: powerpc64le-linux-musl,    host: powerpc64le-unknown-linux-musl,    lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-ppc64le-static    }
           - { id: linux-powerpc,          zig: powerpc-linux-musleabihf,  host: powerpc-unknown-linux-musleabihf,  lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-ppc-static        }
           - { id: linux-s390x,            zig: s390x-linux-musl,          host: s390x-ibm-linux-musl,              lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-s390x-static      }
-          - { id: linux-loongarch64,      zig: loongarch64-linux-musl,    host: loongarch64-unknown-linux-musl,    lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-loongarch64-static }
+          - { id: linux-loongarch64,      zig: loongarch64-linux-musl,    host: loongarch64-unknown-linux-musl,    lto: 0, ldflags: "-static -s", bin: fastent,     qemu: qemu-loongarch64-static }
           - { id: linux-mips,             zig: mips-linux-musleabihf,     host: mips-unknown-linux-musleabihf,     lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-mips-static       }
           - { id: linux-mipsel,           zig: mipsel-linux-musleabihf,   host: mipsel-unknown-linux-musleabihf,   lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-mipsel-static     }
           - { id: linux-mips64,           zig: mips64-linux-muslabi64,    host: mips64-unknown-linux-musl,         lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-mips64-static     }
