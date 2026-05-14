@@ -227,3 +227,84 @@ jobs:
             dist/fastent-*-${{ matrix.target.id }}.tar.gz
             dist/fastent-*-${{ matrix.target.id }}.zip
           if-no-files-found: error
+
+  cross-binaries-gcc:
+    name: gcc-cross / ${{ matrix.target.id }}
+    needs: dist
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { id: linux-sparc64, apt: "gcc-sparc64-linux-gnu libc6-dev-sparc64-cross",                          cc: sparc64-linux-gnu-gcc,  host: sparc64-linux-gnu,  cflags: "",     lto: 1 }
+          - { id: linux-sparc,   apt: "gcc-sparc64-linux-gnu libc6-dev-sparc64-cross libc6-dev-sparc-sparc64-cross", cc: sparc64-linux-gnu-gcc, host: sparc-linux-gnu, cflags: "-m32", lto: 1 }
+          - { id: linux-m68k,    apt: "gcc-m68k-linux-gnu libc6-dev-m68k-cross",                                cc: m68k-linux-gnu-gcc,     host: m68k-linux-gnu,     cflags: "",     lto: 1 }
+          - { id: linux-hppa,    apt: "gcc-hppa-linux-gnu libc6-dev-hppa-cross",                                cc: hppa-linux-gnu-gcc,     host: hppa-linux-gnu,     cflags: "",     lto: 1 }
+          - { id: linux-arc,     apt: "gcc-arc-linux-gnu libc6-dev-arc-cross",                                  cc: arc-linux-gnu-gcc,      host: arc-linux-gnu,      cflags: "",     lto: 1 }
+          - { id: linux-sh4,     apt: "gcc-sh4-linux-gnu libc6-dev-sh4-cross",                                  cc: sh4-linux-gnu-gcc,      host: sh4-linux-gnu,      cflags: "",     lto: 1 }
+          - { id: linux-sh3,     apt: "gcc-sh4-linux-gnu libc6-dev-sh4-cross",                                  cc: sh4-linux-gnu-gcc,      host: sh3-linux-gnu,      cflags: "-m3", lto: 0 }
+    steps:
+      - name: install cross toolchain
+        env:
+          APT: ${{ matrix.target.apt }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends $APT
+
+      - name: download tarball
+        uses: actions/download-artifact@v6
+        with:
+          name: fastent-dist
+
+      - name: unpack
+        run: |
+          tar xzf fastent-*.tar.gz
+          ln -s fastent-*/ fastent-src
+
+      - name: configure + build
+        env:
+          CCBIN: ${{ matrix.target.cc }}
+          HOSTT: ${{ matrix.target.host }}
+          XCFLAGS: ${{ matrix.target.cflags }}
+          LTO: ${{ matrix.target.lto }}
+        run: |
+          mkdir build && cd build
+          cfg_extra=""
+          if [ "$LTO" = "1" ]; then cfg_extra="$cfg_extra --enable-lto"; fi
+          # Static glibc + cross-gcc: the -m32 flag for sparc has to
+          # propagate to CFLAGS and LDFLAGS both, so the linker picks
+          # the 32-bit multilib path.
+          ../fastent-src/configure \
+            CC="$CCBIN" \
+            CFLAGS="-O2 $XCFLAGS" \
+            LDFLAGS="-static -s $XCFLAGS" \
+            --host="$HOSTT" \
+            $cfg_extra
+          make -j"$(nproc)"
+
+      - name: report binary
+        env:
+          ID: ${{ matrix.target.id }}
+        run: |
+          cd build
+          file ./fastent
+          ls -la ./fastent
+
+      - name: package binary
+        env:
+          ID: ${{ matrix.target.id }}
+        run: |
+          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
+          name="fastent-${ver}-${ID}"
+          mkdir -p "dist/$name"
+          cp "build/fastent" "dist/$name/"
+          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
+             fastent-src/fastent.1 "dist/$name/"
+          (cd dist && tar -czf "${name}.tar.gz" "$name")
+
+      - name: upload binary artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: fastent-${{ matrix.target.id }}
+          path: dist/fastent-*-${{ matrix.target.id }}.tar.gz
+          if-no-files-found: error
