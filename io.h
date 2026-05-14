@@ -1,4 +1,4 @@
-/*  fastent  --  I/O layer: mmap fast path + read(2) fallback.
+/*  fastent: I/O layer: mmap fast path + read(2) fallback.
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 

@@ -1,4 +1,4 @@
-/*  fastent  --  variant dispatcher, reduction, and bit-mode analyser.
+/*  fastent: variant dispatcher, reduction, and bit-mode analyser.
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 

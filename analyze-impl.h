@@ -1,4 +1,4 @@
-/*  fastent  --  templated inner-loop body. Included from analyze-scalar.c,
+/*  fastent: templated inner-loop body. Included from analyze-scalar.c,
     analyze-ssse3.c, analyze-sse41.c, analyze-avx2.c.
 
     Each TU defines one of:

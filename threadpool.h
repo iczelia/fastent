@@ -1,4 +1,4 @@
-/*  fastent  --  tiny static-partition pthread pool.
+/*  fastent: tiny static-partition pthread pool.
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3 only (see COPYING).  */
 
 #ifndef FASTENT_THREADPOOL_H

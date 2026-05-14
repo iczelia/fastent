@@ -1,4 +1,4 @@
-/*  fastent  --  analysis state and per-variant entry points.
+/*  fastent: analysis state and per-variant entry points.
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 

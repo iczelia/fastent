@@ -1,4 +1,4 @@
-/*  fastent  --  scalar (baseline) analyse variant.
+/*  fastent: scalar (baseline) analyse variant.
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 

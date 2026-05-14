@@ -1,4 +1,4 @@
-/*  fastent  --  chi-square upper tail probability.
+/*  fastent: chi-square upper tail probability.
 
     Copyright (C) 2026 Kamila Szewczyk.
 

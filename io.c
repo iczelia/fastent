@@ -1,4 +1,4 @@
-/*  fastent  --  I/O layer.
+/*  fastent: I/O layer.
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 

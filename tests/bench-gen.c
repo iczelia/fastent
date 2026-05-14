@@ -1,4 +1,4 @@
-/*  fastent  --  benchmark dataset generator.
+/*  fastent: benchmark dataset generator.
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).
 

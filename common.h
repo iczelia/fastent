@@ -1,4 +1,4 @@
-/*  fastent  --  entropy and randomness tester for byte streams.
+/*  fastent: entropy and randomness tester for byte streams.
 
     Copyright (C) 2026 Kamila Szewczyk.
 

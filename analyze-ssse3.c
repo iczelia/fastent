@@ -1,4 +1,4 @@
-/*  fastent  --  SSSE3 analyse variant.
+/*  fastent: SSSE3 analyse variant.
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 

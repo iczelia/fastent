@@ -1,4 +1,4 @@
-/*  fastent  --  AVX-512 analyse variant.
+/*  fastent: AVX-512 analyse variant.
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#  fastent  --  self-contained sanity test suite.
+#  fastent: self-contained sanity test suite.
 #
 #  Generates a small set of deterministic fixtures and asserts that
 #  fastent reports the expected statistics on each.  Locale is pinned

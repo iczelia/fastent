@@ -1,4 +1,4 @@
-/*  fastent  --  high-throughput pseudorandom byte-stream entropy tester.
+/*  fastent: high-throughput pseudorandom byte-stream entropy tester.
 
     Copyright (C) 2026 Kamila Szewczyk.
 

@@ -1,4 +1,4 @@
-/*  fastent  --  threadpool implementation. Built only when FASTENT_THREADS is on.
+/*  fastent: threadpool implementation. Built only when FASTENT_THREADS is on.
     Static partition; workers wait on a condition variable for a generation
     counter to advance.  */
 
