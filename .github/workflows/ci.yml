@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [trunk]
+  pull_request:
+    branches: [trunk]
+  workflow_dispatch:
+
+jobs:
+  dist:
+    name: build dist tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install autotools + every dist-format compressor
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake autoconf-archive libtool-bin build-essential \
+            xz-utils bzip2 bzip3 zip
+
+      - name: bootstrap + configure + make dist
+        run: |
+          ./bootstrap
+          ./configure
+          make dist
+
+      - name: upload tarballs
+        uses: actions/upload-artifact@v4
+        with:
+          name: fastent-dist
+          path: |
+            fastent-*.tar.gz
+            fastent-*.tar.xz
+            fastent-*.tar.bz2
+            fastent-*.tar.bz3
+            fastent-*.zip
+          if-no-files-found: error
+
+  build-from-dist:
+    name: build + test (from dist tarball)
+    needs: dist
+    runs-on: ubuntu-latest
+    steps:
+      - name: install build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential python3
+
+      - name: download tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: fastent-dist
+
+      - name: unpack
+        run: |
+          tar xzf fastent-*.tar.gz
+          ln -s fastent-*/ fastent-src
+
+      - name: configure + build
+        working-directory: fastent-src
+        run: |
+          ./configure --enable-lto
+          make -j"$(nproc)"
+
+      - name: smoke the binary
+        working-directory: fastent-src
+        run: |
+          ./fastent --version
+          dd if=/dev/urandom bs=4096 count=4 status=none > /tmp/smoke.bin
+          ./fastent -t  /tmp/smoke.bin
+          ./fastent -tb /tmp/smoke.bin
+          ./fastent -tf /tmp/smoke.bin
+          ./fastent --json /tmp/smoke.bin | python3 -c \
+            "import json,sys; json.loads(sys.stdin.read())"
+
+      - name: make check
+        working-directory: fastent-src
+        run: make check

@@ -45,7 +45,8 @@ endif
 dist_man_MANS = fastent.1
 
 EXTRA_DIST = README.md NEWS ChangeLog AUTHORS COPYING bootstrap \
-             tests/run-tests.sh tests/bench.sh tests/bench-gen.c
+             tests/run-tests.sh tests/bench.sh tests/bench-gen.c \
+             doc/bench.png doc/bench.tsv
 
 check-local:
 	$(srcdir)/tests/run-tests.sh "$(builddir)/fastent$(EXEEXT)" \
