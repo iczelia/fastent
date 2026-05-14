@@ -26,7 +26,8 @@ void fastent_chunk_state_init(fastent_chunk_state * st) {
     For bit mode: state was populated by analyze_bits_scalar; bank[0][0]
     is the count of 0-bits, bank[0][1] the count of 1-bits.  */
 
-void fastent_finalize(fastent_chunk_state * st, int binary, fastent_result * out) {
+void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
+                      fastent_result * FASTENT_RESTRICT out) {
   memset(out, 0, sizeof(*out));
 
   /*  Add the wrap-around SCC term.  */

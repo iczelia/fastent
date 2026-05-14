@@ -271,10 +271,10 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
   /*  Histogram: 4 banks. We process 16 bytes per quarter-iter (4 quarters
       per stride = 64 bytes). Within a quarter, byte 0..3 hit banks 0..3.  */
-  u32 * b0 = st->bank[0];
-  u32 * b1 = st->bank[1];
-  u32 * b2 = st->bank[2];
-  u32 * b3 = st->bank[3];
+  u32 * FASTENT_RESTRICT b0 = st->bank[0];
+  u32 * FASTENT_RESTRICT b1 = st->bank[1];
+  u32 * FASTENT_RESTRICT b2 = st->bank[2];
+  u32 * FASTENT_RESTRICT b3 = st->bank[3];
 
   /*  MC Pi interleaved into the inner loop. Hoist state into locals so
       the compiler can keep them in registers.  */
@@ -543,10 +543,10 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   __m512i scc_acc64      = _mm512_setzero_si512(); /*  8 i64 lanes  */
   __m512i lhs_sad        = _mm512_setzero_si512();
 
-  u32 * b0 = st->bank[0];
-  u32 * b1 = st->bank[1];
-  u32 * b2 = st->bank[2];
-  u32 * b3 = st->bank[3];
+  u32 * FASTENT_RESTRICT b0 = st->bank[0];
+  u32 * FASTENT_RESTRICT b1 = st->bank[1];
+  u32 * FASTENT_RESTRICT b2 = st->bank[2];
+  u32 * FASTENT_RESTRICT b3 = st->bank[3];
 
   int mc_pos     = st->mc_pos;
   u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
@@ -794,10 +794,10 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   __m128i scc_acc64        = _mm_setzero_si128();  /*  2 i64 lanes  */
   __m128i lhs_sad          = _mm_setzero_si128();
 
-  u32 * b0 = st->bank[0];
-  u32 * b1 = st->bank[1];
-  u32 * b2 = st->bank[2];
-  u32 * b3 = st->bank[3];
+  u32 * FASTENT_RESTRICT b0 = st->bank[0];
+  u32 * FASTENT_RESTRICT b1 = st->bank[1];
+  u32 * FASTENT_RESTRICT b2 = st->bank[2];
+  u32 * FASTENT_RESTRICT b3 = st->bank[3];
 
   /*  MC Pi state hoisted into locals.  */
   int mc_pos     = st->mc_pos;
