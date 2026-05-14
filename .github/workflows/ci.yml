@@ -61,7 +61,7 @@ jobs:
             build-essential python3
 
       - name: download tarball
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: fastent-dist
 
