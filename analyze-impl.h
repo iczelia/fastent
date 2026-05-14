@@ -516,7 +516,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       __m128i d   = _mm_add_epi64(xs, ys);
       __m128i mask = _mm_cmpgt_epi64(mc_lim, d);
       int bits = _mm_movemask_pd(_mm_castsi128_pd(mask));
-      mi_a += (u64) __builtin_popcount(bits);
+      mi_a += (u64) FASTENT_POPCOUNT32(bits);
     }
     /*  Scalar tail (0 or 1 hexad).  */
     for (; k < n_hexads; k++) {
@@ -787,7 +787,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       __m256i d   = _mm256_add_epi64(xs, ys);
       __m256i mask = _mm256_cmpgt_epi64(mc_lim256, d);
       int bits = _mm256_movemask_pd(_mm256_castsi256_pd(mask));
-      mi_a += (u64) __builtin_popcount(bits);
+      mi_a += (u64) FASTENT_POPCOUNT32(bits);
     }
     /*  128-bit residual: 2 hexads per iter.  */
     for (; k + 2 <= n_hexads; k += 2) {
@@ -799,7 +799,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       __m128i d   = _mm_add_epi64(xs, ys);
       __m128i mask = _mm_cmpgt_epi64(mc_lim, d);
       int bits = _mm_movemask_pd(_mm_castsi128_pd(mask));
-      mi_b += (u64) __builtin_popcount(bits);
+      mi_b += (u64) FASTENT_POPCOUNT32(bits);
     }
     /*  Scalar tail (0 or 1 hexad).  */
     for (; k < n_hexads; k++) {
@@ -1599,7 +1599,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
       __m256i d   = _mm256_add_epi64(xs, ys);
       __m256i mask = _mm256_cmpgt_epi64(mc_lim256, d);
       int bits = _mm256_movemask_pd(_mm256_castsi256_pd(mask));
-      mi_simd += (u64) __builtin_popcount(bits);
+      mi_simd += (u64) FASTENT_POPCOUNT32(bits);
     }
 #endif
     /*  128-bit residual: 2 hexads per iter. On AVX-2 path requires
@@ -1616,7 +1616,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
       __m128i d   = _mm_add_epi64(xs, ys);
       __m128i mask = _mm_cmpgt_epi64(mc_lim, d);
       int bits = _mm_movemask_pd(_mm_castsi128_pd(mask));
-      mi_simd += (u64) __builtin_popcount(bits);
+      mi_simd += (u64) FASTENT_POPCOUNT32(bits);
     }
 #elif !defined(FASTENT_VARIANT_NEON)
     (void) mc_shuf; (void) mc_lim;
@@ -1687,10 +1687,10 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   {
     u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
                 : buf[body_end];
-    unsigned ones_b = (unsigned) __builtin_popcount(b);
+    unsigned ones_b = (unsigned) FASTENT_POPCOUNT32(b);
     st->bit_hist[1] += ones_b;
     st->bit_hist[0] += 8u - ones_b;
-    unsigned within_b = (unsigned) __builtin_popcount(b & (b >> 1));
+    unsigned within_b = (unsigned) FASTENT_POPCOUNT32(b & (b >> 1));
     st->cross_product += (i64) within_b;
     st->carry_byte = (u8)(b & 1u);
     st->last_byte  = (u8)(b & 1u);
@@ -1746,10 +1746,10 @@ FASTENT_FN(bits_scalar_body_impl)(fastent_chunk_state * st,
                                   sz len, int fold) {
   for (sz i = 0; i < len; i++) {
     const u8 byte = fold ? FASTENT_FN(fold_byte_inline)(buf[i]) : buf[i];
-    const unsigned ones_in_byte = (unsigned) __builtin_popcount(byte);
+    const unsigned ones_in_byte = (unsigned) FASTENT_POPCOUNT32(byte);
     st->bit_hist[1] += ones_in_byte;
     st->bit_hist[0] += 8u - ones_in_byte;
-    const unsigned within = (unsigned) __builtin_popcount(byte & (byte >> 1));
+    const unsigned within = (unsigned) FASTENT_POPCOUNT32(byte & (byte >> 1));
     st->cross_product += (i64) within;
     if (st->have_carry) {
       const unsigned prev_lsb = (unsigned)(st->carry_byte & 1u);

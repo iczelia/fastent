@@ -81,6 +81,21 @@ typedef double   f64;
   #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #endif
 
+/*  popcount: GCC/Clang lower to POPCNT; TCC and friends get a portable
+    bit-twiddle fallback.  __TINYC__ also defines __GNUC__, hence the
+    explicit exclusion.  */
+#if defined(__GNUC__) && !defined(__TINYC__)
+  #define FASTENT_POPCOUNT32(x) ((unsigned) __builtin_popcount((unsigned)(x)))
+#else
+  static unsigned fastent_popcount32_(unsigned x) {
+    x = x - ((x >> 1) & 0x55555555u);
+    x = (x & 0x33333333u) + ((x >> 2) & 0x33333333u);
+    x = (x + (x >> 4)) & 0x0f0f0f0fu;
+    return (x * 0x01010101u) >> 24;
+  }
+  #define FASTENT_POPCOUNT32(x) fastent_popcount32_((unsigned)(x))
+#endif
+
 /*  Tight int-counter for-loop macros, C89-compliant.  */
 #define Fi(n, body)        { int i; for (i = 0; i < (n); i++) { body; } }
 #define Fj(n, body)        { int j; for (j = 0; j < (n); j++) { body; } }
