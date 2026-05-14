@@ -470,6 +470,18 @@ int main(int argc, char ** argv) {
   if (!o.path) fastent_win32_set_stdin_binary();
 #endif
 
+#ifdef HAVE_PLEDGE
+  /*  Drop to the minimal set of OpenBSD promises: rpath is needed
+      only to open the positional file argument; without one we read
+      from the already-open stdin and can pledge straight to stdio.
+      The second, tighter pledge after fastent_src_open() drops rpath
+      so the analysis and reporting phases run with stdio alone.  */
+  if (pledge(o.path ? "stdio rpath" : "stdio", NULL) == -1) {
+    perror("pledge");
+    return 2;
+  }
+#endif
+
 #ifdef FASTENT_HAVE_PTHREAD
   if (o.threads < 0) {
     long n = sysconf(_SC_NPROCESSORS_ONLN);
@@ -484,6 +496,13 @@ int main(int argc, char ** argv) {
     else        perror("stdin");
     return 2;
   }
+
+#ifdef HAVE_PLEDGE
+  if (o.path && pledge("stdio", NULL) == -1) {
+    perror("pledge");
+    return 2;
+  }
+#endif
 
   /*  Pick best variant for each kernel: byte-mode analyse, bit-mode
       analyse, and the fused fold + analyse pair used when -f is set.

@@ -26,7 +26,7 @@ AC_DEFINE([FASTENT_MINOR], [fastent_version_minor], [Minor version number])
 AC_C_RESTRICT
 AC_C_INLINE
 AC_CHECK_HEADERS([sys/mman.h sys/stat.h fcntl.h unistd.h immintrin.h sys/auxv.h])
-AC_CHECK_FUNCS([mmap madvise posix_fadvise posix_memalign getauxval])
+AC_CHECK_FUNCS([mmap madvise posix_fadvise posix_memalign getauxval pledge])
 
 # libm: log10 / sqrt / pow / fabs / lgamma all live here.
 AC_SEARCH_LIBS([log10], [m])
