@@ -247,7 +247,7 @@ jobs:
           # package exists, and T-Head's GitHub toolchain tarball is
           # ~100 MB per CI run.
           - { id: linux-sparc64, apt: "gcc-sparc64-linux-gnu libc6-dev-sparc64-cross",                                                cc: "sparc64-linux-gnu-gcc",      host: sparc64-linux-gnu, lto: 1 }
-          - { id: linux-sparc,   apt: "gcc-sparc64-linux-gnu libc6-dev-sparc64-cross libc6-dev-sparc-sparc64-cross",                  cc: "sparc64-linux-gnu-gcc -m32", host: sparc-linux-gnu,   lto: 1 }
+          - { id: linux-sparc,   apt: "gcc-sparc64-linux-gnu gcc-multilib-sparc64-linux-gnu",                                          cc: "sparc64-linux-gnu-gcc -m32", host: sparc-linux-gnu,   lto: 1 }
           - { id: linux-m68k,    apt: "gcc-m68k-linux-gnu libc6-dev-m68k-cross",                                                      cc: "m68k-linux-gnu-gcc",         host: m68k-linux-gnu,    lto: 1 }
           - { id: linux-hppa,    apt: "gcc-hppa-linux-gnu libc6-dev-hppa-cross",                                                      cc: "hppa-linux-gnu-gcc",         host: hppa-linux-gnu,    lto: 1 }
           - { id: linux-arc,     apt: "gcc-arc-linux-gnu libc6-dev-arc-cross",                                                        cc: "arc-linux-gnu-gcc",          host: arc-linux-gnu,     lto: 1 }
