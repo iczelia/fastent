@@ -45,8 +45,7 @@ static inline int fastent_is_displayable(unsigned c) {
   return (c >= 0x21u && c <= 0x7Eu) || c >= 0xA1u;
 }
 
-/*  ----------------------------------------------------------------------
-    Options.  */
+/*  Options.  */
 
 typedef struct {
   int binary;         /*  -b  */
@@ -60,8 +59,7 @@ typedef struct {
   const char * path;  /*  positional (NULL = stdin)  */
 } fastent_options;
 
-/*  ----------------------------------------------------------------------
-    Help / version.  */
+/*  Help / version.  */
 
 static void print_version(void) {
   printf("fastent %s\n", FASTENT_VERSION_STRING);
@@ -89,8 +87,7 @@ static void print_help(void) {
   printf("           -h,  --help               Print this message\n");
 }
 
-/*  ----------------------------------------------------------------------
-    Argument parsing.  */
+/*  Argument parsing.  */
 
 static int parse_int(const char * s, int * out) {
   if (!s || !*s) return -1;
@@ -190,8 +187,7 @@ static int parse_args(int argc, char ** argv, fastent_options * o) {
   return 0;
 }
 
-/*  ----------------------------------------------------------------------
-    Analysis drivers.  The fused fold + analyse entry points
+/*  Analysis drivers.  The fused fold + analyse entry points
     (analyze_fold_<variant> / analyze_bits_fold_<variant>) case-fold
     each loaded SIMD vector in-register, so the threaded mmap path no
     longer needs a per-worker 32 KiB staging buffer or a separate
@@ -313,8 +309,7 @@ static void run_stream(fastent_chunk_state * st, const fastent_options * o,
   }
 }
 
-/*  ----------------------------------------------------------------------
-    Output formatters.  */
+/*  Output formatters.  */
 
 static void print_counts_default(const fastent_result * r, int binary) {
   const int bins = binary ? 2 : 256;
@@ -452,8 +447,7 @@ static void print_json(const fastent_result * r, const fastent_options * o) {
   printf("\n}\n");
 }
 
-/*  ----------------------------------------------------------------------
-    Main entry.  */
+/*  Main entry.  */
 
 int main(int argc, char ** argv) {
   fastent_options o;

@@ -24,7 +24,6 @@ if [ ! -x "${FASTENT}" ]; then
   exit 2
 fi
 
-#  ----- fixture generators (idempotent) -----------------------------
 gen_zero() {
   [ -f "${FIX}/$1" ] || dd if=/dev/zero bs=1 count="$2" of="${FIX}/$1" status=none
 }
@@ -96,31 +95,26 @@ check() {
   fi
 }
 
-#  ---- assert helpers ----------------------------------------------
 assert_grep() {  #  assert_grep <pattern> <text>
   local pat="$1"; local txt="$2"
   printf '%s\n' "${txt}" | grep -qE -- "${pat}"
 }
 
-#  ---- 1: all-zeros: entropy ~0, only value 0 occurs ----------------
 check "all-zeros: entropy = 0" bash -c '
   out=$('"${FASTENT}"' "'"${FIX}"'/all-zeros.bin")
   grep -qE "Entropy = 0\.000000 bits per byte\." <<< "$out"
 '
 
-#  ---- 2: all-ones: only value 255 occurs, entropy ~0 ---------------
 check "all-ones: entropy = 0" bash -c '
   out=$('"${FASTENT}"' "'"${FIX}"'/all-ones.bin")
   grep -qE "Entropy = 0\.000000 bits per byte\." <<< "$out"
 '
 
-#  ---- 3: uniform: each byte value 4096x => entropy = 8.0 -----------
 check "uniform: entropy = 8.000000" bash -c '
   out=$('"${FASTENT}"' "'"${FIX}"'/uniform.bin")
   grep -qE "Entropy = 8\.000000 bits per byte\." <<< "$out"
 '
 
-#  ---- 4: terse mode has exactly two summary lines ------------------
 check "terse mode: well-formed" bash -c '
   out=$('"${FASTENT}"' -t "'"${FIX}"'/lcg.bin")
   [ "$(printf "%s\n" "$out" | wc -l)" -eq 2 ] &&
@@ -128,46 +122,39 @@ check "terse mode: well-formed" bash -c '
     grep -q "^1,1048576," <<< "$out"
 '
 
-#  ---- 5: --json mode emits a valid JSON object ---------------------
 check "JSON mode: parseable" bash -c '
   out=$('"${FASTENT}"' --json "'"${FIX}"'/lcg.bin")
   python3 -c "import json,sys; json.loads(sys.stdin.read())" <<< "$out"
 '
 
-#  ---- 6: -c with default mode prints the occurrences table --------
 check "counts mode: histogram present" bash -c '
   out=$('"${FASTENT}"' -c "'"${FIX}"'/uniform.bin")
   grep -q "^Value Char Occurrences Fraction$" <<< "$out" &&
     grep -qE "^Total:.*1048576" <<< "$out"
 '
 
-#  ---- 7: bit mode entropy on uniform 4096x bytes ~ 1.0 -------------
 check "bit mode: entropy ~1.0 on uniform" bash -c '
   out=$('"${FASTENT}"' -b "'"${FIX}"'/uniform.bin")
   grep -qE "Entropy = 1\.000000 bits per bit\." <<< "$out"
 '
 
-#  ---- 8: stdin path works the same as file path --------------------
 check "stdin matches file path" bash -c '
   a=$('"${FASTENT}"' -t "'"${FIX}"'/lcg.bin")
   b=$('"${FASTENT}"' -t < "'"${FIX}"'/lcg.bin")
   [ "$a" = "$b" ]
 '
 
-#  ---- 9: fold flag preserves total byte count ----------------------
 check "fold flag: total preserved" bash -c '
   out=$('"${FASTENT}"' -tf "'"${FIX}"'/lcg.bin")
   grep -q "^1,1048576," <<< "$out"
 '
 
-#  ---- 10: --no-mmap path agrees with mmap path ---------------------
 check "no-mmap path agrees" bash -c '
   a=$('"${FASTENT}"' -t "'"${FIX}"'/lcg.bin")
   b=$('"${FASTENT}"' -t --no-mmap "'"${FIX}"'/lcg.bin")
   [ "$a" = "$b" ]
 '
 
-#  ---- 11: -j N path agrees with -j 1 path --------------------------
 if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
   check "-j 4 agrees with -j 1" bash -c '
     a=$('"${FASTENT}"' -t -j 1 "'"${FIX}"'/lcg.bin")
@@ -176,13 +163,11 @@ if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
   '
 fi
 
-#  ---- 12: empty input does not crash -------------------------------
 check "empty input: clean exit" bash -c '
   : > "'"${FIX}"'/empty.bin"
   '"${FASTENT}"' -t "'"${FIX}"'/empty.bin" > /dev/null
 '
 
-#  ---- 13: --version exits 0 and mentions fastent -------------------
 check "version banner" bash -c '
   out=$('"${FASTENT}"' --version)
   grep -q "^fastent " <<< "$out"

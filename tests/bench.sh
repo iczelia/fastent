@@ -101,7 +101,6 @@ printf '  datasets  : %s\n' "$DATASETS"
 printf '  cache     : %s\n' "$CACHE_DIR"
 printf '\n'
 
-# ---- Generate (or reuse) the datasets ----
 expected_size=$(( SIZE_MB * 1024 * 1024 ))
 for ds in $DATASETS; do
   path="$CACHE_DIR/${ds}-${SIZE_MB}M.bin"
@@ -116,7 +115,6 @@ for ds in $DATASETS; do
 done
 printf '\n'
 
-# ---- Time one (dataset, mode, jobs) cell. Prints RUNS elapsed seconds. ----
 modeflags_for() {
   case "$1" in
     byte)       printf '%s' ''        ;;
@@ -182,7 +180,6 @@ run_cell_ent() {
   done
 }
 
-# ---- Reduce: stdin = one elapsed-seconds float per line. ----
 reduce() {
   awk -v size_mb="$SIZE_MB" '
     {

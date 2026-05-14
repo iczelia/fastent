@@ -62,8 +62,7 @@
 #include "common.h"
 #include "chisq.h"
 
-/*  --------------------------------------------------------------------
-    Double-double (DD) primitives.  hi + lo with |lo| <= ulp(hi)/2.
+/*  Double-double (DD) primitives.  hi + lo with |lo| <= ulp(hi)/2.
     All ops use only basic arithmetic + fma; portable to any IEEE 754
     host with a correctly-rounded fma (C99 mandates it).  */
 
@@ -190,8 +189,7 @@ static dd_t dd_exp_d(f64 x) {
   return r;
 }
 
-/*  --------------------------------------------------------------------
-    Q(0.5, z) -- bit-mode tail.  Computed as the regularised
+/*  Q(0.5, z) -- bit-mode tail.  Computed as the regularised
     incomplete gamma via series for z < 1.5 and Lentz CF for
     z >= 1.5.  No call to libm erfc.  */
 
@@ -263,8 +261,7 @@ static dd_t Q_05_dd(f64 z) {
   return dd_mul(pref, h);
 }
 
-/*  --------------------------------------------------------------------
-    Q(127.5, z) -- byte-mode tail via half-integer closed form.
+/*  Q(127.5, z) -- byte-mode tail via half-integer closed form.
 
       Q(127.5, z) = Q(0.5, z) + 2 * e^-z * U(z)
       U(z)        = sum_{k=0}^{126} T_k
@@ -311,8 +308,7 @@ static dd_t Q_1275_dd(f64 z) {
   return dd_add(S, q05);
 }
 
-/*  --------------------------------------------------------------------
-    Public entry point.  */
+/*  Public entry point.  */
 
 double fastent_chisq_tail(double chisq, int binary) {
   if (chisq <= 0.0)     return 1.0;

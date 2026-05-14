@@ -14,15 +14,13 @@ static inline f64 fastent_log2(f64 x) {
   return FASTENT_LOG2OF10 * log10(x);
 }
 
-/*  ----------------------------------------------------------------------
-    State init / merge.  */
+/*  State init / merge.  */
 
 void fastent_chunk_state_init(fastent_chunk_state * st) {
   memset(st, 0, sizeof(*st));
 }
 
-/*  ----------------------------------------------------------------------
-    Final reduction: turn fastent_chunk_state into fastent_result.
+/*  Final reduction: turn fastent_chunk_state into fastent_result.
 
     For byte mode: histogram bins are 0..255.
     For bit mode: state was populated by analyze_bits_scalar; bank[0][0]
@@ -81,8 +79,7 @@ void fastent_finalize(fastent_chunk_state * st, int binary, fastent_result * out
   out->monte_pi = 4.0 * ((f64) st->mc_inside / (f64) st->mc_count);
 }
 
-/*  ----------------------------------------------------------------------
-    Runtime variant pick.
+/*  Runtime variant pick.
 
     Compile-time HAVE_AVX2/HAVE_SSE41/HAVE_SSSE3 means the variant TU was
     built; we still confirm at runtime via __builtin_cpu_supports so a

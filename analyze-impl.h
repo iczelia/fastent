@@ -124,8 +124,7 @@
 #define FASTENT_CAT(a, b)  FASTENT_CAT2(a, b)
 #define FASTENT_FN(name)   FASTENT_CAT(name, FASTENT_VAR_SUFFIX)
 
-/*  ----------------------------------------------------------------------
-    In-register case fold helpers. These produce a byte (or vector of
+/*  In-register case fold helpers. These produce a byte (or vector of
     bytes) that has ASCII A-Z and Latin-1 0xC0-0xDE (excluding 0xD7)
     mapped to lower-case; every other byte passes through unchanged.
     Both helpers are private to this TU and used by the fused
@@ -169,8 +168,7 @@ FASTENT_FN(fold_vec_inline)(FASTENT_SIMD_VEC c) {
 }
 #endif
 
-/*  ----------------------------------------------------------------------
-    Scalar single-byte update: histogram + SCC + MC Pi + first/last
+/*  Scalar single-byte update: histogram + SCC + MC Pi + first/last
     tracking. Used by head/tail of all variants and entire body of scalar
     variant. MC is folded in so we don't need a second pass over the
     buffer.  */
@@ -203,8 +201,7 @@ static inline void FASTENT_FN(consume_byte)(fastent_chunk_state * st, u8 b,
   }
 }
 
-/*  ----------------------------------------------------------------------
-    Scalar histogram + SCC body. Used as fallback and on chunk edges.
+/*  Scalar histogram + SCC body. Used as fallback and on chunk edges.
     Templated on `fold`: when set, each byte is folded in-register
     before being fed to consume_byte. `fold` is a compile-time constant
     at every call site so the branch dead-eliminates.  */
@@ -227,8 +224,7 @@ static inline sz FASTENT_FN(scalar_body)(fastent_chunk_state * st,
   return FASTENT_FN(scalar_body_impl)(st, buf, len, start_bank, 0);
 }
 
-/*  ----------------------------------------------------------------------
-    SIMD body: histogram (4 banks rotating by within-iter position mod 4)
+/*  SIMD body: histogram (4 banks rotating by within-iter position mod 4)
     + SCC pmaddubs sign-corrected accumulator. Each variant has a
     slightly different version below.  */
 
@@ -512,8 +508,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
 #elif defined(FASTENT_VARIANT_AVX512)
 
-/*  ----------------------------------------------------------------------
-    AVX-512 SIMD body.
+/*  AVX-512 SIMD body.
 
     Stride = 128 bytes (two 64-byte vectors).  The SCC pmaddubs-like
     path is the same as AVX2, just widened to 512-bit lanes via
@@ -988,8 +983,7 @@ static inline sz FASTENT_FN(simd_body_fold)(fastent_chunk_state * st,
 }
 #endif
 
-/*  ----------------------------------------------------------------------
-    Public entry point.  */
+/*  Public entry point.  */
 
 static __attribute__((always_inline)) inline void
 FASTENT_FN(analyze_impl)(fastent_chunk_state * st,
@@ -1022,8 +1016,7 @@ void FASTENT_FN(analyze_fold)(fastent_chunk_state * st, const u8 * FASTENT_RESTR
   FASTENT_FN(analyze_impl)(st, buf, len, 1);
 }
 
-/*  ----------------------------------------------------------------------
-    Case fold: ASCII A-Z and Latin-1 0xC0-0xDE (excluding 0xD7) folded
+/*  Case fold: ASCII A-Z and Latin-1 0xC0-0xDE (excluding 0xD7) folded
     to lower-case in place. Range tests use saturating unsigned subtract
     so we stay on SSSE3-grade integer ops only.  */
 
@@ -1075,8 +1068,7 @@ void FASTENT_FN(fold)(u8 * buf, sz len) {
   }
 }
 
-/*  ----------------------------------------------------------------------
-    Bit-mode analyser.
+/*  Bit-mode analyser.
 
     For an input byte stream b[0..N-1] the bit stream interleaves bits
     MSB-first (b[i] bit 7, bit 6, ..., bit 0, b[i+1] bit 7, ...). We
