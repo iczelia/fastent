@@ -3,12 +3,15 @@ ACLOCAL_AMFLAGS = -I m4
 AM_CFLAGS = -std=c99 -Wall -Wextra
 
 bin_PROGRAMS  = fastent
-noinst_HEADERS = analyze.h analyze-impl.h chisq.h io.h \
-                 threadpool.h common.h
+noinst_HEADERS = analyze.h analyze-impl.h chisq.h fastent-io.h \
+                 threadpool.h common.h fastent-win32.h
 
-fastent_SOURCES = fastent.c analyze.c analyze-scalar.c chisq.c io.c
+fastent_SOURCES = fastent.c analyze.c analyze-scalar.c chisq.c fastent-io.c
 if FASTENT_THREADS
 fastent_SOURCES += threadpool.c
+endif
+if FASTENT_IS_WINDOWS
+fastent_SOURCES += fastent-win32.c
 endif
 fastent_LDADD =
 
