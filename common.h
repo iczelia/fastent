@@ -82,12 +82,12 @@ typedef double   f64;
 #endif
 
 /*  Tight int-counter for-loop macros, C89-compliant.  */
-#define Fi(n, body)        do { int i; for (i = 0; i < (n); i++) { body; } } while (0)
-#define Fj(n, body)        do { int j; for (j = 0; j < (n); j++) { body; } } while (0)
-#define Fk(n, body)        do { int k; for (k = 0; k < (n); k++) { body; } } while (0)
-#define Fi0(n, s, body)    do { int i; for (i = (s); i < (n); i++) { body; } } while (0)
-#define Fj0(n, s, body)    do { int j; for (j = (s); j < (n); j++) { body; } } while (0)
-#define Fk0(n, s, body)    do { int k; for (k = (s); k < (n); k++) { body; } } while (0)
+#define Fi(n, body)        { int i; for (i = 0; i < (n); i++) { body; } }
+#define Fj(n, body)        { int j; for (j = 0; j < (n); j++) { body; } }
+#define Fk(n, body)        { int k; for (k = 0; k < (n); k++) { body; } }
+#define Fi0(n, s, body)    { int i; for (i = (s); i < (n); i++) { body; } }
+#define Fj0(n, s, body)    { int j; for (j = (s); j < (n); j++) { body; } }
+#define Fk0(n, s, body)    { int k; for (k = (s); k < (n); k++) { body; } }
 
 #ifndef FASTENT_MAJOR
   #define FASTENT_MAJOR 1
