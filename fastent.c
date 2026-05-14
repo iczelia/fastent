@@ -24,12 +24,11 @@
 #include <unistd.h>  /*  sysconf  */
 
 #ifdef _WIN32
-  #include <fcntl.h>
-  #include <io.h>
+  #include "fastent-win32.h"
 #endif
 
 #include "analyze.h"
-#include "io.h"
+#include "fastent-io.h"
 #ifdef FASTENT_HAVE_PTHREAD
   #include "threadpool.h"
 #endif
@@ -450,12 +449,25 @@ static void print_json(const fastent_result * r, const fastent_options * o) {
 /*  Main entry.  */
 
 int main(int argc, char ** argv) {
+#ifdef _WIN32
+  /*  Before any argv use, replace MSVCRT's CP_ACP-narrowed argv with
+      a fresh UTF-8 argv reconstructed from GetCommandLineW(); also
+      set the console to CP_UTF8 so the bytes we write via printf and
+      fprintf render correctly on the console host.  See
+      fastent-win32.c for the motivation.  */
+  fastent_win32_init_console();
+  if (fastent_win32_argv_utf8(&argc, &argv) != 0) {
+    fprintf(stderr, "fastent: failed to decode Windows command line\n");
+    return 2;
+  }
+#endif
+
   fastent_options o;
   int rc = parse_args(argc, argv, &o);
   if (rc != 0) return rc < 0 ? 1 : rc;
 
 #ifdef _WIN32
-  if (!o.path) _setmode(_fileno(stdin), _O_BINARY);
+  if (!o.path) fastent_win32_set_stdin_binary();
 #endif
 
 #ifdef FASTENT_HAVE_PTHREAD
