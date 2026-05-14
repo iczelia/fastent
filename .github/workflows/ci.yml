@@ -236,13 +236,22 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - { id: linux-sparc64, apt: "gcc-sparc64-linux-gnu libc6-dev-sparc64-cross",                          cc: sparc64-linux-gnu-gcc,  host: sparc64-linux-gnu,  cflags: "",     lto: 1 }
-          - { id: linux-sparc,   apt: "gcc-sparc64-linux-gnu libc6-dev-sparc64-cross libc6-dev-sparc-sparc64-cross", cc: sparc64-linux-gnu-gcc, host: sparc-linux-gnu, cflags: "-m32", lto: 1 }
-          - { id: linux-m68k,    apt: "gcc-m68k-linux-gnu libc6-dev-m68k-cross",                                cc: m68k-linux-gnu-gcc,     host: m68k-linux-gnu,     cflags: "",     lto: 1 }
-          - { id: linux-hppa,    apt: "gcc-hppa-linux-gnu libc6-dev-hppa-cross",                                cc: hppa-linux-gnu-gcc,     host: hppa-linux-gnu,     cflags: "",     lto: 1 }
-          - { id: linux-arc,     apt: "gcc-arc-linux-gnu libc6-dev-arc-cross",                                  cc: arc-linux-gnu-gcc,      host: arc-linux-gnu,      cflags: "",     lto: 1 }
-          - { id: linux-sh4,     apt: "gcc-sh4-linux-gnu libc6-dev-sh4-cross",                                  cc: sh4-linux-gnu-gcc,      host: sh4-linux-gnu,      cflags: "",     lto: 1 }
-          - { id: linux-sh3,     apt: "gcc-sh4-linux-gnu libc6-dev-sh4-cross",                                  cc: sh4-linux-gnu-gcc,      host: sh3-linux-gnu,      cflags: "-m3", lto: 0 }
+          # The 32-bit SPARC lane shares the sparc64 gcc package and
+          # uses -m32 (sparcv8plus ABI).  -m32 lives in the CC string,
+          # not CFLAGS, so every autoconf probe sees it, including
+          # the default-output probe that doesn't honour CFLAGS.
+          # SH3 is intentionally absent: Debian's libc6-dev-sh4-cross
+          # only ships sh4 multilib (FPU-ABI crt1.o, libc.a, libm.a);
+          # the link step has no sh3 startup tree to point at.
+          # C-SKY is also intentionally absent: no Debian/Ubuntu cross
+          # package exists, and T-Head's GitHub toolchain tarball is
+          # ~100 MB per CI run.
+          - { id: linux-sparc64, apt: "gcc-sparc64-linux-gnu libc6-dev-sparc64-cross",                                                cc: "sparc64-linux-gnu-gcc",      host: sparc64-linux-gnu, lto: 1 }
+          - { id: linux-sparc,   apt: "gcc-sparc64-linux-gnu libc6-dev-sparc64-cross libc6-dev-sparc-sparc64-cross",                  cc: "sparc64-linux-gnu-gcc -m32", host: sparc-linux-gnu,   lto: 1 }
+          - { id: linux-m68k,    apt: "gcc-m68k-linux-gnu libc6-dev-m68k-cross",                                                      cc: "m68k-linux-gnu-gcc",         host: m68k-linux-gnu,    lto: 1 }
+          - { id: linux-hppa,    apt: "gcc-hppa-linux-gnu libc6-dev-hppa-cross",                                                      cc: "hppa-linux-gnu-gcc",         host: hppa-linux-gnu,    lto: 1 }
+          - { id: linux-arc,     apt: "gcc-arc-linux-gnu libc6-dev-arc-cross",                                                        cc: "arc-linux-gnu-gcc",          host: arc-linux-gnu,     lto: 1 }
+          - { id: linux-sh4,     apt: "gcc-sh4-linux-gnu libc6-dev-sh4-cross",                                                        cc: "sh4-linux-gnu-gcc",          host: sh4-linux-gnu,     lto: 1 }
     steps:
       - name: install cross toolchain
         env:
@@ -265,19 +274,14 @@ jobs:
         env:
           CCBIN: ${{ matrix.target.cc }}
           HOSTT: ${{ matrix.target.host }}
-          XCFLAGS: ${{ matrix.target.cflags }}
           LTO: ${{ matrix.target.lto }}
         run: |
           mkdir build && cd build
           cfg_extra=""
           if [ "$LTO" = "1" ]; then cfg_extra="$cfg_extra --enable-lto"; fi
-          # Static glibc + cross-gcc: the -m32 flag for sparc has to
-          # propagate to CFLAGS and LDFLAGS both, so the linker picks
-          # the 32-bit multilib path.
           ../fastent-src/configure \
             CC="$CCBIN" \
-            CFLAGS="-O2 $XCFLAGS" \
-            LDFLAGS="-static -s $XCFLAGS" \
+            LDFLAGS="-static -s" \
             --host="$HOSTT" \
             $cfg_extra
           make -j"$(nproc)"
