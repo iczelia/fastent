@@ -246,6 +246,10 @@ jobs:
           # C-SKY is also intentionally absent: no Debian/Ubuntu cross
           # package exists, and T-Head's GitHub toolchain tarball is
           # ~100 MB per CI run.
+          # Alpha's libc package is libc6.1-dev (not libc6-dev): Alpha
+          # glibc uses libc.so.6.1 as the SONAME, a leftover of DEC's
+          # original ABI on Tru64, and Debian's package name follows.
+          - { id: linux-alpha,   apt: "gcc-alpha-linux-gnu libc6.1-dev-alpha-cross",                                                  cc: "alpha-linux-gnu-gcc",        host: alpha-linux-gnu,   lto: 1 }
           - { id: linux-sparc64, apt: "gcc-sparc64-linux-gnu libc6-dev-sparc64-cross",                                                cc: "sparc64-linux-gnu-gcc",      host: sparc64-linux-gnu, lto: 1 }
           - { id: linux-sparc,   apt: "gcc-sparc64-linux-gnu gcc-multilib-sparc64-linux-gnu",                                          cc: "sparc64-linux-gnu-gcc -m32", host: sparc-linux-gnu,   lto: 1 }
           - { id: linux-m68k,    apt: "gcc-m68k-linux-gnu libc6-dev-m68k-cross",                                                      cc: "m68k-linux-gnu-gcc",         host: m68k-linux-gnu,    lto: 1 }
