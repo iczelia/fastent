@@ -14,12 +14,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: install autotools + every dist-format compressor
+      - name: install build deps + compressors
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            autoconf automake autoconf-archive libtool-bin build-essential \
+            autoconf-archive libtool-bin build-essential pkg-config \
             xz-utils bzip2 bzip3 zip
+
+      - name: build + install autoconf 2.73 and automake 1.18.1 from source
+        run: |
+          cd /tmp
+          curl -fsSL https://ftp.gnu.org/gnu/autoconf/autoconf-2.73.tar.gz | tar xz
+          cd autoconf-2.73 && ./configure --prefix=/usr/local && make && sudo make install
+          cd /tmp
+          curl -fsSL https://ftp.gnu.org/gnu/automake/automake-1.18.1.tar.gz | tar xz
+          cd automake-1.18.1 && ./configure --prefix=/usr/local && make && sudo make install
+          hash -r
 
       - name: bootstrap + configure + make dist
         run: |

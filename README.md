@@ -119,6 +119,9 @@ Single-threaded build (drops the pthread dependency):
 $ ./configure --disable-threads
 ```
 
+Host-specific tuning and LTO improve performance by another 5-25% on top
+of the baseline presented in the benchmark section.
+
 ## Testing
 
 `make check` runs a self-contained sanity suite over deterministic
