@@ -101,6 +101,30 @@ static int fastent_have_avx512_runtime(void) {
 }
 #endif
 
+/*  NEON runtime probe.
+    AArch64: NEON is mandatory per the procedure call standard, so the
+             probe is a constant 1.
+    ARMv7-A: NEON is optional.  If <sys/auxv.h>/getauxval are available
+             (glibc, musl, bionic) we read AT_HWCAP and test HWCAP_NEON.
+             Otherwise we trust the user's build flag and return 1.  */
+#ifdef HAVE_NEON
+  #if defined(__aarch64__)
+    static inline int fastent_have_neon_runtime(void) { return 1; }
+  #elif defined(__arm__) && defined(HAVE_SYS_AUXV_H) && defined(HAVE_GETAUXVAL)
+    #include <sys/auxv.h>
+    #ifndef HWCAP_NEON
+      /*  Linux ARM hwcap bit, per asm/hwcap.h.  Defined inline so we
+          don't depend on a kernel-uapi header that may be absent.  */
+      #define HWCAP_NEON (1u << 12)
+    #endif
+    static int fastent_have_neon_runtime(void) {
+      return (getauxval(AT_HWCAP) & HWCAP_NEON) != 0;
+    }
+  #else
+    static inline int fastent_have_neon_runtime(void) { return 1; }
+  #endif
+#endif
+
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
   fastent_variant v = FASTENT_VAR_SCALAR;
   fastent_analyze_fn fn = analyze_scalar;
@@ -121,10 +145,8 @@ fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
   #ifdef HAVE_AVX512
     if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_avx512; }
   #endif
-  /*  NEON: mandatory on AArch64 PCS, so no runtime probe; we just
-      activate it whenever the variant TU was built.  */
   #ifdef HAVE_NEON
-    v = FASTENT_VAR_NEON_; fn = analyze_neon;
+    if (fastent_have_neon_runtime()) { v = FASTENT_VAR_NEON_; fn = analyze_neon; }
   #endif
 #endif
 
@@ -168,7 +190,7 @@ fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which) {
     if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_bits_avx512; }
   #endif
   #ifdef HAVE_NEON
-    v = FASTENT_VAR_NEON_; fn = analyze_bits_neon;
+    if (fastent_have_neon_runtime()) { v = FASTENT_VAR_NEON_; fn = analyze_bits_neon; }
   #endif
 #endif
 
@@ -198,7 +220,7 @@ fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which) {
     if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_fold_avx512; }
   #endif
   #ifdef HAVE_NEON
-    v = FASTENT_VAR_NEON_; fn = analyze_fold_neon;
+    if (fastent_have_neon_runtime()) { v = FASTENT_VAR_NEON_; fn = analyze_fold_neon; }
   #endif
 #endif
 
@@ -228,7 +250,7 @@ fastent_analyze_fn fastent_pick_fold_bits_variant(fastent_variant * which) {
     if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_bits_fold_avx512; }
   #endif
   #ifdef HAVE_NEON
-    v = FASTENT_VAR_NEON_; fn = analyze_bits_fold_neon;
+    if (fastent_have_neon_runtime()) { v = FASTENT_VAR_NEON_; fn = analyze_bits_fold_neon; }
   #endif
 #endif
 
@@ -258,7 +280,7 @@ fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which) {
     if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = fold_avx512; }
   #endif
   #ifdef HAVE_NEON
-    v = FASTENT_VAR_NEON_; fn = fold_neon;
+    if (fastent_have_neon_runtime()) { v = FASTENT_VAR_NEON_; fn = fold_neon; }
   #endif
 #endif
 

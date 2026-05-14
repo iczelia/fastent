@@ -120,19 +120,26 @@
   #define V_SHUFFLE_EPI8(t, i) _mm_shuffle_epi8((t), (i))
   #define V_SAD_EPU8(a, b)     _mm_sad_epu8((a), (b))
 #elif defined(FASTENT_VARIANT_NEON)
-  /*  AArch64 NEON.  Vector type is uint8x16_t throughout; ops that
-      need a different lane width reinterpret on the fly.  Differences
-      from the x86 macros:
+  /*  NEON (AArch64 + ARMv7-A).  Vector type is uint8x16_t throughout;
+      ops that need a different lane width reinterpret on the fly.
+
+      AArch64 vs ARMv7-A intrinsic differences we paper over below:
+        - vqtbl1q_u8 (16-byte table lookup) is AArch64-only.  On
+          ARMv7-A we emulate via two vtbl2_u8 calls operating on the
+          two 8-byte halves of the table.  Both implementations zero
+          lanes whose index is >= 16, matching the SSE PSHUFB
+          high-bit-zero semantics.
+        - vaddvq_u64 / vaddvq_s64 (horizontal sum of 2x i64/u64 lanes)
+          are AArch64-only.  On ARMv7-A we extract both lanes and
+          scalar-add.
+
+      Other differences from the x86 V_* macros:
         - V_ANDNOT(a, b) on x86 is (~a) & b; NEON's BIC is b & (~a),
           so we pass (a, b) → vbicq_u8(b, a).
         - V_SAD_EPU8(a, 0) on x86 is two u64 lanes of |a-0| summed
           across 8-byte halves.  We get the same with a vpaddl ladder
           (u8 -> u16 -> u32 -> u64), and ignore the second argument
-          because every call site passes a zero vector.
-        - V_SHUFFLE_EPI8 uses vqtbl1q_u8, which zeros lanes whose
-          index is >= 16.  Existing call sites either mask the index
-          (popcount LUT) or use a fixed shuffle pattern, so behaviour
-          matches the x86 PSHUFB-with-zeroing-MSB semantics.  */
+          because every call site passes a zero vector.  */
   #define FASTENT_VAR_SUFFIX _neon
   #define FASTENT_SIMD_VEC   uint8x16_t
   #define FASTENT_SIMD_VLEN  16
@@ -151,7 +158,39 @@
   #define V_CMPEQ_EPI8(a, b)   vceqq_u8((a), (b))
   #define V_SRLI_EPI16(a, n)   vreinterpretq_u8_u16(             \
                                  vshrq_n_u16(vreinterpretq_u16_u8(a), (n)))
-  #define V_SHUFFLE_EPI8(t, i) vqtbl1q_u8((t), (i))
+
+  static __attribute__((always_inline)) inline uint8x16_t
+  fastent_neon_tbl1q_u8(uint8x16_t table, uint8x16_t idx) {
+  #ifdef __aarch64__
+    return vqtbl1q_u8(table, idx);
+  #else
+    uint8x8x2_t t;
+    t.val[0] = vget_low_u8(table);
+    t.val[1] = vget_high_u8(table);
+    uint8x8_t lo = vtbl2_u8(t, vget_low_u8(idx));
+    uint8x8_t hi = vtbl2_u8(t, vget_high_u8(idx));
+    return vcombine_u8(lo, hi);
+  #endif
+  }
+  #define V_SHUFFLE_EPI8(t, i) fastent_neon_tbl1q_u8((t), (i))
+
+  static __attribute__((always_inline)) inline uint64_t
+  fastent_neon_addvq_u64(uint64x2_t v) {
+  #ifdef __aarch64__
+    return vaddvq_u64(v);
+  #else
+    return vgetq_lane_u64(v, 0) + vgetq_lane_u64(v, 1);
+  #endif
+  }
+  static __attribute__((always_inline)) inline int64_t
+  fastent_neon_addvq_s64(int64x2_t v) {
+  #ifdef __aarch64__
+    return vaddvq_s64(v);
+  #else
+    return vgetq_lane_s64(v, 0) + vgetq_lane_s64(v, 1);
+  #endif
+  }
+
   static __attribute__((always_inline)) inline uint8x16_t
   fastent_neon_sad_zero(uint8x16_t a) {
     uint16x8_t s16 = vpaddlq_u8(a);
@@ -1186,8 +1225,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     #undef MC_HEXAD
   }
 
-  i64 scc_sum = (i64) vaddvq_s64(scc_acc64);
-  u64 lhs_sum = (u64) vaddvq_u64(lhs_sad);
+  i64 scc_sum = (i64) fastent_neon_addvq_s64(scc_acc64);
+  u64 lhs_sum = (u64) fastent_neon_addvq_u64(lhs_sad);
   st->cross_product += scc_sum + (i64)(128ULL * lhs_sum);
 
   /*  Epilogue: process buf[body_end] for histogram + carry + MC.
@@ -1600,9 +1639,9 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   u64 sum_cross = (u64) _mm_cvtsi128_si64(s_c)
               + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(s_c, s_c));
 #elif defined(FASTENT_VARIANT_NEON)
-  u64 sum_ones   = vaddvq_u64(vreinterpretq_u64_u8(acc_ones));
-  u64 sum_within = vaddvq_u64(vreinterpretq_u64_u8(acc_within));
-  u64 sum_cross  = vaddvq_u64(vreinterpretq_u64_u8(acc_cross));
+  u64 sum_ones   = fastent_neon_addvq_u64(vreinterpretq_u64_u8(acc_ones));
+  u64 sum_within = fastent_neon_addvq_u64(vreinterpretq_u64_u8(acc_within));
+  u64 sum_cross  = fastent_neon_addvq_u64(vreinterpretq_u64_u8(acc_cross));
 #else
   u64 sum_ones = (u64) _mm_cvtsi128_si64(acc_ones)
               + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(acc_ones, acc_ones));

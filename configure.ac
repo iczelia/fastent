@@ -25,8 +25,8 @@ AC_DEFINE([FASTENT_MINOR], [fastent_version_minor], [Minor version number])
 
 AC_C_RESTRICT
 AC_C_INLINE
-AC_CHECK_HEADERS([sys/mman.h sys/stat.h fcntl.h unistd.h immintrin.h])
-AC_CHECK_FUNCS([mmap madvise posix_fadvise posix_memalign])
+AC_CHECK_HEADERS([sys/mman.h sys/stat.h fcntl.h unistd.h immintrin.h sys/auxv.h])
+AC_CHECK_FUNCS([mmap madvise posix_fadvise posix_memalign getauxval])
 
 # libm: log10 / sqrt / pow / fabs / lgamma all live here.
 AC_SEARCH_LIBS([log10], [m])
@@ -54,11 +54,25 @@ AM_CONDITIONAL([FASTENT_THREADS], [test "x$fastent_have_pthread" = "xyes"])
 
 save_CFLAGS="$CFLAGS"
 
-# AArch64 NEON. Always present on the ABI; we still compile-probe so
-# that arm_neon.h headers are picked up and the variant TU sees the
-# right intrinsics. No -m flag needed: NEON is baseline on aarch64.
+# NEON.  Two ABIs to cover:
+#   AArch64 (`__aarch64__`): NEON is mandatory, baseline.  No flag.
+#   ARMv7-A (`__arm__`):     NEON is optional.  Needs `-mfpu=neon`
+#                            (and typically `-mfloat-abi=hard` set
+#                            elsewhere; we don't force it here).
+#
+# Probe with no flag first.  If that fails, retry with `-mfpu=neon`
+# so a Debian armhf default-baseline toolchain still gets the variant.
+# The probe exercises a few of the bread-and-butter intrinsics we
+# rely on (vcntq_u8 for popcount, vpaddlq_s16 for SCC reduction).
+# The AArch64-only ops (vqtbl1q_u8 / vaddvq_*) are emulated in
+# analyze-impl.h via shims gated on __aarch64__, so we don't need
+# them in the probe.
+
 CFLAGS="$save_CFLAGS"
-AC_MSG_CHECKING([for AArch64 NEON intrinsics with $CC])
+fastent_have_neon=no
+NEON_CFLAGS=""
+
+AC_MSG_CHECKING([for NEON intrinsics with $CC])
 AC_COMPILE_IFELSE(
   [AC_LANG_PROGRAM([[
     #include <arm_neon.h>
@@ -70,13 +84,32 @@ AC_COMPILE_IFELSE(
     int32x4_t  p = vpaddlq_s16(w);
     return (int) vgetq_lane_s32(p, 0);
   ]])],
-  [AC_MSG_RESULT([yes])
-   AC_DEFINE([HAVE_NEON], [1], [Define if AArch64 NEON intrinsics are available])
+  [AC_MSG_RESULT([yes (baseline; AArch64)])
+   AC_DEFINE([HAVE_NEON], [1], [Define if NEON intrinsics are available])
    NEON_CFLAGS=""
    fastent_have_neon=yes],
-  [AC_MSG_RESULT([no])
-   NEON_CFLAGS=""
-   fastent_have_neon=no])
+  [AC_MSG_RESULT([no])])
+
+if test "x$fastent_have_neon" = "xno"; then
+  CFLAGS="$save_CFLAGS -mfpu=neon"
+  AC_MSG_CHECKING([for NEON intrinsics with $CC -mfpu=neon])
+  AC_COMPILE_IFELSE(
+    [AC_LANG_PROGRAM([[
+      #include <arm_neon.h>
+    ]], [[
+      uint8x16_t a = vdupq_n_u8(7);
+      uint8x16_t b = vcntq_u8(a);
+      int8x16_t  s = vreinterpretq_s8_u8(b);
+      int16x8_t  w = vmovl_s8(vget_low_s8(s));
+      int32x4_t  p = vpaddlq_s16(w);
+      return (int) vgetq_lane_s32(p, 0);
+    ]])],
+    [AC_MSG_RESULT([yes (ARMv7-A; -mfpu=neon)])
+     AC_DEFINE([HAVE_NEON], [1], [Define if NEON intrinsics are available])
+     NEON_CFLAGS="-mfpu=neon"
+     fastent_have_neon=yes],
+    [AC_MSG_RESULT([no])])
+fi
 
 CFLAGS="$save_CFLAGS -mssse3"
 AC_MSG_CHECKING([for SSSE3 intrinsics with $CC])
