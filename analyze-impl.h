@@ -120,6 +120,14 @@
   #define V_SHUFFLE_EPI8(t, i) _mm_shuffle_epi8((t), (i))
   #define V_SAD_EPU8(a, b)     _mm_sad_epu8((a), (b))
 #elif defined(FASTENT_VARIANT_NEON)
+  /*  Refuse big-endian NEON: vget_low_/vget_high_ return swapped
+      halves on BE so the SCC and tbl1q paths would silently miscompute.
+      The configure probe already gates HAVE_NEON on BE; this is a
+      backstop for direct -DFASTENT_VARIANT_NEON builds.  */
+  #if defined(__ARM_BIG_ENDIAN) || \
+      (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+  #error "fastent NEON variant is not supported on big-endian ARM"
+  #endif
   /*  NEON (AArch64 + ARMv7-A).  Vector type is uint8x16_t throughout;
       ops that need a different lane width reinterpret on the fly.
 

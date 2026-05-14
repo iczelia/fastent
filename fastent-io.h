@@ -18,7 +18,8 @@ typedef struct {
   int          fd;
   void *       map;            /*  FASTENT_SRC_MMAP: base pointer  */
   u64          size;           /*  FASTENT_SRC_MMAP: file length    */
-  u8 *         stream_buf;     /*  FASTENT_SRC_STREAM: read buffer  */
+  u8 *         stream_buf;     /*  FASTENT_SRC_STREAM: aligned read buffer  */
+  void *       stream_buf_raw; /*  FASTENT_SRC_STREAM: pointer to free  */
   sz           stream_buf_cap; /*  FASTENT_SRC_STREAM: buffer size  */
   int          opened_fd;      /*  1 if we open()d (so we close)  */
 } fastent_source;

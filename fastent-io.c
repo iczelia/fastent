@@ -5,6 +5,7 @@
 #include "fastent-io.h"   /*  Pulls common.h with feature macros (must be first).  */
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -50,15 +51,34 @@
   #define POSIX_FADV_SEQUENTIAL 0
 #endif
 
+/*  Get a 4 KiB-aligned 2 MiB read buffer.  Preference order:
+      posix_memalign  -> aligned_alloc  -> malloc + manual round-up.
+    The last fallback over-allocates by FASTENT_STREAM_ALIGN bytes and
+    rounds the user-visible pointer up; the raw malloc'd pointer is
+    kept in stream_buf_raw for the matching free().  */
+#define FASTENT_STREAM_ALIGN 4096u
+
 static int alloc_stream_buf(fastent_source * s) {
-  void * p = NULL;
+  void * raw  = NULL;
+  void * user = NULL;
 #if HAVE_POSIX_MEMALIGN
-  if (posix_memalign(&p, 4096, FASTENT_STREAM_BUF) != 0) p = NULL;
+  if (posix_memalign(&raw, FASTENT_STREAM_ALIGN, FASTENT_STREAM_BUF) != 0)
+    raw = NULL;
+  user = raw;
+#elif HAVE_ALIGNED_ALLOC
+  raw = aligned_alloc(FASTENT_STREAM_ALIGN, FASTENT_STREAM_BUF);
+  user = raw;
 #else
-  p = malloc(FASTENT_STREAM_BUF);
+  raw = malloc(FASTENT_STREAM_BUF + FASTENT_STREAM_ALIGN);
+  if (raw) {
+    uintptr_t a = ((uintptr_t) raw + (FASTENT_STREAM_ALIGN - 1))
+                  & ~(uintptr_t)(FASTENT_STREAM_ALIGN - 1);
+    user = (void *) a;
+  }
 #endif
-  if (!p) return -1;
-  s->stream_buf = (u8 *) p;
+  if (!raw) return -1;
+  s->stream_buf     = (u8 *) user;
+  s->stream_buf_raw = raw;
   s->stream_buf_cap = FASTENT_STREAM_BUF;
   return 0;
 }
@@ -143,7 +163,11 @@ void fastent_src_close(fastent_source * s) {
 #endif
     s->map = NULL;
   }
-  if (s->stream_buf) { free(s->stream_buf);  s->stream_buf = NULL; }
+  if (s->stream_buf_raw) {
+    free(s->stream_buf_raw);
+    s->stream_buf_raw = NULL;
+    s->stream_buf     = NULL;
+  }
   if (s->opened_fd && s->fd >= 0) FASTENT_CLOSE(s->fd);
   s->fd = -1;
   s->kind = FASTENT_SRC_NONE;

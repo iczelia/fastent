@@ -26,7 +26,7 @@ AC_DEFINE([FASTENT_MINOR], [fastent_version_minor], [Minor version number])
 AC_C_RESTRICT
 AC_C_INLINE
 AC_CHECK_HEADERS([sys/mman.h sys/stat.h fcntl.h unistd.h immintrin.h sys/auxv.h])
-AC_CHECK_FUNCS([mmap madvise posix_fadvise posix_memalign getauxval pledge])
+AC_CHECK_FUNCS([mmap madvise posix_fadvise posix_memalign aligned_alloc getauxval pledge])
 
 # libm: log10 / sqrt / pow / fabs / lgamma all live here.
 AC_SEARCH_LIBS([log10], [m])
@@ -98,6 +98,14 @@ NEON_CFLAGS=""
 AC_MSG_CHECKING([for NEON intrinsics with $CC])
 AC_COMPILE_IFELSE(
   [AC_LANG_PROGRAM([[
+    /*  Refuse big-endian NEON: lane numbering is reversed relative to
+        memory, so vget_low_*/vget_high_* return swapped halves and the
+        tbl1q emulation reads wrong table bytes.  Bailing out lets the
+        build fall back to the scalar variant.  */
+    #if defined(__ARM_BIG_ENDIAN) || \
+        (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+    #error big-endian NEON unsupported
+    #endif
     #include <arm_neon.h>
   ]], [[
     uint8x16_t a = vdupq_n_u8(7);
@@ -160,6 +168,10 @@ if test "x$fastent_have_neon" = "xno" && test "x$fastent_is_arm32" = "xyes"; the
   AC_MSG_CHECKING([for NEON intrinsics with $CC $fastent_neon_try])
   AC_COMPILE_IFELSE(
     [AC_LANG_PROGRAM([[
+      #if defined(__ARM_BIG_ENDIAN) || \
+          (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+      #error big-endian NEON unsupported
+      #endif
       #include <arm_neon.h>
     ]], [[
       uint8x16_t a = vdupq_n_u8(7);
