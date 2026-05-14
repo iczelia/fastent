@@ -1,0 +1,333 @@
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - '*.*'
+
+jobs:
+  source-release:
+    name: Publish sources on GitHub Release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: install build deps + compressors
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            autoconf-archive libtool-bin build-essential \
+            xz-utils bzip2 bzip3 zip zstd
+
+      - name: build + install autoconf 2.73 and automake 1.18.1 from source
+        run: |
+          cd /tmp
+          curl -fsSL https://ftp.gnu.org/gnu/autoconf/autoconf-2.73.tar.gz | tar xz
+          cd autoconf-2.73 && ./configure --prefix=/usr/local && make && sudo make install
+          cd /tmp
+          curl -fsSL https://ftp.gnu.org/gnu/automake/automake-1.18.1.tar.gz | tar xz
+          cd automake-1.18.1 && ./configure --prefix=/usr/local && make && sudo make install
+          hash -r
+
+      - name: bootstrap + configure + make dist
+        run: |
+          ./bootstrap
+          ./configure
+          make dist
+          ver=$(ls fastent-*.tar.gz | head -1 | sed 's/^fastent-//;s/\.tar\.gz$//')
+          echo "FE_VER=$ver" >> "$GITHUB_ENV"
+          gzip -dk fastent-${ver}.tar.gz
+          zstd -k fastent-${ver}.tar
+
+      - name: publish source release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: |
+            fastent-${{ env.FE_VER }}.tar
+            fastent-${{ env.FE_VER }}.tar.gz
+            fastent-${{ env.FE_VER }}.tar.xz
+            fastent-${{ env.FE_VER }}.tar.bz2
+            fastent-${{ env.FE_VER }}.tar.bz3
+            fastent-${{ env.FE_VER }}.tar.zst
+            fastent-${{ env.FE_VER }}.zip
+
+      - name: upload source artifact for binary jobs
+        uses: actions/upload-artifact@v6
+        with:
+          name: fastent-dist
+          path: fastent-*.tar.gz
+          if-no-files-found: error
+
+  binaries-zig:
+    name: zig cc / ${{ matrix.target.id }}
+    needs: source-release
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { id: linux-x86_64,      zig: x86_64-linux-musl,         host: x86_64-unknown-linux-musl,         lto: 1, ldflags: "-static -s", bin: fastent     }
+          - { id: linux-i386,        zig: x86-linux-musl,            host: x86-unknown-linux-musl,            lto: 1, ldflags: "-static -s", bin: fastent     }
+          - { id: linux-aarch64,     zig: aarch64-linux-musl,        host: aarch64-unknown-linux-musl,        lto: 1, ldflags: "-static -s", bin: fastent     }
+          - { id: linux-armhf,       zig: arm-linux-musleabihf,      host: arm-unknown-linux-musleabihf,      lto: 1, ldflags: "-static -s", bin: fastent     }
+          - { id: linux-riscv64,     zig: riscv64-linux-musl,        host: riscv64-unknown-linux-musl,        lto: 0, ldflags: "-static -s", bin: fastent     }
+          - { id: linux-powerpc64le, zig: powerpc64le-linux-musl,    host: powerpc64le-unknown-linux-musl,    lto: 1, ldflags: "-static -s", bin: fastent     }
+          - { id: linux-powerpc64,   zig: powerpc64-linux-musl,      host: powerpc64-unknown-linux-musl,      lto: 1, ldflags: "-static -s", bin: fastent     }
+          - { id: linux-powerpc,     zig: powerpc-linux-musleabihf,  host: powerpc-unknown-linux-musleabihf,  lto: 1, ldflags: "-static -s", bin: fastent     }
+          - { id: linux-s390x,       zig: s390x-linux-musl,          host: s390x-ibm-linux-musl,              lto: 1, ldflags: "-static -s", bin: fastent     }
+          - { id: linux-loongarch64, zig: loongarch64-linux-musl,    host: loongarch64-unknown-linux-musl,    lto: 0, ldflags: "-static -s", bin: fastent     }
+          - { id: linux-mips,        zig: mips-linux-musleabihf,     host: mips-unknown-linux-musleabihf,     lto: 1, ldflags: "-static -s", bin: fastent     }
+          - { id: linux-mipsel,      zig: mipsel-linux-musleabihf,   host: mipsel-unknown-linux-musleabihf,   lto: 1, ldflags: "-static -s", bin: fastent     }
+          - { id: linux-mips64,      zig: mips64-linux-muslabi64,    host: mips64-unknown-linux-musl,         lto: 1, ldflags: "-static -s", bin: fastent     }
+          - { id: linux-mips64el,    zig: mips64el-linux-muslabi64,  host: mips64el-unknown-linux-musl,       lto: 1, ldflags: "-static -s", bin: fastent     }
+          - { id: windows-x86_64,    zig: x86_64-windows-gnu,        host: x86_64-w64-mingw32,                lto: 1, ldflags: "-static -s", bin: fastent.exe }
+          - { id: windows-i686,      zig: x86-windows-gnu,           host: i686-w64-mingw32,                  lto: 1, ldflags: "-static -s", bin: fastent.exe }
+          - { id: windows-aarch64,   zig: aarch64-windows-gnu,       host: aarch64-w64-mingw32,               lto: 1, ldflags: "-static -s", bin: fastent.exe }
+          - { id: macos-x86_64,      zig: x86_64-macos-none,         host: x86_64-apple-darwin,               lto: 1, ldflags: "-s",         bin: fastent     }
+          - { id: macos-aarch64,     zig: aarch64-macos-none,        host: aarch64-apple-darwin,              lto: 1, ldflags: "-s",         bin: fastent     }
+    steps:
+      - name: install zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.0
+
+      - name: download source
+        uses: actions/download-artifact@v6
+        with:
+          name: fastent-dist
+
+      - name: unpack
+        run: |
+          tar xzf fastent-*.tar.gz
+          ln -s fastent-*/ fastent-src
+
+      - name: configure + build
+        env:
+          ZIGT: ${{ matrix.target.zig }}
+          HOSTT: ${{ matrix.target.host }}
+          LDFLAGS_X: ${{ matrix.target.ldflags }}
+          LTO: ${{ matrix.target.lto }}
+        run: |
+          mkdir build && cd build
+          cfg_extra=""
+          if [ "$LTO" = "1" ]; then cfg_extra="$cfg_extra --enable-lto"; fi
+          ../fastent-src/configure \
+            CC="zig cc -target $ZIGT" \
+            AR="zig ar" \
+            RANLIB="zig ranlib" \
+            --host="$HOSTT" \
+            $cfg_extra \
+            LDFLAGS="$LDFLAGS_X" \
+            CFLAGS="-O2"
+          make -j"$(nproc)"
+
+      - name: package
+        env:
+          BIN: ${{ matrix.target.bin }}
+          ID: ${{ matrix.target.id }}
+        run: |
+          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
+          name="fastent-${ver}-${ID}"
+          mkdir -p "dist/$name"
+          cp "build/$BIN" "dist/$name/"
+          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
+             fastent-src/fastent.1 "dist/$name/"
+          case "$ID" in
+            windows-*) (cd dist && zip -9 -r "${name}.zip" "$name") ;;
+            *)         (cd dist && tar -czf "${name}.tar.gz" "$name") ;;
+          esac
+
+      - name: publish binary
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: |
+            dist/fastent-*-${{ matrix.target.id }}.tar.gz
+            dist/fastent-*-${{ matrix.target.id }}.zip
+
+  binaries-gcc:
+    name: gcc-cross / ${{ matrix.target.id }}
+    needs: source-release
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { id: linux-alpha,   apt: "gcc-alpha-linux-gnu libc6.1-dev-alpha-cross",                  cc: "alpha-linux-gnu-gcc",        host: alpha-linux-gnu,   lto: 1 }
+          - { id: linux-sparc64, apt: "gcc-sparc64-linux-gnu libc6-dev-sparc64-cross",                cc: "sparc64-linux-gnu-gcc",      host: sparc64-linux-gnu, lto: 1 }
+          - { id: linux-sparc,   apt: "gcc-sparc64-linux-gnu gcc-multilib-sparc64-linux-gnu",         cc: "sparc64-linux-gnu-gcc -m32", host: sparc-linux-gnu,   lto: 1 }
+          - { id: linux-m68k,    apt: "gcc-m68k-linux-gnu libc6-dev-m68k-cross",                      cc: "m68k-linux-gnu-gcc",         host: m68k-linux-gnu,    lto: 1 }
+          - { id: linux-hppa,    apt: "gcc-hppa-linux-gnu libc6-dev-hppa-cross",                      cc: "hppa-linux-gnu-gcc",         host: hppa-linux-gnu,    lto: 1 }
+          - { id: linux-arc,     apt: "gcc-arc-linux-gnu libc6-dev-arc-cross",                        cc: "arc-linux-gnu-gcc",          host: arc-linux-gnu,     lto: 1 }
+          - { id: linux-sh4,     apt: "gcc-sh4-linux-gnu libc6-dev-sh4-cross",                        cc: "sh4-linux-gnu-gcc",          host: sh4-linux-gnu,     lto: 1 }
+    steps:
+      - name: install cross toolchain
+        env:
+          APT: ${{ matrix.target.apt }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends $APT
+
+      - name: download source
+        uses: actions/download-artifact@v6
+        with:
+          name: fastent-dist
+
+      - name: unpack
+        run: |
+          tar xzf fastent-*.tar.gz
+          ln -s fastent-*/ fastent-src
+
+      - name: configure + build
+        env:
+          CCBIN: ${{ matrix.target.cc }}
+          HOSTT: ${{ matrix.target.host }}
+          LTO: ${{ matrix.target.lto }}
+        run: |
+          mkdir build && cd build
+          cfg_extra=""
+          if [ "$LTO" = "1" ]; then cfg_extra="$cfg_extra --enable-lto"; fi
+          ../fastent-src/configure \
+            CC="$CCBIN" \
+            LDFLAGS="-static -s" \
+            --host="$HOSTT" \
+            $cfg_extra \
+            CFLAGS="-O2"
+          make -j"$(nproc)"
+
+      - name: package
+        env:
+          ID: ${{ matrix.target.id }}
+        run: |
+          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
+          name="fastent-${ver}-${ID}"
+          mkdir -p "dist/$name"
+          cp "build/fastent" "dist/$name/"
+          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
+             fastent-src/fastent.1 "dist/$name/"
+          (cd dist && tar -czf "${name}.tar.gz" "$name")
+
+      - name: publish binary
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: dist/fastent-*-${{ matrix.target.id }}.tar.gz
+
+  binary-win95:
+    name: gcc-mingw / windows-i686-win95
+    needs: source-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: install mingw32 cross
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gcc-mingw-w64-i686 binutils-mingw-w64-i686
+
+      - name: download source
+        uses: actions/download-artifact@v6
+        with:
+          name: fastent-dist
+
+      - name: unpack
+        run: |
+          tar xzf fastent-*.tar.gz
+          ln -s fastent-*/ fastent-src
+
+      - name: configure + build
+        run: |
+          mkdir build && cd build
+          ../fastent-src/configure \
+            CC=i686-w64-mingw32-gcc \
+            --host=i686-w64-mingw32 \
+            --with-windows-target=win95 \
+            --disable-threads \
+            LDFLAGS="-static -s" \
+            CFLAGS="-O2"
+          make -j"$(nproc)"
+
+      - name: package
+        run: |
+          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
+          name="fastent-${ver}-windows-i686-win95"
+          mkdir -p "dist/$name"
+          cp build/fastent.exe "dist/$name/"
+          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
+             fastent-src/fastent.1 "dist/$name/"
+          (cd dist && zip -9 -r "${name}.zip" "$name")
+
+      - name: publish binary
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: dist/fastent-*-windows-i686-win95.zip
+
+  binary-dos:
+    name: djgpp / dos-i386
+    needs: source-release
+    runs-on: ubuntu-latest
+    env:
+      DJGPP_RELEASE: "v3.4"
+      DJGPP_GCC: "1220"
+    steps:
+      - name: install DJGPP cross-toolchain
+        run: |
+          curl -fL -o /tmp/djgpp.tar.bz2 \
+            "https://github.com/andrewwutw/build-djgpp/releases/download/${DJGPP_RELEASE}/djgpp-linux64-gcc${DJGPP_GCC}.tar.bz2"
+          tar -xjf /tmp/djgpp.tar.bz2 -C "$HOME"
+          echo "$HOME/djgpp/bin" >> $GITHUB_PATH
+          exe2coff=$(find "$HOME/djgpp" -name exe2coff -type f -print -quit)
+          test -n "$exe2coff" || { echo "exe2coff missing" >&2; exit 1; }
+          ln -sf "$exe2coff" "$HOME/djgpp/bin/exe2coff"
+
+      - name: install CWSDPMI
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends unzip
+          curl -fL -o /tmp/csdpmi.zip http://www.delorie.com/pub/djgpp/current/v2misc/csdpmi7b.zip
+          unzip -j -d "$HOME/csdpmi" /tmp/csdpmi.zip 'bin/CWSDSTUB.EXE'
+          echo "CWSDSTUB=$HOME/csdpmi/CWSDSTUB.EXE" >> $GITHUB_ENV
+
+      - name: download source
+        uses: actions/download-artifact@v6
+        with:
+          name: fastent-dist
+
+      - name: unpack
+        run: |
+          tar xzf fastent-*.tar.gz
+          ln -s fastent-*/ fastent-src
+
+      - name: configure + build
+        run: |
+          mkdir build && cd build
+          ../fastent-src/configure \
+            --host=i586-pc-msdosdjgpp \
+            CC=i586-pc-msdosdjgpp-gcc \
+            CFLAGS="-O2" LDFLAGS="-s"
+          make -j"$(nproc)"
+
+      - name: package
+        run: |
+          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
+          name="fastent-${ver}-dos-i386"
+          mkdir -p "dist/$name"
+          cp build/fastent.exe "dist/$name/"
+          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
+             fastent-src/fastent.1 "dist/$name/"
+          (cd dist && zip -9 -r "${name}.zip" "$name")
+
+      - name: publish binary
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: dist/fastent-*-dos-i386.zip
