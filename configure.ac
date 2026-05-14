@@ -53,7 +53,6 @@ AM_CONDITIONAL([FASTENT_THREADS], [test "x$fastent_have_pthread" = "xyes"])
 
 save_CFLAGS="$CFLAGS"
 
-# ---- SSSE3 ----
 CFLAGS="$save_CFLAGS -mssse3"
 AC_MSG_CHECKING([for SSSE3 intrinsics with $CC])
 AC_COMPILE_IFELSE(
@@ -70,9 +69,9 @@ AC_COMPILE_IFELSE(
   [AC_MSG_RESULT([no])
    SSSE3_CFLAGS=""])
 
-# ---- SSE4.1 (built with -msse4.2: analyze-impl.h's 128-bit MC residual
+# SSE4.1 (built with -msse4.2: analyze-impl.h's 128-bit MC residual
 # uses _mm_cmpgt_epi64, which is SSE4.2. SSE4.2 is a strict superset
-# present on Nehalem+; Penryn is the only chip with 4.1 but not 4.2). ----
+# present on Nehalem+; Penryn is the only chip with 4.1 but not 4.2).
 CFLAGS="$save_CFLAGS -msse4.2"
 AC_MSG_CHECKING([for SSE4.1/4.2 intrinsics with $CC])
 AC_COMPILE_IFELSE(
@@ -91,7 +90,7 @@ AC_COMPILE_IFELSE(
   [AC_MSG_RESULT([no])
    SSE41_CFLAGS=""])
 
-# ---- AVX2 (also exercises VPMADDUBSW, the SCC kernel) ----
+# AVX2 (also exercises VPMADDUBSW, the SCC kernel)
 CFLAGS="$save_CFLAGS -mavx2"
 AC_MSG_CHECKING([for AVX2 intrinsics with $CC])
 AC_COMPILE_IFELSE(
@@ -109,7 +108,7 @@ AC_COMPILE_IFELSE(
   [AC_MSG_RESULT([no])
    AVX2_CFLAGS=""])
 
-# ---- AVX-512 (F + BW + CD + DQ + VL + VPOPCNTDQ + BITALG) ----
+# AVX-512 (F + BW + CD + DQ + VL + VPOPCNTDQ + BITALG)
 # AVX512F+BW+VL: byte/word 512-bit ops + 128/256-bit EVEX encodings.
 # AVX512CD: VPCONFLICTD/Q for the parallel-scatter histogram.
 # AVX512VPOPCNTDQ + AVX512BITALG: VPOPCNTB byte-popcount for the
