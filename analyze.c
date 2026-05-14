@@ -82,23 +82,175 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
 
 /*  Runtime variant pick.
 
-    Compile-time HAVE_AVX2/HAVE_SSE41/HAVE_SSSE3 means the variant TU was
-    built; we still confirm at runtime via __builtin_cpu_supports so a
-    binary built on a wider host can run on a narrower one.  */
+    Compile-time HAVE_AVX2/HAVE_SSE41/HAVE_SSSE3 means the variant TU
+    was built; we still confirm at runtime so a binary built on a
+    wider host can run on a narrower one.
 
-/*  Runtime feature probe shared across the pickers.  Returns 1 iff the
-    host has every AVX-512 extension referenced by the AVX-512 SIMD
-    body: F (foundation), BW (byte/word ops), CD (VPCONFLICTD),
-    VPOPCNTDQ + BITALG (VPOPCNTB).  All four ship together on Zen 4
-    and Ice Lake-SP+, so a single combined check is fine.  */
-#if defined(HAVE_AVX512) && (defined(__GNUC__) || defined(__clang__))
-static int fastent_have_avx512_runtime(void) {
-  return __builtin_cpu_supports("avx512f")
-      && __builtin_cpu_supports("avx512bw")
-      && __builtin_cpu_supports("avx512cd")
-      && __builtin_cpu_supports("avx512vpopcntdq")
-      && __builtin_cpu_supports("avx512bitalg");
+    We avoid __builtin_cpu_supports because its libgcc backend
+    (__cpu_model / __cpu_indicator_init) isn't supplied by clang's
+    compiler-rt on Windows.  Rolling our own cpuid probe is small
+    enough and works on every x86 toolchain we care about.  */
+
+#if defined(__i386__) || defined(__x86_64__)
+
+/*  Detect CPUID availability.  On x86_64 it's mandatory; on 32-bit
+    we toggle EFLAGS bit 21 (the ID flag): the bit only flips on
+    Pentium-class and newer chips.  Pre-Pentium 386/486 leave it stuck
+    and we bail to scalar.  */
+#if defined(__x86_64__)
+static inline int fastent_x86_has_cpuid(void) { return 1; }
+#else
+static int fastent_x86_has_cpuid(void) {
+  unsigned int x, y;
+  __asm__ volatile (
+    "pushfl\n\t"
+    "pushfl\n\t"
+    "popl %0\n\t"
+    "movl %0, %1\n\t"
+    "xorl $0x200000, %1\n\t"
+    "pushl %1\n\t"
+    "popfl\n\t"
+    "pushfl\n\t"
+    "popl %1\n\t"
+    "popfl\n\t"
+    : "=&r"(x), "=&r"(y));
+  return ((x ^ y) & 0x200000u) != 0;
 }
+#endif
+
+/*  CPUID wrapper.  On i386 -fPIC, EBX is the PIC base register so we
+    can't clobber it directly; xchg through a scratch via "=r" instead.
+    On x86_64, EBX is freely usable.  */
+static inline void fastent_cpuid(unsigned int leaf, unsigned int subleaf,
+                                 unsigned int * a, unsigned int * b,
+                                 unsigned int * c, unsigned int * d) {
+#if defined(__i386__) && defined(__PIC__)
+  __asm__ volatile (
+    "xchgl %%ebx, %1\n\t"
+    "cpuid\n\t"
+    "xchgl %%ebx, %1"
+    : "=a"(*a), "=r"(*b), "=c"(*c), "=d"(*d)
+    : "0"(leaf), "2"(subleaf));
+#else
+  __asm__ volatile ("cpuid"
+    : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d)
+    : "0"(leaf), "2"(subleaf));
+#endif
+}
+
+/*  XGETBV(0) reads XCR0, the OS-visible XSAVE feature mask.  Available
+    only when OSXSAVE (CPUID.1.ECX[27]) is set; the caller must gate
+    the call.  Encoded as raw bytes so we don't need -mxsave.  */
+static inline u64 fastent_xgetbv0(void) {
+  unsigned int lo, hi;
+  __asm__ volatile (".byte 0x0f, 0x01, 0xd0"
+    : "=a"(lo), "=d"(hi) : "c"(0));
+  return ((u64) hi << 32) | (u64) lo;
+}
+
+typedef struct {
+  unsigned ssse3 : 1;
+  unsigned sse41 : 1;
+  unsigned sse42 : 1;
+  unsigned avx : 1;
+  unsigned avx2 : 1;
+  unsigned avx512f : 1;
+  unsigned avx512bw : 1;
+  unsigned avx512cd : 1;
+  unsigned avx512dq : 1;
+  unsigned avx512vl : 1;
+  unsigned avx512vpopcntdq : 1;
+  unsigned avx512bitalg : 1;
+} fastent_x86_features;
+
+static fastent_x86_features fastent_x86_probe(void) {
+  fastent_x86_features f;
+  unsigned int a = 0, b = 0, c = 0, d = 0;
+  unsigned int max_leaf = 0;
+  int osxsave = 0, avx_os_ok = 0, avx512_os_ok = 0;
+
+  /*  Zero-init; bitfield struct literals are awkward in C99 so do it
+      manually.  */
+  f.ssse3 = f.sse41 = f.sse42 = 0;
+  f.avx = f.avx2 = 0;
+  f.avx512f = f.avx512bw = f.avx512cd = f.avx512dq = f.avx512vl = 0;
+  f.avx512vpopcntdq = f.avx512bitalg = 0;
+
+  if (!fastent_x86_has_cpuid()) return f;
+  fastent_cpuid(0, 0, &a, &b, &c, &d);
+  max_leaf = a;
+  if (max_leaf < 1) return f;
+
+  fastent_cpuid(1, 0, &a, &b, &c, &d);
+  f.ssse3 = !!(c & (1u <<  9));
+  f.sse41 = !!(c & (1u << 19));
+  f.sse42 = !!(c & (1u << 20));
+  osxsave = !!(c & (1u << 27));
+  /*  AVX support requires (a) the CPU advertises it via CPUID.1.ECX[28]
+      AND (b) the OS has enabled the AVX state in XCR0, which we check
+      via XGETBV only when OSXSAVE is set.  Without (b) the CPU will
+      #UD on AVX instructions even if it nominally supports them.  */
+  if (osxsave && (c & (1u << 28))) {
+    u64 xcr0 = fastent_xgetbv0();
+    /*  Bits 1 (SSE) and 2 (AVX) of XCR0 must be set.  */
+    if ((xcr0 & 0x6u) == 0x6u) {
+      f.avx = 1;
+      avx_os_ok = 1;
+      /*  Bits 5, 6, 7 cover opmask, ZMM_Hi256, Hi16_ZMM for AVX-512.  */
+      if ((xcr0 & 0xE0u) == 0xE0u) avx512_os_ok = 1;
+    }
+  }
+
+  if (max_leaf < 7) return f;
+  fastent_cpuid(7, 0, &a, &b, &c, &d);
+  if (avx_os_ok && (b & (1u <<  5))) f.avx2 = 1;
+  if (avx512_os_ok) {
+    if (b & (1u << 16)) f.avx512f         = 1;
+    if (b & (1u << 17)) f.avx512dq        = 1;
+    if (b & (1u << 28)) f.avx512cd        = 1;
+    if (b & (1u << 30)) f.avx512bw        = 1;
+    if (b & (1u << 31)) f.avx512vl        = 1;
+    if (c & (1u << 12)) f.avx512bitalg    = 1;
+    if (c & (1u << 14)) f.avx512vpopcntdq = 1;
+  }
+  return f;
+}
+
+/*  Cached features.  Populated on the first picker call.  The probe is
+    idempotent so concurrent first calls would race harmlessly, but in
+    practice the pickers run before threads spawn.  */
+static fastent_x86_features fastent_x86_features_cache;
+static int fastent_x86_features_done = 0;
+
+static const fastent_x86_features * fastent_x86_features_get(void) {
+  if (!fastent_x86_features_done) {
+    fastent_x86_features_cache = fastent_x86_probe();
+    fastent_x86_features_done = 1;
+  }
+  return &fastent_x86_features_cache;
+}
+
+#define FASTENT_X86_HAS(name) (fastent_x86_features_get()->name)
+
+/*  AVX-512 readiness for the SIMD body: needs F, BW, CD, VPOPCNTDQ,
+    BITALG.  All five ship together on Zen 4 and Ice Lake-SP+, so the
+    compound test is fine.  */
+#ifdef HAVE_AVX512
+static int fastent_have_avx512_runtime(void) {
+  const fastent_x86_features * f = fastent_x86_features_get();
+  return f->avx512f && f->avx512bw && f->avx512cd
+      && f->avx512vpopcntdq && f->avx512bitalg;
+}
+#endif
+
+#else  /*  Non-x86: cpuid is meaningless; the x86 pickers below
+           compile-out via the HAVE_SSSE3/SSE41/AVX2/AVX512 gates.  */
+
+#define FASTENT_X86_HAS(name) 0
+#ifdef HAVE_AVX512
+static int fastent_have_avx512_runtime(void) { return 0; }
+#endif
+
 #endif
 
 /*  NEON runtime probe.
@@ -129,26 +281,21 @@ fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
   fastent_variant v = FASTENT_VAR_SCALAR;
   fastent_analyze_fn fn = analyze_scalar;
 
-#if defined(__GNUC__) || defined(__clang__)
-  #if defined(HAVE_SSSE3) || defined(HAVE_SSE41) || defined(HAVE_AVX2) || defined(HAVE_AVX512)
-    __builtin_cpu_init();
-  #endif
   #ifdef HAVE_SSSE3
-    if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = analyze_ssse3; }
+    if (FASTENT_X86_HAS(ssse3))         { v = FASTENT_VAR_SSSE3_;  fn = analyze_ssse3; }
   #endif
   #ifdef HAVE_SSE41
-    if (__builtin_cpu_supports("sse4.1")) { v = FASTENT_VAR_SSE41_;  fn = analyze_sse41; }
+    if (FASTENT_X86_HAS(sse42))         { v = FASTENT_VAR_SSE41_;  fn = analyze_sse41; }
   #endif
   #ifdef HAVE_AVX2
-    if (__builtin_cpu_supports("avx2"))   { v = FASTENT_VAR_AVX2_;   fn = analyze_avx2; }
+    if (FASTENT_X86_HAS(avx2))          { v = FASTENT_VAR_AVX2_;   fn = analyze_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_avx512; }
+    if (fastent_have_avx512_runtime())  { v = FASTENT_VAR_AVX512_; fn = analyze_avx512; }
   #endif
   #ifdef HAVE_NEON
-    if (fastent_have_neon_runtime()) { v = FASTENT_VAR_NEON_; fn = analyze_neon; }
+    if (fastent_have_neon_runtime())    { v = FASTENT_VAR_NEON_;   fn = analyze_neon; }
   #endif
-#endif
 
   if (which) *which = v;
   return fn;
@@ -173,26 +320,21 @@ fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which) {
   fastent_variant v = FASTENT_VAR_SCALAR;
   fastent_analyze_fn fn = analyze_bits_scalar;
 
-#if defined(__GNUC__) || defined(__clang__)
-  #if defined(HAVE_SSSE3) || defined(HAVE_SSE41) || defined(HAVE_AVX2) || defined(HAVE_AVX512)
-    __builtin_cpu_init();
-  #endif
   #ifdef HAVE_SSSE3
-    if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = analyze_bits_ssse3; }
+    if (FASTENT_X86_HAS(ssse3))         { v = FASTENT_VAR_SSSE3_;  fn = analyze_bits_ssse3; }
   #endif
   #ifdef HAVE_SSE41
-    if (__builtin_cpu_supports("sse4.1")) { v = FASTENT_VAR_SSE41_;  fn = analyze_bits_sse41; }
+    if (FASTENT_X86_HAS(sse42))         { v = FASTENT_VAR_SSE41_;  fn = analyze_bits_sse41; }
   #endif
   #ifdef HAVE_AVX2
-    if (__builtin_cpu_supports("avx2"))   { v = FASTENT_VAR_AVX2_;   fn = analyze_bits_avx2; }
+    if (FASTENT_X86_HAS(avx2))          { v = FASTENT_VAR_AVX2_;   fn = analyze_bits_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_bits_avx512; }
+    if (fastent_have_avx512_runtime())  { v = FASTENT_VAR_AVX512_; fn = analyze_bits_avx512; }
   #endif
   #ifdef HAVE_NEON
-    if (fastent_have_neon_runtime()) { v = FASTENT_VAR_NEON_; fn = analyze_bits_neon; }
+    if (fastent_have_neon_runtime())    { v = FASTENT_VAR_NEON_;   fn = analyze_bits_neon; }
   #endif
-#endif
 
   if (which) *which = v;
   return fn;
@@ -203,26 +345,21 @@ fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which) {
   fastent_variant v = FASTENT_VAR_SCALAR;
   fastent_analyze_fn fn = analyze_fold_scalar;
 
-#if defined(__GNUC__) || defined(__clang__)
-  #if defined(HAVE_SSSE3) || defined(HAVE_SSE41) || defined(HAVE_AVX2) || defined(HAVE_AVX512)
-    __builtin_cpu_init();
-  #endif
   #ifdef HAVE_SSSE3
-    if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = analyze_fold_ssse3; }
+    if (FASTENT_X86_HAS(ssse3))         { v = FASTENT_VAR_SSSE3_;  fn = analyze_fold_ssse3; }
   #endif
   #ifdef HAVE_SSE41
-    if (__builtin_cpu_supports("sse4.1")) { v = FASTENT_VAR_SSE41_;  fn = analyze_fold_sse41; }
+    if (FASTENT_X86_HAS(sse42))         { v = FASTENT_VAR_SSE41_;  fn = analyze_fold_sse41; }
   #endif
   #ifdef HAVE_AVX2
-    if (__builtin_cpu_supports("avx2"))   { v = FASTENT_VAR_AVX2_;   fn = analyze_fold_avx2; }
+    if (FASTENT_X86_HAS(avx2))          { v = FASTENT_VAR_AVX2_;   fn = analyze_fold_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_fold_avx512; }
+    if (fastent_have_avx512_runtime())  { v = FASTENT_VAR_AVX512_; fn = analyze_fold_avx512; }
   #endif
   #ifdef HAVE_NEON
-    if (fastent_have_neon_runtime()) { v = FASTENT_VAR_NEON_; fn = analyze_fold_neon; }
+    if (fastent_have_neon_runtime())    { v = FASTENT_VAR_NEON_;   fn = analyze_fold_neon; }
   #endif
-#endif
 
   if (which) *which = v;
   return fn;
@@ -233,26 +370,21 @@ fastent_analyze_fn fastent_pick_fold_bits_variant(fastent_variant * which) {
   fastent_variant v = FASTENT_VAR_SCALAR;
   fastent_analyze_fn fn = analyze_bits_fold_scalar;
 
-#if defined(__GNUC__) || defined(__clang__)
-  #if defined(HAVE_SSSE3) || defined(HAVE_SSE41) || defined(HAVE_AVX2) || defined(HAVE_AVX512)
-    __builtin_cpu_init();
-  #endif
   #ifdef HAVE_SSSE3
-    if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = analyze_bits_fold_ssse3; }
+    if (FASTENT_X86_HAS(ssse3))         { v = FASTENT_VAR_SSSE3_;  fn = analyze_bits_fold_ssse3; }
   #endif
   #ifdef HAVE_SSE41
-    if (__builtin_cpu_supports("sse4.1")) { v = FASTENT_VAR_SSE41_;  fn = analyze_bits_fold_sse41; }
+    if (FASTENT_X86_HAS(sse42))         { v = FASTENT_VAR_SSE41_;  fn = analyze_bits_fold_sse41; }
   #endif
   #ifdef HAVE_AVX2
-    if (__builtin_cpu_supports("avx2"))   { v = FASTENT_VAR_AVX2_;   fn = analyze_bits_fold_avx2; }
+    if (FASTENT_X86_HAS(avx2))          { v = FASTENT_VAR_AVX2_;   fn = analyze_bits_fold_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_bits_fold_avx512; }
+    if (fastent_have_avx512_runtime())  { v = FASTENT_VAR_AVX512_; fn = analyze_bits_fold_avx512; }
   #endif
   #ifdef HAVE_NEON
-    if (fastent_have_neon_runtime()) { v = FASTENT_VAR_NEON_; fn = analyze_bits_fold_neon; }
+    if (fastent_have_neon_runtime())    { v = FASTENT_VAR_NEON_;   fn = analyze_bits_fold_neon; }
   #endif
-#endif
 
   if (which) *which = v;
   return fn;
@@ -263,26 +395,21 @@ fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which) {
   fastent_variant v = FASTENT_VAR_SCALAR;
   fastent_fold_fn fn = fold_scalar;
 
-#if defined(__GNUC__) || defined(__clang__)
-  #if defined(HAVE_SSSE3) || defined(HAVE_SSE41) || defined(HAVE_AVX2) || defined(HAVE_AVX512)
-    __builtin_cpu_init();
-  #endif
   #ifdef HAVE_SSSE3
-    if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = fold_ssse3; }
+    if (FASTENT_X86_HAS(ssse3))         { v = FASTENT_VAR_SSSE3_;  fn = fold_ssse3; }
   #endif
   #ifdef HAVE_SSE41
-    if (__builtin_cpu_supports("sse4.1")) { v = FASTENT_VAR_SSE41_;  fn = fold_sse41; }
+    if (FASTENT_X86_HAS(sse42))         { v = FASTENT_VAR_SSE41_;  fn = fold_sse41; }
   #endif
   #ifdef HAVE_AVX2
-    if (__builtin_cpu_supports("avx2"))   { v = FASTENT_VAR_AVX2_;   fn = fold_avx2; }
+    if (FASTENT_X86_HAS(avx2))          { v = FASTENT_VAR_AVX2_;   fn = fold_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = fold_avx512; }
+    if (fastent_have_avx512_runtime())  { v = FASTENT_VAR_AVX512_; fn = fold_avx512; }
   #endif
   #ifdef HAVE_NEON
-    if (fastent_have_neon_runtime()) { v = FASTENT_VAR_NEON_; fn = fold_neon; }
+    if (fastent_have_neon_runtime())    { v = FASTENT_VAR_NEON_;   fn = fold_neon; }
   #endif
-#endif
 
   if (which) *which = v;
   return fn;
