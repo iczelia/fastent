@@ -243,31 +243,59 @@ AC_COMPILE_IFELSE(
   [AC_MSG_RESULT([no])
    AVX2_CFLAGS=""])
 
-# AVX-512 (F + BW + CD + DQ + VL + VPOPCNTDQ + BITALG)
-# AVX512F+BW+VL: byte/word 512-bit ops + 128/256-bit EVEX encodings.
-# AVX512CD: VPCONFLICTD/Q for the parallel-scatter histogram.
-# AVX512VPOPCNTDQ + AVX512BITALG: VPOPCNTB byte-popcount for the
-# bit-mode body (replaces the PSHUFB-LUT nibble popcount).
-# All four extensions ship together on Zen 4, Intel Ice Lake-SP, and
-# later, so a single compound probe is fine.
-AVX512_CC_FLAGS="-mavx512f -mavx512bw -mavx512cd -mavx512dq -mavx512vl -mavx512vpopcntdq -mavx512bitalg"
+# AVX-512 base path (F + BW).
+#   AVX512F:  zmm registers, foundation 32/64-bit integer ops, horizontal
+#             reduction helpers (_mm512_reduce_add_epi64).
+#   AVX512BW: 8/16-bit ops on zmm (set1_epi8, add_epi8, subs_epu8,
+#             cmpeq_epi8_mask, shuffle_epi8, madd_epi16, sad_epu8,
+#             cvtep[iu]8_epi16, srli_epi16, mullo_epi16, ...).
+# Byte popcount in the bit-mode body uses a zmm PSHUFB-LUT (BW only).
+# A separate BITALG-augmented archive below replaces those lookups with
+# VPOPCNTB when the host advertises it; the F+BW archive is the
+# fallback when BITALG is missing.
+AVX512_CC_FLAGS="-mavx512f -mavx512bw"
 CFLAGS="$save_CFLAGS $AVX512_CC_FLAGS"
-AC_MSG_CHECKING([for AVX-512F+BW+CD+VPOPCNTDQ+BITALG intrinsics with $CC])
+AC_MSG_CHECKING([for AVX-512F+BW intrinsics with $CC])
 AC_COMPILE_IFELSE(
   [AC_LANG_PROGRAM([[
     #include <immintrin.h>
   ]], [[
     __m512i a = _mm512_set1_epi8(1);
-    __m512i b = _mm512_conflict_epi32(a);
-    __m512i c = _mm512_popcnt_epi8(a);
-    __m512i d = _mm512_madd_epi16(a, b);
-    return (int) _mm512_reduce_add_epi32(_mm512_add_epi32(c, d));
+    __m512i b = _mm512_madd_epi16(a, a);
+    __m512i c = _mm512_shuffle_epi8(a, a);
+    __m512i d = _mm512_sad_epu8(a, _mm512_setzero_si512());
+    return (int) _mm512_reduce_add_epi64(
+                   _mm512_add_epi64(_mm512_add_epi64(b, c), d));
   ]])],
   [AC_MSG_RESULT([yes])
-   AC_DEFINE([HAVE_AVX512], [1], [Define if AVX-512 intrinsics are available])
+   AC_DEFINE([HAVE_AVX512], [1], [Define if AVX-512 F+BW intrinsics are available])
    AVX512_CFLAGS="$AVX512_CC_FLAGS"],
   [AC_MSG_RESULT([no])
    AVX512_CFLAGS=""])
+
+# AVX-512 BITALG augment: enables _mm512_popcnt_epi8 (VPOPCNTB) for a
+# fast byte popcount in the bit-mode body.  Only probed if base AVX-512
+# is available; the resulting TU exports _avx512_bitalg-suffixed symbols
+# the dispatcher prefers on hosts with BITALG.
+AVX512_BITALG_CFLAGS=""
+if test "x$AVX512_CFLAGS" != "x"; then
+  AVX512_BITALG_TRY="$AVX512_CFLAGS -mavx512bitalg"
+  CFLAGS="$save_CFLAGS $AVX512_BITALG_TRY"
+  AC_MSG_CHECKING([for AVX-512 BITALG intrinsics with $CC])
+  AC_COMPILE_IFELSE(
+    [AC_LANG_PROGRAM([[
+      #include <immintrin.h>
+    ]], [[
+      __m512i a = _mm512_set1_epi8(1);
+      __m512i c = _mm512_popcnt_epi8(a);
+      return (int) _mm512_reduce_add_epi64(c);
+    ]])],
+    [AC_MSG_RESULT([yes])
+     AC_DEFINE([HAVE_AVX512_BITALG], [1],
+       [Define if AVX-512 BITALG (VPOPCNTB) intrinsics are available])
+     AVX512_BITALG_CFLAGS="$AVX512_BITALG_TRY"],
+    [AC_MSG_RESULT([no])])
+fi
 
 CFLAGS="$save_CFLAGS"
 
@@ -275,12 +303,14 @@ AC_SUBST([SSSE3_CFLAGS])
 AC_SUBST([SSE41_CFLAGS])
 AC_SUBST([AVX2_CFLAGS])
 AC_SUBST([AVX512_CFLAGS])
+AC_SUBST([AVX512_BITALG_CFLAGS])
 AC_SUBST([NEON_CFLAGS])
-AM_CONDITIONAL([HAVE_SSSE3],  [test "x$SSSE3_CFLAGS"  != "x"])
-AM_CONDITIONAL([HAVE_SSE41],  [test "x$SSE41_CFLAGS"  != "x"])
-AM_CONDITIONAL([HAVE_AVX2],   [test "x$AVX2_CFLAGS"   != "x"])
-AM_CONDITIONAL([HAVE_AVX512], [test "x$AVX512_CFLAGS" != "x"])
-AM_CONDITIONAL([HAVE_NEON],   [test "x$fastent_have_neon" = "xyes"])
+AM_CONDITIONAL([HAVE_SSSE3],         [test "x$SSSE3_CFLAGS"         != "x"])
+AM_CONDITIONAL([HAVE_SSE41],         [test "x$SSE41_CFLAGS"         != "x"])
+AM_CONDITIONAL([HAVE_AVX2],          [test "x$AVX2_CFLAGS"          != "x"])
+AM_CONDITIONAL([HAVE_AVX512],        [test "x$AVX512_CFLAGS"        != "x"])
+AM_CONDITIONAL([HAVE_AVX512_BITALG], [test "x$AVX512_BITALG_CFLAGS" != "x"])
+AM_CONDITIONAL([HAVE_NEON],          [test "x$fastent_have_neon"    = "xyes"])
 
 # Optional optimisations.
 AC_ARG_ENABLE([native],

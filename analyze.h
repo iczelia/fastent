@@ -63,12 +63,13 @@ typedef struct {
 
 /*  Dispatch flags returned by fastent_pick_variant().  */
 typedef enum {
-  FASTENT_VAR_SCALAR = 0,
-  FASTENT_VAR_SSSE3_  = 1,
-  FASTENT_VAR_SSE41_  = 2,
-  FASTENT_VAR_AVX2_   = 3,
-  FASTENT_VAR_AVX512_ = 4,
-  FASTENT_VAR_NEON_   = 5
+  FASTENT_VAR_SCALAR        = 0,
+  FASTENT_VAR_SSSE3_        = 1,
+  FASTENT_VAR_SSE41_        = 2,
+  FASTENT_VAR_AVX2_         = 3,
+  FASTENT_VAR_AVX512_       = 4,
+  FASTENT_VAR_AVX512_BITALG = 5,
+  FASTENT_VAR_NEON_         = 6
 } fastent_variant;
 
 typedef void (* fastent_analyze_fn)(fastent_chunk_state *, const u8 *, sz);
@@ -91,6 +92,9 @@ void analyze_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 #ifdef HAVE_AVX512
 void analyze_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
+#ifdef HAVE_AVX512_BITALG
+void analyze_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
 #ifdef HAVE_NEON
 void analyze_neon(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
@@ -111,6 +115,9 @@ void analyze_fold_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX512
 void analyze_fold_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_AVX512_BITALG
+void analyze_fold_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_NEON
 void analyze_fold_neon(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -135,6 +142,9 @@ void analyze_bits_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 #ifdef HAVE_AVX512
 void analyze_bits_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
+#ifdef HAVE_AVX512_BITALG
+void analyze_bits_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
 #ifdef HAVE_NEON
 void analyze_bits_neon(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
@@ -152,6 +162,9 @@ void analyze_bits_fold_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX512
 void analyze_bits_fold_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_AVX512_BITALG
+void analyze_bits_fold_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_NEON
 void analyze_bits_fold_neon(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -176,6 +189,9 @@ void fold_avx2(u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX512
 void fold_avx512(u8 * buf, sz len);
+#endif
+#ifdef HAVE_AVX512_BITALG
+void fold_avx512_bitalg(u8 * buf, sz len);
 #endif
 #ifdef HAVE_NEON
 void fold_neon(u8 * buf, sz len);

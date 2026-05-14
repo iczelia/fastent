@@ -45,6 +45,13 @@ libfastent_avx512_a_CFLAGS   = $(AM_CFLAGS) $(AVX512_CFLAGS)
 fastent_LDADD               += libfastent_avx512.a
 endif
 
+if HAVE_AVX512_BITALG
+noinst_LIBRARIES                   += libfastent_avx512_bitalg.a
+libfastent_avx512_bitalg_a_SOURCES  = analyze-avx512-bitalg.c
+libfastent_avx512_bitalg_a_CFLAGS   = $(AM_CFLAGS) $(AVX512_BITALG_CFLAGS)
+fastent_LDADD                      += libfastent_avx512_bitalg.a
+endif
+
 if HAVE_NEON
 noinst_LIBRARIES           += libfastent_neon.a
 libfastent_neon_a_SOURCES   = analyze-neon.c

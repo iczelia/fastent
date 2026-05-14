@@ -156,10 +156,6 @@ typedef struct {
   unsigned avx2 : 1;
   unsigned avx512f : 1;
   unsigned avx512bw : 1;
-  unsigned avx512cd : 1;
-  unsigned avx512dq : 1;
-  unsigned avx512vl : 1;
-  unsigned avx512vpopcntdq : 1;
   unsigned avx512bitalg : 1;
 } fastent_x86_features;
 
@@ -173,8 +169,7 @@ static fastent_x86_features fastent_x86_probe(void) {
       manually.  */
   f.ssse3 = f.sse41 = f.sse42 = 0;
   f.avx = f.avx2 = 0;
-  f.avx512f = f.avx512bw = f.avx512cd = f.avx512dq = f.avx512vl = 0;
-  f.avx512vpopcntdq = f.avx512bitalg = 0;
+  f.avx512f = f.avx512bw = f.avx512bitalg = 0;
 
   if (!fastent_x86_has_cpuid()) return f;
   fastent_cpuid(0, 0, &a, &b, &c, &d);
@@ -205,13 +200,9 @@ static fastent_x86_features fastent_x86_probe(void) {
   fastent_cpuid(7, 0, &a, &b, &c, &d);
   if (avx_os_ok && (b & (1u <<  5))) f.avx2 = 1;
   if (avx512_os_ok) {
-    if (b & (1u << 16)) f.avx512f         = 1;
-    if (b & (1u << 17)) f.avx512dq        = 1;
-    if (b & (1u << 28)) f.avx512cd        = 1;
-    if (b & (1u << 30)) f.avx512bw        = 1;
-    if (b & (1u << 31)) f.avx512vl        = 1;
-    if (c & (1u << 12)) f.avx512bitalg    = 1;
-    if (c & (1u << 14)) f.avx512vpopcntdq = 1;
+    if (b & (1u << 16)) f.avx512f      = 1;
+    if (b & (1u << 30)) f.avx512bw     = 1;
+    if (c & (1u << 12)) f.avx512bitalg = 1;
   }
   return f;
 }
@@ -232,14 +223,20 @@ static const fastent_x86_features * fastent_x86_features_get(void) {
 
 #define FASTENT_X86_HAS(name) (fastent_x86_features_get()->name)
 
-/*  AVX-512 readiness for the SIMD body: needs F, BW, CD, VPOPCNTDQ,
-    BITALG.  All five ship together on Zen 4 and Ice Lake-SP+, so the
-    compound test is fine.  */
+/*  AVX-512 readiness probes.  Two tiers:
+      base:   F + BW, drives analyze_avx512 (PSHUFB-LUT byte popcount).
+      bitalg: F + BW + BITALG, drives analyze_avx512_bitalg (VPOPCNTB).
+    The dispatcher prefers bitalg when both are available.  */
 #ifdef HAVE_AVX512
 static int fastent_have_avx512_runtime(void) {
   const fastent_x86_features * f = fastent_x86_features_get();
-  return f->avx512f && f->avx512bw && f->avx512cd
-      && f->avx512vpopcntdq && f->avx512bitalg;
+  return f->avx512f && f->avx512bw;
+}
+#endif
+#ifdef HAVE_AVX512_BITALG
+static int fastent_have_avx512_bitalg_runtime(void) {
+  const fastent_x86_features * f = fastent_x86_features_get();
+  return f->avx512f && f->avx512bw && f->avx512bitalg;
 }
 #endif
 
@@ -249,6 +246,9 @@ static int fastent_have_avx512_runtime(void) {
 #define FASTENT_X86_HAS(name) 0
 #ifdef HAVE_AVX512
 static int fastent_have_avx512_runtime(void) { return 0; }
+#endif
+#ifdef HAVE_AVX512_BITALG
+static int fastent_have_avx512_bitalg_runtime(void) { return 0; }
 #endif
 
 #endif
@@ -291,10 +291,13 @@ fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
     if (FASTENT_X86_HAS(avx2))          { v = FASTENT_VAR_AVX2_;   fn = analyze_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime())  { v = FASTENT_VAR_AVX512_; fn = analyze_avx512; }
+    if (fastent_have_avx512_runtime())         { v = FASTENT_VAR_AVX512_;       fn = analyze_avx512; }
+  #endif
+  #ifdef HAVE_AVX512_BITALG
+    if (fastent_have_avx512_bitalg_runtime())  { v = FASTENT_VAR_AVX512_BITALG; fn = analyze_avx512_bitalg; }
   #endif
   #ifdef HAVE_NEON
-    if (fastent_have_neon_runtime())    { v = FASTENT_VAR_NEON_;   fn = analyze_neon; }
+    if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = analyze_neon; }
   #endif
 
   if (which) *which = v;
@@ -303,12 +306,13 @@ fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
 
 const char * fastent_variant_name(fastent_variant v) {
   switch (v) {
-    case FASTENT_VAR_AVX512_: return "avx512";
-    case FASTENT_VAR_AVX2_:   return "avx2";
-    case FASTENT_VAR_SSE41_:  return "sse4.1";
-    case FASTENT_VAR_SSSE3_:  return "ssse3";
-    case FASTENT_VAR_NEON_:   return "neon";
-    case FASTENT_VAR_SCALAR: return "scalar";
+    case FASTENT_VAR_AVX512_BITALG: return "avx512+bitalg";
+    case FASTENT_VAR_AVX512_:       return "avx512";
+    case FASTENT_VAR_AVX2_:         return "avx2";
+    case FASTENT_VAR_SSE41_:        return "sse4.1";
+    case FASTENT_VAR_SSSE3_:        return "ssse3";
+    case FASTENT_VAR_NEON_:         return "neon";
+    case FASTENT_VAR_SCALAR:        return "scalar";
   }
   return "scalar";
 }
@@ -330,10 +334,13 @@ fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which) {
     if (FASTENT_X86_HAS(avx2))          { v = FASTENT_VAR_AVX2_;   fn = analyze_bits_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime())  { v = FASTENT_VAR_AVX512_; fn = analyze_bits_avx512; }
+    if (fastent_have_avx512_runtime())         { v = FASTENT_VAR_AVX512_;       fn = analyze_bits_avx512; }
+  #endif
+  #ifdef HAVE_AVX512_BITALG
+    if (fastent_have_avx512_bitalg_runtime())  { v = FASTENT_VAR_AVX512_BITALG; fn = analyze_bits_avx512_bitalg; }
   #endif
   #ifdef HAVE_NEON
-    if (fastent_have_neon_runtime())    { v = FASTENT_VAR_NEON_;   fn = analyze_bits_neon; }
+    if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = analyze_bits_neon; }
   #endif
 
   if (which) *which = v;
@@ -355,10 +362,13 @@ fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which) {
     if (FASTENT_X86_HAS(avx2))          { v = FASTENT_VAR_AVX2_;   fn = analyze_fold_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime())  { v = FASTENT_VAR_AVX512_; fn = analyze_fold_avx512; }
+    if (fastent_have_avx512_runtime())         { v = FASTENT_VAR_AVX512_;       fn = analyze_fold_avx512; }
+  #endif
+  #ifdef HAVE_AVX512_BITALG
+    if (fastent_have_avx512_bitalg_runtime())  { v = FASTENT_VAR_AVX512_BITALG; fn = analyze_fold_avx512_bitalg; }
   #endif
   #ifdef HAVE_NEON
-    if (fastent_have_neon_runtime())    { v = FASTENT_VAR_NEON_;   fn = analyze_fold_neon; }
+    if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = analyze_fold_neon; }
   #endif
 
   if (which) *which = v;
@@ -380,10 +390,13 @@ fastent_analyze_fn fastent_pick_fold_bits_variant(fastent_variant * which) {
     if (FASTENT_X86_HAS(avx2))          { v = FASTENT_VAR_AVX2_;   fn = analyze_bits_fold_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime())  { v = FASTENT_VAR_AVX512_; fn = analyze_bits_fold_avx512; }
+    if (fastent_have_avx512_runtime())         { v = FASTENT_VAR_AVX512_;       fn = analyze_bits_fold_avx512; }
+  #endif
+  #ifdef HAVE_AVX512_BITALG
+    if (fastent_have_avx512_bitalg_runtime())  { v = FASTENT_VAR_AVX512_BITALG; fn = analyze_bits_fold_avx512_bitalg; }
   #endif
   #ifdef HAVE_NEON
-    if (fastent_have_neon_runtime())    { v = FASTENT_VAR_NEON_;   fn = analyze_bits_fold_neon; }
+    if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = analyze_bits_fold_neon; }
   #endif
 
   if (which) *which = v;
@@ -405,10 +418,13 @@ fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which) {
     if (FASTENT_X86_HAS(avx2))          { v = FASTENT_VAR_AVX2_;   fn = fold_avx2; }
   #endif
   #ifdef HAVE_AVX512
-    if (fastent_have_avx512_runtime())  { v = FASTENT_VAR_AVX512_; fn = fold_avx512; }
+    if (fastent_have_avx512_runtime())         { v = FASTENT_VAR_AVX512_;       fn = fold_avx512; }
+  #endif
+  #ifdef HAVE_AVX512_BITALG
+    if (fastent_have_avx512_bitalg_runtime())  { v = FASTENT_VAR_AVX512_BITALG; fn = fold_avx512_bitalg; }
   #endif
   #ifdef HAVE_NEON
-    if (fastent_have_neon_runtime())    { v = FASTENT_VAR_NEON_;   fn = fold_neon; }
+    if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = fold_neon; }
   #endif
 
   if (which) *which = v;

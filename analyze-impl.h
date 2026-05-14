@@ -44,7 +44,11 @@
 #endif
 
 #if defined(FASTENT_VARIANT_AVX512)
-  #define FASTENT_VAR_SUFFIX _avx512
+  #if defined(FASTENT_AVX512_HAVE_BITALG)
+    #define FASTENT_VAR_SUFFIX _avx512_bitalg
+  #else
+    #define FASTENT_VAR_SUFFIX _avx512
+  #endif
   #define FASTENT_SIMD_VEC   __m512i
   #define FASTENT_SIMD_VLEN  64
   #define V_SET1_EPI8(x)       _mm512_set1_epi8((char)(x))
@@ -1430,22 +1434,32 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   }
   st->have_carry = 1;
 
-  /*  PSHUFB-LUT for nibble popcount. AVX2 PSHUFB is per-lane so we
-      duplicate the 16-entry table into both lanes.  On AVX-512 we have
-      VPOPCNTB (BITALG + VPOPCNTDQ) directly, so the LUT is unused.  */
+  /*  PSHUFB-LUT for nibble popcount. PSHUFB is per-128-bit lane, so the
+      16-entry table is replicated across every lane of the chosen vector
+      width.  AVX-512 with BITALG replaces the LUT with VPOPCNTB; NEON
+      uses vcntq_u8 directly.  */
 #if defined(FASTENT_VARIANT_AVX2)
   const FASTENT_SIMD_VEC popcnt_lut = _mm256_setr_epi8(
     0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
     0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
 #elif defined(FASTENT_VARIANT_AVX512)
-  /*  Unused on AVX-512: VPOPCNTB replaces the LUT lookups.  */
+  #if defined(FASTENT_AVX512_HAVE_BITALG)
+    /*  Unused: VPOPCNTB replaces the LUT lookups.  */
+  #else
+    /*  AVX-512 F+BW fallback: same 16-entry nibble LUT, broadcast into
+        all four 128-bit PSHUFB lanes of the zmm via vbroadcasti32x4
+        (AVX-512F). _mm512_setr_epi8 is not part of the intrinsic set.  */
+    const FASTENT_SIMD_VEC popcnt_lut = _mm512_broadcast_i32x4(
+      _mm_setr_epi8(0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4));
+  #endif
 #elif defined(FASTENT_VARIANT_NEON)
   /*  Unused on NEON: vcntq_u8 replaces the LUT lookups.  */
 #else
   const FASTENT_SIMD_VEC popcnt_lut = _mm_setr_epi8(
     0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
 #endif
-#if !defined(FASTENT_VARIANT_AVX512) && !defined(FASTENT_VARIANT_NEON)
+#if !((defined(FASTENT_VARIANT_AVX512) && defined(FASTENT_AVX512_HAVE_BITALG)) \
+      || defined(FASTENT_VARIANT_NEON))
   const FASTENT_SIMD_VEC nibble_mask = V_SET1_EPI8(0x0F);
 #endif
   const FASTENT_SIMD_VEC mask_7f     = V_SET1_EPI8(0x7F);
@@ -1473,7 +1487,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
       vb = FASTENT_FN(fold_vec_inline)(vb);
     }
 
-#if defined(FASTENT_VARIANT_AVX512)
+#if defined(FASTENT_VARIANT_AVX512) && defined(FASTENT_AVX512_HAVE_BITALG)
     /*  Direct byte-wise popcount via VPOPCNTB; horizontal reduce to
         qword via PSADBW.  */
     FASTENT_SIMD_VEC pc_va = _mm512_popcnt_epi8(va);
