@@ -122,6 +122,7 @@ jobs:
           # the toolchain bump lands.
           - { id: linux-riscv64,          zig: riscv64-linux-musl,        host: riscv64-unknown-linux-musl,        lto: 0, ldflags: "-static -s", bin: fastent,     qemu: qemu-riscv64-static    }
           - { id: linux-powerpc64le,      zig: powerpc64le-linux-musl,    host: powerpc64le-unknown-linux-musl,    lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-ppc64le-static    }
+          - { id: linux-powerpc64,        zig: powerpc64-linux-musl,      host: powerpc64-unknown-linux-musl,      lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-ppc64-static      }
           - { id: linux-powerpc,          zig: powerpc-linux-musleabihf,  host: powerpc-unknown-linux-musleabihf,  lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-ppc-static        }
           - { id: linux-s390x,            zig: s390x-linux-musl,          host: s390x-ibm-linux-musl,              lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-s390x-static      }
           - { id: linux-loongarch64,      zig: loongarch64-linux-musl,    host: loongarch64-unknown-linux-musl,    lto: 0, ldflags: "-static -s", bin: fastent,     qemu: qemu-loongarch64-static }
