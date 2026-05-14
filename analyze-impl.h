@@ -1315,6 +1315,9 @@ FASTENT_FN(analyze_impl)(fastent_chunk_state * st,
 
 void FASTENT_FN(analyze)(fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   FASTENT_FN(analyze_impl)(st, buf, len, 0);
+#if defined(FASTENT_VARIANT_AVX2) || defined(FASTENT_VARIANT_AVX512)
+  _mm256_zeroupper();
+#endif
 }
 
 void FASTENT_FN(analyze_fold)(fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
