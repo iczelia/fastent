@@ -33,6 +33,14 @@ if [ ! -x "$FASTENT" ]; then
   exit 1
 fi
 
+# Locate ent(1) if installed.  Empty ENT disables the side-by-side row.
+# Override via ENT=/path/to/ent or ENT=skip to force-disable.
+if [ "${ENT:-}" = "skip" ]; then
+  ENT=""
+elif [ -z "${ENT:-}" ]; then
+  ENT=$(command -v ent 2>/dev/null || true)
+fi
+
 if command -v nproc >/dev/null 2>&1; then
   NPROC=$(nproc)
 else
@@ -80,6 +88,11 @@ mkdir -p "$CACHE_DIR"
 
 printf '== fastent benchmark ==\n'
 printf '  binary    : %s\n' "$FASTENT"
+if [ -n "$ENT" ] && [ -x "$ENT" ]; then
+  printf '  ent       : %s (compared at jobs=ent, single-threaded)\n' "$ENT"
+else
+  printf '  ent       : not found in PATH (set ENT=path or ENT=skip)\n'
+fi
 printf '  size/run  : %d MiB\n' "$SIZE_MB"
 printf '  runs/cell : %d (after %d warmup)\n' "$RUNS" "$WARMUP"
 printf '  jobs      :%s\n' "$JOBS"
@@ -146,6 +159,29 @@ run_cell() {
   done
 }
 
+# ---- Same timing harness, but for ent(1).  Single-threaded; modeflags
+# happen to match fastent for byte / bit / byte-fold / bit-fold. ----
+run_cell_ent() {
+  ds=$1; modeflag=$2
+  path="$CACHE_DIR/${ds}-${SIZE_MB}M.bin"
+
+  # shellcheck disable=SC2086
+  i=0
+  while [ "$i" -lt "$WARMUP" ]; do
+    "$ENT" $modeflag "$path" >/dev/null
+    i=$(( i + 1 ))
+  done
+
+  i=0
+  while [ "$i" -lt "$RUNS" ]; do
+    t0=$(now)
+    "$ENT" $modeflag "$path" >/dev/null
+    t1=$(now)
+    awk -v a="$t0" -v b="$t1" 'BEGIN { printf "%.6f\n", b - a }'
+    i=$(( i + 1 ))
+  done
+}
+
 # ---- Reduce: stdin = one elapsed-seconds float per line. ----
 reduce() {
   awk -v size_mb="$SIZE_MB" '
@@ -168,7 +204,8 @@ reduce() {
     }'
 }
 
-# ---- Header ----
+# ---- Header.  The jobs column is right-aligned text so it can hold
+# both an integer (fastent) and the literal "ent" (reference run). ----
 printf '  %-12s %-9s %4s   %9s   %9s   %9s   %9s   %9s\n' \
   dataset mode jobs mean stddev min max 'MiB/s'
 printf '  %-12s %-9s %4s   %9s   %9s   %9s   %9s   %9s\n' \
@@ -177,6 +214,12 @@ printf '  %-12s %-9s %4s   %9s   %9s   %9s   %9s   %9s\n' \
 for ds in $DATASETS; do
   for mode in $MODES; do
     mf=$(modeflags_for "$mode")
+    if [ -n "$ENT" ] && [ -x "$ENT" ]; then
+      stats=$(run_cell_ent "$ds" "$mf" | reduce)
+      set -- $stats
+      printf '  %-12s %-9s %4s   %8ss   %8ss   %8ss   %8ss   %9s\n' \
+        "$ds" "$mode" ent "$1" "$2" "$3" "$4" "$5"
+    fi
     for j in $JOBS; do
       stats=$(run_cell "$ds" "$mf" "$j" | reduce)
       # stats = "mean stddev min max mibs"
