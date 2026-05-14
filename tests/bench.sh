@@ -157,8 +157,8 @@ run_cell() {
   done
 }
 
-# ---- Same timing harness, but for ent(1).  Single-threaded; modeflags
-# happen to match fastent for byte / bit / byte-fold / bit-fold. ----
+# Same timing harness, but for ent(1).  Single-threaded; modeflags
+# happen to match fastent for byte / bit / byte-fold / bit-fold.
 run_cell_ent() {
   ds=$1; modeflag=$2
   path="$CACHE_DIR/${ds}-${SIZE_MB}M.bin"
@@ -201,8 +201,8 @@ reduce() {
     }'
 }
 
-# ---- Header.  The jobs column is right-aligned text so it can hold
-# both an integer (fastent) and the literal "ent" (reference run). ----
+# Header: The jobs column is right-aligned text so it can hold
+# both an integer (fastent) and the literal "ent" (reference run).
 printf '  %-12s %-9s %4s   %9s   %9s   %9s   %9s   %9s\n' \
   dataset mode jobs mean stddev min max 'MiB/s'
 printf '  %-12s %-9s %4s   %9s   %9s   %9s   %9s   %9s\n' \

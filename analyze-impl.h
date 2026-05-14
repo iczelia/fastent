@@ -11,7 +11,6 @@
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).
 
-    ----------------------------------------------------------------------
     Algorithm notes.
 
     For an input byte stream b[0..N-1] we compute, in a single pass:
@@ -1076,8 +1075,8 @@ void FASTENT_FN(fold)(u8 * buf, sz len) {
 
       bit_hist[1]  += sum_i popcount(b[i])
       bit_hist[0]  += 8*N - bit_hist[1]
-      cross_product +=  sum_i popcount(b[i] & (b[i] >> 1))   /-- within-byte
-                      + sum_{i<N-1} (b[i] & 1) & (b[i+1] >> 7)   /-- cross-byte
+      cross_product +=  sum_i popcount(b[i] & (b[i] >> 1))   (within-byte)
+                      + sum_{i<N-1} (b[i] & 1) & (b[i+1] >> 7)   (cross-byte)
       MC Pi is byte-driven (one trial per 6 input bytes, same as byte
       mode).
 
@@ -1085,7 +1084,7 @@ void FASTENT_FN(fold)(u8 * buf, sz len) {
     + PSADBW reduction. Per VLEN bytes we issue ~3 popcounts and 3 SADs.
     Carry / first / last are stored as bit values (0 or 1) so that the
     existing run_mmap_mt merge (carry * first) is exactly the cross-slab
-    bit-pair contribution -- no separate bit-mode merge is needed.  */
+    bit-pair contribution; no separate bit-mode merge is needed.  */
 
 #ifdef FASTENT_HAVE_SIMD
 

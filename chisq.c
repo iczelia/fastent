@@ -14,8 +14,6 @@
     You should have received a copy of the GNU General Public License
     along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    ----------------------------------------------------------------------
-
     Portable double-double implementation, audited bit-for-bit against
     a __float128 reference: 0 ULP max error across 5 M log-uniform
     random samples spanning chisq in [10^-10, 1490] for df=1 (a=0.5)
@@ -33,13 +31,13 @@
       double arithmetic.
 
       Libm calls in the deployed code are restricted to: fma, sqrt,
-      round, ldexp -- all four are either correctly-rounded by IEEE
+      round, ldexp: all four are either correctly-rounded by IEEE
       754 (sqrt, fma) or trivial bit operations (round, ldexp).
 
     Algorithms:
 
       df = 1   :  Q(0.5, z) computed directly as the regularised
-                  incomplete gamma -- via the lower-tail Taylor series
+                  incomplete gamma via the lower-tail Taylor series
                   (z < 1.5) or the Steed/Lentz continued fraction
                   (z >= 1.5), all in DD.  We never call libm erfc.
 
@@ -189,7 +187,7 @@ static dd_t dd_exp_d(f64 x) {
   return r;
 }
 
-/*  Q(0.5, z) -- bit-mode tail.  Computed as the regularised
+/*  Q(0.5, z): bit-mode tail.  Computed as the regularised
     incomplete gamma via series for z < 1.5 and Lentz CF for
     z >= 1.5.  No call to libm erfc.  */
 
@@ -200,7 +198,7 @@ static const dd_t PI_DD = {
 /*  pref_05(z) = e^-z * sqrt(z/pi), in DD.  Used by both the series
     and CF branches of Q(0.5, z).  Eager ldexp inside dd_exp_d is OK
     here because Q(0.5, z) is only ever the FINAL result for binary
-    mode -- if z is so large that e^-z underflows, Q itself is
+    mode: if z is so large that e^-z underflows, Q itself is
     underflowing too and we just round to 0.  */
 static dd_t pref_05_dd(f64 z) {
   dd_t e   = dd_exp_d(-z);
@@ -261,7 +259,7 @@ static dd_t Q_05_dd(f64 z) {
   return dd_mul(pref, h);
 }
 
-/*  Q(127.5, z) -- byte-mode tail via half-integer closed form.
+/*  Q(127.5, z): byte-mode tail via half-integer closed form.
 
       Q(127.5, z) = Q(0.5, z) + 2 * e^-z * U(z)
       U(z)        = sum_{k=0}^{126} T_k
