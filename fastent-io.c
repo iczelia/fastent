@@ -2,7 +2,7 @@
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
-#include "io.h"   /*  Pulls common.h with feature macros (must be first).  */
+#include "fastent-io.h"   /*  Pulls common.h with feature macros (must be first).  */
 
 #include <errno.h>
 #include <stdlib.h>
@@ -15,6 +15,27 @@
 #endif
 #ifdef HAVE_SYS_MMAN_H
   #include <sys/mman.h>
+#endif
+
+/*  Windows MSVCRT's open(2) re-narrows the path argument through the
+    active code page on its way to NtCreateFile, which breaks any path
+    whose codepoints don't round-trip through CP_ACP.  Route the
+    open, close and read calls through the fastent_win32_* helpers on
+    Windows; on POSIX hosts they're just the libc names.  We also
+    need this indirection because -std=c99 sets __STRICT_ANSI__ which
+    hides POSIX names like close/read/_setmode in MinGW's headers.  */
+#ifdef _WIN32
+  #include "fastent-win32.h"
+  #define FASTENT_OPEN_RD(p)      fastent_win32_open_utf8((p), O_RDONLY | O_BINARY)
+  #define FASTENT_CLOSE(fd)       fastent_win32_close((fd))
+  #define FASTENT_READ(fd, b, n)  fastent_win32_read((fd), (b), (n))
+#else
+  #ifndef O_BINARY
+    #define O_BINARY 0
+  #endif
+  #define FASTENT_OPEN_RD(p)      open((p), O_RDONLY | O_BINARY)
+  #define FASTENT_CLOSE(fd)       close((fd))
+  #define FASTENT_READ(fd, b, n)  read((fd), (b), (n))
 #endif
 
 #define FASTENT_STREAM_BUF (2u * 1024u * 1024u)  /*  2 MiB per read()  */
@@ -55,11 +76,7 @@ int fastent_src_open(fastent_source * s, const char * path, int no_mmap) {
     return 0;
   }
 
-  int fd = open(path, O_RDONLY
-#ifdef O_BINARY
-                          | O_BINARY
-#endif
-                );
+  int fd = FASTENT_OPEN_RD(path);
   if (fd < 0) return -1;
   s->opened_fd = 1;
   s->fd = fd;
@@ -99,7 +116,7 @@ int fastent_src_open(fastent_source * s, const char * path, int no_mmap) {
 
   s->kind = FASTENT_SRC_STREAM;
   if (alloc_stream_buf(s) < 0) {
-    close(fd);  s->fd = -1;  s->opened_fd = 0;
+    FASTENT_CLOSE(fd);  s->fd = -1;  s->opened_fd = 0;
     return -1;
   }
   return 0;
@@ -109,7 +126,8 @@ sz fastent_src_read(fastent_source * s) {
   if (s->kind != FASTENT_SRC_STREAM) return 0;
   sz off = 0;
   while (off < s->stream_buf_cap) {
-    ssize_t n = read(s->fd, s->stream_buf + off, s->stream_buf_cap - off);
+    long n = (long) FASTENT_READ(s->fd, s->stream_buf + off,
+                                  s->stream_buf_cap - off);
     if (n < 0)  { if (errno == EINTR) continue;  return (sz) -1; }
     if (n == 0) break;
     off += (sz) n;
@@ -126,7 +144,7 @@ void fastent_src_close(fastent_source * s) {
     s->map = NULL;
   }
   if (s->stream_buf) { free(s->stream_buf);  s->stream_buf = NULL; }
-  if (s->opened_fd && s->fd >= 0) close(s->fd);
+  if (s->opened_fd && s->fd >= 0) FASTENT_CLOSE(s->fd);
   s->fd = -1;
   s->kind = FASTENT_SRC_NONE;
 }
