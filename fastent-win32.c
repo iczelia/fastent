@@ -236,4 +236,10 @@ long fastent_win32_read(int fd, void * buf, size_t n) {
   return (long) _read(fd, buf, cap);
 }
 
+long fastent_win32_num_cpus(void) {
+  SYSTEM_INFO si;
+  GetSystemInfo(&si);
+  return (long) si.dwNumberOfProcessors;
+}
+
 #endif

@@ -49,6 +49,11 @@ int fastent_win32_open_utf8(const char * path, int flags);
 int fastent_win32_close(int fd);
 long fastent_win32_read(int fd, void * buf, size_t n);
 
+/*  GetSystemInfo-backed CPU count for the threadpool sizing path; the
+    sysconf(_SC_NPROCESSORS_ONLN) we use on POSIX doesn't exist in
+    mingw-w64's headers.  */
+long fastent_win32_num_cpus(void);
+
 #endif
 
 #endif

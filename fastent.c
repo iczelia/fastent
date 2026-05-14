@@ -484,7 +484,11 @@ int main(int argc, char ** argv) {
 
 #ifdef FASTENT_HAVE_PTHREAD
   if (o.threads < 0) {
+#ifdef _WIN32
+    long n = fastent_win32_num_cpus();
+#else
     long n = sysconf(_SC_NPROCESSORS_ONLN);
+#endif
     o.threads = n > 0 && n < 1024 ? (int) n : 1;
   }
   if (o.threads > 1) fastent_set_num_threads(o.threads);

@@ -253,25 +253,33 @@ AC_COMPILE_IFELSE(
 # A separate BITALG-augmented archive below replaces those lookups with
 # VPOPCNTB when the host advertises it; the F+BW archive is the
 # fallback when BITALG is missing.
-AVX512_CC_FLAGS="-mavx512f -mavx512bw"
-CFLAGS="$save_CFLAGS $AVX512_CC_FLAGS"
-AC_MSG_CHECKING([for AVX-512F+BW intrinsics with $CC])
-AC_COMPILE_IFELSE(
-  [AC_LANG_PROGRAM([[
-    #include <immintrin.h>
-  ]], [[
-    __m512i a = _mm512_set1_epi8(1);
-    __m512i b = _mm512_madd_epi16(a, a);
-    __m512i c = _mm512_shuffle_epi8(a, a);
-    __m512i d = _mm512_sad_epu8(a, _mm512_setzero_si512());
-    return (int) _mm512_reduce_add_epi64(
-                   _mm512_add_epi64(_mm512_add_epi64(b, c), d));
-  ]])],
-  [AC_MSG_RESULT([yes])
-   AC_DEFINE([HAVE_AVX512], [1], [Define if AVX-512 F+BW intrinsics are available])
-   AVX512_CFLAGS="$AVX512_CC_FLAGS"],
-  [AC_MSG_RESULT([no])
-   AVX512_CFLAGS=""])
+# Clang 18+ split 512-bit ZMM use behind a separate `evex512` feature
+# (preparation for AVX10/256-only parts); without `-mevex512` the
+# 512-bit intrinsics now fail to inline.  GCC 14 picked up the same
+# spelling.  We probe `-mevex512` first and fall back if the toolchain
+# is too old to know the flag.
+AVX512_CC_FLAGS_BASE="-mavx512f -mavx512bw"
+AVX512_CFLAGS=""
+for fastent_avx512_try in "-mevex512 $AVX512_CC_FLAGS_BASE" "$AVX512_CC_FLAGS_BASE"; do
+  test "x$AVX512_CFLAGS" != "x" && break
+  CFLAGS="$save_CFLAGS $fastent_avx512_try"
+  AC_MSG_CHECKING([for AVX-512F+BW intrinsics with $CC $fastent_avx512_try])
+  AC_COMPILE_IFELSE(
+    [AC_LANG_PROGRAM([[
+      #include <immintrin.h>
+    ]], [[
+      __m512i a = _mm512_set1_epi8(1);
+      __m512i b = _mm512_madd_epi16(a, a);
+      __m512i c = _mm512_shuffle_epi8(a, a);
+      __m512i d = _mm512_sad_epu8(a, _mm512_setzero_si512());
+      return (int) _mm512_reduce_add_epi64(
+                     _mm512_add_epi64(_mm512_add_epi64(b, c), d));
+    ]])],
+    [AC_MSG_RESULT([yes])
+     AC_DEFINE([HAVE_AVX512], [1], [Define if AVX-512 F+BW intrinsics are available])
+     AVX512_CFLAGS="$fastent_avx512_try"],
+    [AC_MSG_RESULT([no])])
+done
 
 # AVX-512 BITALG augment: enables _mm512_popcnt_epi8 (VPOPCNTB) for a
 # fast byte popcount in the bit-mode body.  Only probed if base AVX-512
