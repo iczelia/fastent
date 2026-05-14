@@ -13,6 +13,8 @@ endif
 if FASTENT_IS_WINDOWS
 fastent_SOURCES += fastent-win32.c
 endif
+fastent_CPPFLAGS = $(FASTENT_WIN_CPPFLAGS)
+fastent_LDFLAGS  = $(FASTENT_WIN_LDFLAGS)
 fastent_LDADD =
 
 noinst_LIBRARIES =
@@ -63,7 +65,8 @@ dist_man_MANS = fastent.1
 
 EXTRA_DIST = README.md NEWS ChangeLog AUTHORS COPYING bootstrap \
              tests/run-tests.sh tests/bench.sh tests/bench-gen.c \
-             doc/bench.png doc/bench.tsv
+             doc/bench.png doc/bench.tsv \
+             contrib/dos/dosbox-x.conf
 
 check-local:
 	$(srcdir)/tests/run-tests.sh "$(builddir)/fastent$(EXEEXT)" \
@@ -71,6 +74,7 @@ check-local:
 
 clean-local:
 	-rm -rf "$(builddir)/tests/fixtures"
+	-rm -f "$(builddir)/fastent-dos-stub-stamp" "$(builddir)/fastent"
 
 .PHONY: bench bench-quick bench-clean
 bench: fastent
@@ -84,3 +88,15 @@ bench-quick: fastent
 bench-clean:
 	-rm -rf "$${CACHE_DIR:-/tmp/fastent-bench}"
 	-rm -f "$(builddir)/tests/bench-gen"
+
+# Bundle CWSDPMI into the .exe; self-contained on bare DOS.
+if FASTENT_DOS
+all-local: fastent-dos-stub-stamp
+fastent-dos-stub-stamp: fastent$(EXEEXT)
+	$(EXE2COFF) fastent$(EXEEXT)
+	cat $(CWSDSTUB) fastent > fastent.new
+	rm -f fastent
+	mv fastent.new fastent$(EXEEXT)
+	chmod +x fastent$(EXEEXT)
+	touch $@
+endif

@@ -1,4 +1,5 @@
 /*  fastent: Win32 Unicode-path helpers.  Built only on Windows hosts.
+    FASTENT_WIN_LEGACY selects the narrow-API Win95 path.
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
@@ -8,10 +9,7 @@
 #ifdef _WIN32
 
 #ifndef _WIN32_WINNT
-  /*  Vista baseline by default; the few calls we use here
-      (Set*ConsoleCP, GetCommandLineW, MultiByteToWideChar /
-      WideCharToMultiByte) all pre-date Vista.  The user can override
-      via -D_WIN32_WINNT=0x0500 to retarget Windows 2000.  */
+  /*  Vista baseline; configure can override.  */
   #define _WIN32_WINNT 0x0600
 #endif
 
@@ -24,6 +22,8 @@
 #include <fcntl.h>
 #include <io.h>
 #include <wchar.h>
+
+#ifndef FASTENT_WIN_LEGACY
 
 /*  UTF-8 / UTF-16 heap conversion helpers.  */
 
@@ -204,10 +204,6 @@ void fastent_win32_init_console(void) {
   SetConsoleCP(CP_UTF8);
 }
 
-void fastent_win32_set_stdin_binary(void) {
-  _setmode(_fileno(stdin), _O_BINARY);
-}
-
 int fastent_win32_open_utf8(const char * path, int flags) {
   if (!path) { errno = EINVAL; return -1; }
   wchar_t * w = utf8_to_wide(path);
@@ -221,6 +217,31 @@ int fastent_win32_open_utf8(const char * path, int flags) {
   free(w);
   errno = saved_errno;
   return fd;
+}
+
+#else  /* FASTENT_WIN_LEGACY: Win95 narrow-API path */
+
+/*  Legacy: keep the CRT's ACP argv as-is.  */
+int fastent_win32_argv_utf8(int * argc_out, char *** argv_out) {
+  (void) argc_out; (void) argv_out;
+  return 0;
+}
+
+void fastent_win32_init_console(void) {
+  /*  CP 65001 is unsafe pre-OSR2 + IE5.  No-op.  */
+}
+
+int fastent_win32_open_utf8(const char * path, int flags) {
+  if (!path) { errno = EINVAL; return -1; }
+  return _open(path, flags);
+}
+
+#endif  /* FASTENT_WIN_LEGACY */
+
+/*  Shared helpers: work on both modern and legacy.  */
+
+void fastent_win32_set_stdin_binary(void) {
+  _setmode(_fileno(stdin), _O_BINARY);
 }
 
 int fastent_win32_close(int fd) {

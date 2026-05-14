@@ -55,9 +55,16 @@
                   (limited to the inherent precision of subnormal
                   doubles).  */
 
+#include "common.h"   /*  Must precede <math.h> on DJGPP.  */
 #include <math.h>
 
-#include "common.h"
+#ifdef __DJGPP__
+  /*  No fma in DJGPP libm; DD math degrades to ~1 ULP.  */
+  static inline double fma(double a, double b, double c) {
+    return a * b + c;
+  }
+#endif
+
 #include "chisq.h"
 
 /*  Double-double (DD) primitives.  hi + lo with |lo| <= ulp(hi)/2.

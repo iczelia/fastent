@@ -30,6 +30,10 @@
   #define _XOPEN_SOURCE 700
 #endif
 
+#ifdef __DJGPP__
+  #undef __STRICT_ANSI__
+#endif
+
 #ifdef HAVE_CONFIG_H
   #include "config.h"
 #endif

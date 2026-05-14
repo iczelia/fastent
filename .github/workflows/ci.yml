@@ -95,13 +95,7 @@ jobs:
         working-directory: fastent-src
         run: make check
 
-  # Cross-compile static, dependency-free binaries with zig cc.  Each
-  # matrix entry builds an out-of-tree fastent for one target out of
-  # the dist tarball, smoke-tests the artifact under qemu-user-static
-  # or wine where feasible, and uploads it as a CI artifact.  All
-  # outputs are statically linked (musl on Linux, mingw-w64 on
-  # Windows) except macOS, which links against the bundled SDK stubs
-  # because Apple does not ship static libSystem.
+  # Cross-compile static binaries with zig cc, one per matrix entry.
   cross-binaries:
     name: zig cc / ${{ matrix.target.id }}
     needs: dist
@@ -115,11 +109,7 @@ jobs:
           - { id: linux-i386,             zig: x86-linux-musl,            host: x86-unknown-linux-musl,            lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-i386-static       }
           - { id: linux-aarch64,          zig: aarch64-linux-musl,        host: aarch64-unknown-linux-musl,        lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-aarch64-static    }
           - { id: linux-armhf,            zig: arm-linux-musleabihf,      host: arm-unknown-linux-musleabihf,      lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-arm-static        }
-          # LTO is disabled on riscv64 and loongarch64: with the LLVM
-          # 18 shipped by zig 0.14.0, ld.lld rejects mixing the
-          # freshly-emitted IR's target-abi metadata against the
-          # precompiled crt1.o (lp64d on both archs).  Re-enable when
-          # the toolchain bump lands.
+          # LTO off on riscv64/loongarch64: ld.lld target-abi mismatch with crt1.o.
           - { id: linux-riscv64,          zig: riscv64-linux-musl,        host: riscv64-unknown-linux-musl,        lto: 0, ldflags: "-static -s", bin: fastent,     qemu: qemu-riscv64-static    }
           - { id: linux-powerpc64le,      zig: powerpc64le-linux-musl,    host: powerpc64le-unknown-linux-musl,    lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-ppc64le-static    }
           - { id: linux-powerpc64,        zig: powerpc64-linux-musl,      host: powerpc64-unknown-linux-musl,      lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-ppc64-static      }
@@ -187,9 +177,7 @@ jobs:
           set -euo pipefail
           cd build
           file "./$BIN"
-          # Pick the right runner: native, qemu-user-static (Linux
-          # non-native), or skip entirely (Windows/macOS, since we
-          # can't ship a wine/darling toolchain on a vanilla runner).
+          # native, qemu-user-static, or skip (Windows/macOS).
           run=""
           case "$ID" in
             linux-x86_64) run="" ;;
@@ -236,19 +224,9 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          # The 32-bit SPARC lane shares the sparc64 gcc package and
-          # uses -m32 (sparcv8plus ABI).  -m32 lives in the CC string,
-          # not CFLAGS, so every autoconf probe sees it, including
-          # the default-output probe that doesn't honour CFLAGS.
-          # SH3 is intentionally absent: Debian's libc6-dev-sh4-cross
-          # only ships sh4 multilib (FPU-ABI crt1.o, libc.a, libm.a);
-          # the link step has no sh3 startup tree to point at.
-          # C-SKY is also intentionally absent: no Debian/Ubuntu cross
-          # package exists, and T-Head's GitHub toolchain tarball is
-          # ~100 MB per CI run.
-          # Alpha's libc package is libc6.1-dev (not libc6-dev): Alpha
-          # glibc uses libc.so.6.1 as the SONAME, a leftover of DEC's
-          # original ABI on Tru64, and Debian's package name follows.
+          # sparc32: sparc64 gcc + -m32 (sparcv8plus); -m32 in CC.
+          # SH3, C-SKY: no Debian multilib / cross-gcc; skipped.
+          # alpha libc package is libc6.1-dev (DEC SONAME quirk).
           - { id: linux-alpha,   apt: "gcc-alpha-linux-gnu libc6.1-dev-alpha-cross",                                                  cc: "alpha-linux-gnu-gcc",        host: alpha-linux-gnu,   lto: 1 }
           - { id: linux-sparc64, apt: "gcc-sparc64-linux-gnu libc6-dev-sparc64-cross",                                                cc: "sparc64-linux-gnu-gcc",      host: sparc64-linux-gnu, lto: 1 }
           - { id: linux-sparc,   apt: "gcc-sparc64-linux-gnu gcc-multilib-sparc64-linux-gnu",                                          cc: "sparc64-linux-gnu-gcc -m32", host: sparc-linux-gnu,   lto: 1 }
@@ -315,4 +293,183 @@ jobs:
         with:
           name: fastent-${{ matrix.target.id }}
           path: dist/fastent-*-${{ matrix.target.id }}.tar.gz
+          if-no-files-found: error
+
+  # Win95: Debian i686-w64-mingw32 (msvcrt CRT, not zig's UCRT).
+  cross-binaries-win95:
+    name: gcc-mingw / windows-i686-win95
+    needs: dist
+    runs-on: ubuntu-latest
+    steps:
+      - name: install mingw32 cross + wine
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gcc-mingw-w64-i686 binutils-mingw-w64-i686 \
+            wine wine32:i386
+
+      - name: download tarball
+        uses: actions/download-artifact@v6
+        with:
+          name: fastent-dist
+
+      - name: unpack
+        run: |
+          tar xzf fastent-*.tar.gz
+          ln -s fastent-*/ fastent-src
+
+      - name: configure + build
+        run: |
+          mkdir build && cd build
+          ../fastent-src/configure \
+            CC=i686-w64-mingw32-gcc \
+            --host=i686-w64-mingw32 \
+            --with-windows-target=win95 \
+            --disable-threads \
+            LDFLAGS="-static -s"
+          make -j"$(nproc)"
+
+      - name: verify PE header advertises Windows 4.00
+        run: |
+          cd build
+          file ./fastent.exe
+          i686-w64-mingw32-objdump -p ./fastent.exe | \
+            grep -E 'MajorOSystemVersion|MinorOSystemVersion|MajorSubsystemVersion|MinorSubsystemVersion'
+          osmaj=$(i686-w64-mingw32-objdump -p ./fastent.exe | awk '/MajorOSystemVersion/{print $2}')
+          submaj=$(i686-w64-mingw32-objdump -p ./fastent.exe | awk '/MajorSubsystemVersion/{print $2}')
+          test "$osmaj" = "4" || { echo "expected OS major version 4, got $osmaj" >&2; exit 1; }
+          test "$submaj" = "4" || { echo "expected subsystem major version 4, got $submaj" >&2; exit 1; }
+
+      - name: verify imports stay on the Win95 surface
+        run: |
+          cd build
+          imports=$(i686-w64-mingw32-objdump -p ./fastent.exe \
+                    | awk '/DLL Name:/ {print tolower($3)}' | sort -u)
+          echo "imports: $imports"
+          # Expect only kernel32 + msvcrt.
+          for d in $imports; do
+            case "$d" in
+              kernel32.dll|msvcrt.dll) ;;
+              *) echo "unexpected import: $d" >&2; exit 1 ;;
+            esac
+          done
+
+      - name: smoke test under wine
+        env:
+          WINEDEBUG: -all
+          # Skip Mono/Gecko first-run prompts.
+          WINEDLLOVERRIDES: "mscoree=;mshtml="
+        run: |
+          cd build
+          wineboot --init 2>/dev/null || true
+          dd if=/dev/urandom bs=4096 count=4 status=none > smoke.bin
+          wine ./fastent.exe --version
+          wine ./fastent.exe -t  smoke.bin
+          wine ./fastent.exe -tb smoke.bin
+          wine ./fastent.exe -tf smoke.bin
+
+      - name: package binary
+        run: |
+          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
+          name="fastent-${ver}-windows-i686-win95"
+          mkdir -p "dist/$name"
+          cp build/fastent.exe "dist/$name/"
+          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
+             fastent-src/fastent.1 "dist/$name/"
+          (cd dist && zip -9 -r "${name}.zip" "$name")
+
+      - name: upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: fastent-windows-i686-win95
+          path: dist/fastent-*-windows-i686-win95.zip
+          if-no-files-found: error
+
+  # MS-DOS via DJGPP + CWSDPMI; smoke-tested under DOSBox-X.
+  cross-binaries-dos:
+    name: djgpp / dos-i386
+    needs: dist
+    runs-on: ubuntu-latest
+    env:
+      DJGPP_RELEASE: "v3.4"
+      DJGPP_GCC: "1220"
+    steps:
+      - name: install DJGPP cross-toolchain
+        run: |
+          curl -fL -o /tmp/djgpp.tar.bz2 \
+            "https://github.com/andrewwutw/build-djgpp/releases/download/${DJGPP_RELEASE}/djgpp-linux64-gcc${DJGPP_GCC}.tar.bz2"
+          tar -xjf /tmp/djgpp.tar.bz2 -C "$HOME"
+          echo "$HOME/djgpp/bin" >> $GITHUB_PATH
+          # Symlink exe2coff into the bin without shadowing host as/ld.
+          exe2coff=$(find "$HOME/djgpp" -name exe2coff -type f -print -quit)
+          test -n "$exe2coff" || { echo "exe2coff missing from DJGPP tarball" >&2; exit 1; }
+          ln -sf "$exe2coff" "$HOME/djgpp/bin/exe2coff"
+
+      - name: install CWSDPMI (CWSDSTUB.EXE bundled into the final exe)
+        run: |
+          curl -fL -o /tmp/csdpmi.zip http://www.delorie.com/pub/djgpp/current/v2misc/csdpmi7b.zip
+          unzip -j -d "$HOME/csdpmi" /tmp/csdpmi.zip 'bin/CWSDSTUB.EXE'
+          echo "CWSDSTUB=$HOME/csdpmi/CWSDSTUB.EXE" >> $GITHUB_ENV
+
+      - name: install DOSBox-X (for headless smoke test)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends dosbox-x
+
+      - name: download tarball
+        uses: actions/download-artifact@v6
+        with:
+          name: fastent-dist
+
+      - name: unpack
+        run: |
+          tar xzf fastent-*.tar.gz
+          ln -s fastent-*/ fastent-src
+
+      - name: configure + build (single-threaded, no SIMD)
+        run: |
+          mkdir build && cd build
+          ../fastent-src/configure \
+            --host=i586-pc-msdosdjgpp \
+            CC=i586-pc-msdosdjgpp-gcc
+          make -j"$(nproc)"
+
+      - name: verify DOS binary format
+        run: |
+          cd build
+          file ./fastent.exe
+          file ./fastent.exe | grep -Eq 'MS-DOS executable|COFF'
+
+      - name: smoke test under DOSBox-X
+        run: |
+          cd build
+          dd if=/dev/urandom bs=4096 count=4 status=none > SMOKE.BIN
+          tmp=$(mktemp -d)
+          # DJGPP @file syntax dodges the 126-byte PSP limit.
+          printf %s '-t SMOKE.BIN' > "$tmp/args.rsp"
+          sed -e "s|@PWD@|$PWD|g" -e "s|@OUT@|$tmp|g" \
+            ../fastent-src/contrib/dos/dosbox-x.conf > "$tmp/dosbox-x.conf"
+          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            dosbox-x -silent -fastlaunch -nogui -nomenu \
+                     -conf "$tmp/dosbox-x.conf" -exit >/dev/null 2>&1
+          cat "$tmp/stdout.out"
+          ec=$(tr -d ' \t\r\n' < "$tmp/ec.txt" 2>/dev/null || echo FAIL)
+          test "$ec" = "OK" || { echo "DOS exec returned $ec"; exit 1; }
+
+      - name: package binary
+        run: |
+          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
+          name="fastent-${ver}-dos-i386"
+          mkdir -p "dist/$name"
+          cp build/fastent.exe "dist/$name/"
+          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
+             fastent-src/fastent.1 "dist/$name/"
+          (cd dist && zip -9 -r "${name}.zip" "$name")
+
+      - name: upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: fastent-dos-i386
+          path: dist/fastent-*-dos-i386.zip
           if-no-files-found: error

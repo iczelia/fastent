@@ -17,6 +17,10 @@ AC_PROG_INSTALL
 AC_PROG_MAKE_SET
 AC_PROG_CC
 AC_USE_SYSTEM_EXTENSIONS
+# DJGPP ar trips AM_PROG_AR's interface probe; short-circuit it.
+case $host_os in
+  msdosdjgpp*|djgpp*) am_cv_ar_interface=ar ;;
+esac
 AM_PROG_AR
 AC_PROG_RANLIB
 
@@ -29,13 +33,50 @@ AC_CHECK_HEADERS([sys/mman.h sys/stat.h fcntl.h unistd.h immintrin.h sys/auxv.h]
 AC_CHECK_FUNCS([mmap madvise posix_fadvise posix_memalign aligned_alloc getauxval pledge])
 
 # libm: log10 / sqrt / pow / fabs / lgamma all live here.
-AC_SEARCH_LIBS([log10], [m])
+# DJGPP's libc.a has stub log10/sqrt that fool the probe; force -lm.
+case "$host_os" in
+  msdosdjgpp*|djgpp*) LIBS="-lm $LIBS" ;;
+  *)                  AC_SEARCH_LIBS([log10], [m]) ;;
+esac
+
+# MS-DOS / DJGPP host (i586-pc-msdosdjgpp).
+case "$host_os" in
+  msdosdjgpp*|djgpp*) fastent_is_dos=yes ;;
+  *)                  fastent_is_dos=no  ;;
+esac
+if test "x$fastent_is_dos" = "xyes"; then
+  AC_DEFINE([FASTENT_DOS], [1], [MS-DOS / DJGPP target])
+  AC_CHECK_PROGS([EXE2COFF], [${host_alias}-exe2coff ${host}-exe2coff exe2coff])
+  if test -z "$EXE2COFF"; then
+    AC_MSG_ERROR([exe2coff not found; ships with DJGPP binutils under <prefix>/i586-pc-msdosdjgpp/bin])
+  fi
+  AC_ARG_VAR([CWSDSTUB], [Path to CWSDSTUB.EXE (from csdpmi7b.zip on delorie.com)])
+  if test -z "$CWSDSTUB"; then
+    AC_MSG_CHECKING([for CWSDSTUB.EXE])
+    for d in /usr/share/csdpmi /usr/local/share/csdpmi \
+             "$HOME/csdpmi" "$HOME/csdpmi/bin" "$HOME/djgpp/bin" \
+             "`dirname $EXE2COFF`"; do
+      for f in CWSDSTUB.EXE cwsdstub.exe; do
+        if test -f "$d/$f"; then CWSDSTUB="$d/$f"; break 2; fi
+      done
+    done
+    if test -z "$CWSDSTUB"; then
+      AC_MSG_RESULT([not found])
+      AC_MSG_ERROR([CWSDSTUB.EXE not found; fetch csdpmi7b.zip from delorie.com and pass CWSDSTUB=...])
+    fi
+    AC_MSG_RESULT([$CWSDSTUB])
+  fi
+fi
+AM_CONDITIONAL([FASTENT_DOS], [test "x$fastent_is_dos" = "xyes"])
 
 # pthread (optional). When disabled, the binary is single-threaded and
-# never calls into the threadpool module.
+# never calls into the threadpool module.  DJGPP has no pthread.
 AC_ARG_ENABLE([threads],
   [AS_HELP_STRING([--disable-threads],[build a single-threaded fastent (no pthread dep)])],
   [enable_threads=$enableval], [enable_threads=yes])
+if test "x$fastent_is_dos" = "xyes"; then
+  enable_threads=no
+fi
 if test "x$enable_threads" = "xyes"; then
   AX_PTHREAD([
     AC_DEFINE([FASTENT_HAVE_PTHREAD], [1], [Have pthreads])
@@ -61,10 +102,56 @@ case "$host_os" in
 esac
 AM_CONDITIONAL([FASTENT_IS_WINDOWS], [test "x$fastent_is_windows" = "xyes"])
 
+# Windows target: vista (wide API, default) or win95 (narrow, kernel32-only).
+AC_ARG_WITH([windows-target],
+  [AS_HELP_STRING([--with-windows-target=@<:@vista|win95@:>@],
+    [target Windows version for native-Windows builds (default: vista)])],
+  [fastent_win_target=$withval],
+  [fastent_win_target=vista])
+case $fastent_win_target in
+  vista)
+    fastent_win_cppflags="-D_WIN32_WINNT=0x0600 -DWINVER=0x0600"
+    fastent_win_ldflags="-Wl,--major-subsystem-version=6,--minor-subsystem-version=0,--major-os-version=6,--minor-os-version=0"
+    ;;
+  win95)
+    fastent_win_cppflags="-D_WIN32_WINNT=0x0400 -DWINVER=0x0400 -DFASTENT_WIN_LEGACY=1"
+    fastent_win_ldflags="-Wl,--major-subsystem-version=4,--minor-subsystem-version=0,--major-os-version=4,--minor-os-version=0"
+    ;;
+  *)
+    AC_MSG_ERROR([--with-windows-target must be "vista" or "win95" (got: $fastent_win_target)])
+    ;;
+esac
+FASTENT_WIN_CPPFLAGS=""
+FASTENT_WIN_LDFLAGS=""
+if test "x$fastent_is_windows" = "xyes"; then
+  FASTENT_WIN_CPPFLAGS="$fastent_win_cppflags"
+  FASTENT_WIN_LDFLAGS="$fastent_win_ldflags"
+  AC_MSG_NOTICE([Windows target: $fastent_win_target])
+fi
+AC_SUBST([FASTENT_WIN_CPPFLAGS])
+AC_SUBST([FASTENT_WIN_LDFLAGS])
+
 # SIMD probes. Save user CFLAGS, try each -m... in turn, restore, set
-# AC_SUBST'd flags and HAVE_* defines + AM_CONDITIONAL.
+# AC_SUBST'd flags and HAVE_* defines + AM_CONDITIONAL.  DJGPP (i386
+# baseline) and Win95 (pre-SSE hardware) bypass the probe block.
+fastent_skip_simd=no
+if test "x$fastent_is_dos" = "xyes"; then
+  fastent_skip_simd=yes
+fi
+if test "x$fastent_win_target" = "xwin95"; then
+  fastent_skip_simd=yes
+fi
+SSSE3_CFLAGS=""
+SSE41_CFLAGS=""
+AVX2_CFLAGS=""
+AVX512_CFLAGS=""
+AVX512_BITALG_CFLAGS=""
+NEON_CFLAGS=""
+fastent_have_neon=no
 
 save_CFLAGS="$CFLAGS"
+
+if test "x$fastent_skip_simd" != "xyes"; then
 
 # NEON.  Two ABIs to cover:
 #   AArch64 (`__aarch64__`): NEON is mandatory, baseline.  No flag.
@@ -253,11 +340,7 @@ AC_COMPILE_IFELSE(
 # A separate BITALG-augmented archive below replaces those lookups with
 # VPOPCNTB when the host advertises it; the F+BW archive is the
 # fallback when BITALG is missing.
-# Clang 18+ split 512-bit ZMM use behind a separate `evex512` feature
-# (preparation for AVX10/256-only parts); without `-mevex512` the
-# 512-bit intrinsics now fail to inline.  GCC 14 picked up the same
-# spelling.  We probe `-mevex512` first and fall back if the toolchain
-# is too old to know the flag.
+# Clang 18+ / GCC 14+ need -mevex512 for 512-bit ZMM; probe with, fall back.
 AVX512_CC_FLAGS_BASE="-mavx512f -mavx512bw"
 AVX512_CFLAGS=""
 for fastent_avx512_try in "-mevex512 $AVX512_CC_FLAGS_BASE" "$AVX512_CC_FLAGS_BASE"; do
@@ -306,6 +389,8 @@ if test "x$AVX512_CFLAGS" != "x"; then
 fi
 
 CFLAGS="$save_CFLAGS"
+
+fi  # end !fastent_skip_simd
 
 AC_SUBST([SSSE3_CFLAGS])
 AC_SUBST([SSE41_CFLAGS])
