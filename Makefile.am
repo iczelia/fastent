@@ -42,6 +42,13 @@ libfastent_avx512_a_CFLAGS   = $(AM_CFLAGS) $(AVX512_CFLAGS)
 fastent_LDADD               += libfastent_avx512.a
 endif
 
+if HAVE_NEON
+noinst_LIBRARIES           += libfastent_neon.a
+libfastent_neon_a_SOURCES   = analyze-neon.c
+libfastent_neon_a_CFLAGS    = $(AM_CFLAGS) $(NEON_CFLAGS)
+fastent_LDADD              += libfastent_neon.a
+endif
+
 dist_man_MANS = fastent.1
 
 EXTRA_DIST = README.md NEWS ChangeLog AUTHORS COPYING bootstrap \

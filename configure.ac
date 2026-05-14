@@ -54,6 +54,30 @@ AM_CONDITIONAL([FASTENT_THREADS], [test "x$fastent_have_pthread" = "xyes"])
 
 save_CFLAGS="$CFLAGS"
 
+# AArch64 NEON. Always present on the ABI; we still compile-probe so
+# that arm_neon.h headers are picked up and the variant TU sees the
+# right intrinsics. No -m flag needed: NEON is baseline on aarch64.
+CFLAGS="$save_CFLAGS"
+AC_MSG_CHECKING([for AArch64 NEON intrinsics with $CC])
+AC_COMPILE_IFELSE(
+  [AC_LANG_PROGRAM([[
+    #include <arm_neon.h>
+  ]], [[
+    uint8x16_t a = vdupq_n_u8(7);
+    uint8x16_t b = vcntq_u8(a);
+    int8x16_t  s = vreinterpretq_s8_u8(b);
+    int16x8_t  w = vmovl_s8(vget_low_s8(s));
+    int32x4_t  p = vpaddlq_s16(w);
+    return (int) vgetq_lane_s32(p, 0);
+  ]])],
+  [AC_MSG_RESULT([yes])
+   AC_DEFINE([HAVE_NEON], [1], [Define if AArch64 NEON intrinsics are available])
+   NEON_CFLAGS=""
+   fastent_have_neon=yes],
+  [AC_MSG_RESULT([no])
+   NEON_CFLAGS=""
+   fastent_have_neon=no])
+
 CFLAGS="$save_CFLAGS -mssse3"
 AC_MSG_CHECKING([for SSSE3 intrinsics with $CC])
 AC_COMPILE_IFELSE(
@@ -141,10 +165,12 @@ AC_SUBST([SSSE3_CFLAGS])
 AC_SUBST([SSE41_CFLAGS])
 AC_SUBST([AVX2_CFLAGS])
 AC_SUBST([AVX512_CFLAGS])
+AC_SUBST([NEON_CFLAGS])
 AM_CONDITIONAL([HAVE_SSSE3],  [test "x$SSSE3_CFLAGS"  != "x"])
 AM_CONDITIONAL([HAVE_SSE41],  [test "x$SSE41_CFLAGS"  != "x"])
 AM_CONDITIONAL([HAVE_AVX2],   [test "x$AVX2_CFLAGS"   != "x"])
 AM_CONDITIONAL([HAVE_AVX512], [test "x$AVX512_CFLAGS" != "x"])
+AM_CONDITIONAL([HAVE_NEON],   [test "x$fastent_have_neon" = "xyes"])
 
 # Optional optimisations.
 AC_ARG_ENABLE([native],

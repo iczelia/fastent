@@ -36,7 +36,11 @@
 #include "analyze.h"
 
 #ifdef FASTENT_HAVE_SIMD
-  #include <immintrin.h>
+  #if defined(FASTENT_VARIANT_NEON)
+    #include <arm_neon.h>
+  #else
+    #include <immintrin.h>
+  #endif
 #endif
 
 #if defined(FASTENT_VARIANT_AVX512)
@@ -115,6 +119,49 @@
   #define V_SRLI_EPI16(a, n)   _mm_srli_epi16((a), (n))
   #define V_SHUFFLE_EPI8(t, i) _mm_shuffle_epi8((t), (i))
   #define V_SAD_EPU8(a, b)     _mm_sad_epu8((a), (b))
+#elif defined(FASTENT_VARIANT_NEON)
+  /*  AArch64 NEON.  Vector type is uint8x16_t throughout; ops that
+      need a different lane width reinterpret on the fly.  Differences
+      from the x86 macros:
+        - V_ANDNOT(a, b) on x86 is (~a) & b; NEON's BIC is b & (~a),
+          so we pass (a, b) → vbicq_u8(b, a).
+        - V_SAD_EPU8(a, 0) on x86 is two u64 lanes of |a-0| summed
+          across 8-byte halves.  We get the same with a vpaddl ladder
+          (u8 -> u16 -> u32 -> u64), and ignore the second argument
+          because every call site passes a zero vector.
+        - V_SHUFFLE_EPI8 uses vqtbl1q_u8, which zeros lanes whose
+          index is >= 16.  Existing call sites either mask the index
+          (popcount LUT) or use a fixed shuffle pattern, so behaviour
+          matches the x86 PSHUFB-with-zeroing-MSB semantics.  */
+  #define FASTENT_VAR_SUFFIX _neon
+  #define FASTENT_SIMD_VEC   uint8x16_t
+  #define FASTENT_SIMD_VLEN  16
+  #define V_SET1_EPI8(x)       vdupq_n_u8((uint8_t)(x))
+  #define V_SETZERO()          vdupq_n_u8(0)
+  #define V_LOAD(p)            vld1q_u8((const uint8_t *)(p))
+  #define V_STORE(p, v)        vst1q_u8((uint8_t *)(p), (v))
+  #define V_AND(a, b)          vandq_u8((a), (b))
+  #define V_OR(a, b)           vorrq_u8((a), (b))
+  #define V_ANDNOT(a, b)       vbicq_u8((b), (a))
+  #define V_ADD_EPI8(a, b)     vaddq_u8((a), (b))
+  #define V_ADD_EPI64(a, b)    vreinterpretq_u8_u64(             \
+                                 vaddq_u64(vreinterpretq_u64_u8(a),\
+                                           vreinterpretq_u64_u8(b)))
+  #define V_SUBS_EPU8(a, b)    vqsubq_u8((a), (b))
+  #define V_CMPEQ_EPI8(a, b)   vceqq_u8((a), (b))
+  #define V_SRLI_EPI16(a, n)   vreinterpretq_u8_u16(             \
+                                 vshrq_n_u16(vreinterpretq_u16_u8(a), (n)))
+  #define V_SHUFFLE_EPI8(t, i) vqtbl1q_u8((t), (i))
+  static __attribute__((always_inline)) inline uint8x16_t
+  fastent_neon_sad_zero(uint8x16_t a) {
+    uint16x8_t s16 = vpaddlq_u8(a);
+    uint32x4_t s32 = vpaddlq_u16(s16);
+    uint64x2_t s64 = vpaddlq_u32(s32);
+    return vreinterpretq_u8_u64(s64);
+  }
+  /*  Cast the unused b through (void) so callers that pre-declare a
+      `zero` vector on the stack don't trip -Wunused-variable.  */
+  #define V_SAD_EPU8(a, b)     (((void)(b)), fastent_neon_sad_zero((a)))
 #else
   #define FASTENT_VAR_SUFFIX _scalar
 #endif
@@ -965,6 +1012,226 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   return body_end + 1;
 }
 
+#elif defined(FASTENT_VARIANT_NEON)
+
+/*  AArch64 NEON SIMD body.
+
+    Stride = 32 bytes (two 16-byte vectors), mirroring the SSE path.
+    NEON has no PMADDUBSW, no PSADBW, and no movemask, but several
+    ladders give us byte-equivalent semantics:
+
+      SCC kernel.  We widen va u8 -> u16 (zero) and vbs s8 -> s16
+      (sign) explicitly, then do an i16 multiply followed by a
+      pairwise add (vpaddlq_s16) which sums adjacent i16 lanes into
+      i32 lanes.  This is exactly what _mm_madd_epi16 with a vector
+      of ones produces.  We accumulate as i64 to avoid overflow on
+      consistent-sign products (alternating.bin and friends).
+
+      LHS byte sum for the 128*sum sign correction.  We need the
+      total bytes processed per iter as a u64 lane sum.  The
+      vpaddlq_u8 -> vpaddlq_u16 -> vpaddlq_u32 ladder produces a
+      u64x2 with two summed halves; we keep accumulating that into
+      lhs_sad and reduce at the end with vaddvq_u64.
+
+      MC Pi: scalar drain + scalar bulk + scalar tail.  NEON has the
+      ops to vectorise the 24x24-bit squared-distance compare, but
+      hexads-per-iter (~5 on a 32-byte stride) is too small to amortise
+      the lane-shuffle setup, and the scalar tail is already tight.
+
+    Histogram: same 4-banked inc-mem chain as SSE.  In fold mode we
+    stage the folded vector to an L1-resident stack buffer with the
+    same asm-launder trick used on x86; without it the compiler turns
+    the byte reads back into umov/lane extractions and serialises the
+    histogram on the FP -> GP pipeline.  */
+
+static __attribute__((always_inline)) inline sz
+FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
+                           const u8 * FASTENT_RESTRICT buf,
+                           sz len, int fold) {
+  if (len < 33) return 0;
+  const sz body_max = len - 16;
+  sz iters = body_max / 32;
+  if (iters == 0) return 0;
+  const sz body_end = iters * 32;
+
+  u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
+  if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
+  if (st->have_carry)
+    st->cross_product += (i64) st->carry_byte * (i64) b0_user;
+  st->have_carry = 1;
+
+  const uint8x16_t sign_xor = vdupq_n_u8(0x80);
+  int64x2_t  scc_acc64 = vdupq_n_s64(0);
+  uint64x2_t lhs_sad   = vdupq_n_u64(0);
+
+  u32 * FASTENT_RESTRICT b0 = st->bank[0];
+  u32 * FASTENT_RESTRICT b1 = st->bank[1];
+  u32 * FASTENT_RESTRICT b2 = st->bank[2];
+  u32 * FASTENT_RESTRICT b3 = st->bank[3];
+
+  int mc_pos     = st->mc_pos;
+  u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
+  u8  m3 = st->mc_buf[3], m4 = st->mc_buf[4], m5 = st->mc_buf[5];
+  u64 mc_count   = st->mc_count;
+  u64 mc_inside  = st->mc_inside;
+
+  for (sz i = 0; i < body_end; i += 32) {
+    __builtin_prefetch(buf + i + 512, 0, 1);
+
+    uint8x16_t va0 = vld1q_u8(buf + i +  0);
+    uint8x16_t vb0 = vld1q_u8(buf + i +  1);
+    uint8x16_t va1 = vld1q_u8(buf + i + 16);
+    uint8x16_t vb1 = vld1q_u8(buf + i + 17);
+    if (fold) {
+      va0 = FASTENT_FN(fold_vec_inline)(va0);
+      vb0 = FASTENT_FN(fold_vec_inline)(vb0);
+      va1 = FASTENT_FN(fold_vec_inline)(va1);
+      vb1 = FASTENT_FN(fold_vec_inline)(vb1);
+    }
+    int8x16_t vbs0 = vreinterpretq_s8_u8(veorq_u8(vb0, sign_xor));
+    int8x16_t vbs1 = vreinterpretq_s8_u8(veorq_u8(vb1, sign_xor));
+
+    /*  Widen va u8 -> i16 (safe; max value 255 fits in i16).  */
+    int16x8_t va0_lo = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(va0)));
+    int16x8_t va0_hi = vreinterpretq_s16_u16(vmovl_u8(vget_high_u8(va0)));
+    int16x8_t va1_lo = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(va1)));
+    int16x8_t va1_hi = vreinterpretq_s16_u16(vmovl_u8(vget_high_u8(va1)));
+    /*  Sign-widen vbs s8 -> s16.  */
+    int16x8_t vb0_lo = vmovl_s8(vget_low_s8(vbs0));
+    int16x8_t vb0_hi = vmovl_s8(vget_high_s8(vbs0));
+    int16x8_t vb1_lo = vmovl_s8(vget_low_s8(vbs1));
+    int16x8_t vb1_hi = vmovl_s8(vget_high_s8(vbs1));
+
+    /*  i16 * i16 -> i16: |va|<=255, |vb|<=128, |product|<=32640 fits.  */
+    int16x8_t prod0_lo = vmulq_s16(va0_lo, vb0_lo);
+    int16x8_t prod0_hi = vmulq_s16(va0_hi, vb0_hi);
+    int16x8_t prod1_lo = vmulq_s16(va1_lo, vb1_lo);
+    int16x8_t prod1_hi = vmulq_s16(va1_hi, vb1_hi);
+
+    /*  Pair-sum i16 lanes into i32 lanes (madd_epi16-with-ones).  */
+    int32x4_t s0_lo = vpaddlq_s16(prod0_lo);
+    int32x4_t s0_hi = vpaddlq_s16(prod0_hi);
+    int32x4_t s1_lo = vpaddlq_s16(prod1_lo);
+    int32x4_t s1_hi = vpaddlq_s16(prod1_hi);
+
+    int32x4_t sum32 = vaddq_s32(vaddq_s32(s0_lo, s0_hi),
+                                vaddq_s32(s1_lo, s1_hi));
+    /*  Widen i32 lanes -> i64 lanes for cross-iter accumulation.  */
+    int64x2_t sum64_lo = vmovl_s32(vget_low_s32(sum32));
+    int64x2_t sum64_hi = vmovl_s32(vget_high_s32(sum32));
+    scc_acc64 = vaddq_s64(scc_acc64, vaddq_s64(sum64_lo, sum64_hi));
+
+    /*  LHS byte sum for the 128*sum_a sign correction.  */
+    uint16x8_t sa0_16 = vpaddlq_u8(va0);
+    uint16x8_t sa1_16 = vpaddlq_u8(va1);
+    uint16x8_t sa_16  = vaddq_u16(sa0_16, sa1_16);
+    uint32x4_t sa_32  = vpaddlq_u16(sa_16);
+    uint64x2_t sa_64  = vpaddlq_u32(sa_32);
+    lhs_sad = vaddq_u64(lhs_sad, sa_64);
+
+    /*  Histogram + MC stage buffer (fold mode) or direct buf reads.  */
+    u8 stage[32] __attribute__((aligned(16)));
+    const u8 * p;
+    if (fold) {
+      vst1q_u8(stage +  0, va0);
+      vst1q_u8(stage + 16, va1);
+      const u8 * sp = stage;
+      __asm__("" : "+r"(sp) :: "memory");
+      p = sp;
+    } else {
+      p = buf + i;
+    }
+    #define HIST4(o) \
+      b0[p[(o) + 0]]++; b1[p[(o) + 1]]++; \
+      b2[p[(o) + 2]]++; b3[p[(o) + 3]]++
+    HIST4( 0); HIST4( 4); HIST4( 8); HIST4(12);
+    HIST4(16); HIST4(20); HIST4(24); HIST4(28);
+    #undef HIST4
+
+    /*  MC Pi: scalar drain + scalar bulk + scalar stash.  */
+    #define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
+      u32 x = ((u32)(x0) << 16) | ((u32)(x1) << 8) | (u32)(x2); \
+      u32 y = ((u32)(y0) << 16) | ((u32)(y1) << 8) | (u32)(y2); \
+      u64 d = (u64) x * (u64) x + (u64) y * (u64) y; \
+      mc_count++; \
+      mc_inside += (d <= FASTENT_INCIRC); \
+    } while (0)
+
+    unsigned p_idx;
+    switch (mc_pos) {
+      case 0: p_idx = 0; break;
+      case 1: m1=p[0]; m2=p[1]; m3=p[2]; m4=p[3]; m5=p[4];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 5; break;
+      case 2: m2=p[0]; m3=p[1]; m4=p[2]; m5=p[3];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 4; break;
+      case 3: m3=p[0]; m4=p[1]; m5=p[2];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 3; break;
+      case 4: m4=p[0]; m5=p[1];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 2; break;
+      default: m5=p[0];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
+    }
+    int n_hexads = (int)((32u - p_idx) / 6u);
+    Fk(n_hexads,
+       unsigned o = p_idx + (unsigned) k * 6u;
+       MC_HEXAD(p[o+0], p[o+1], p[o+2], p[o+3], p[o+4], p[o+5]))
+    unsigned stash_at    = p_idx + (unsigned) n_hexads * 6u;
+    unsigned stash_count = 32u - stash_at;
+    mc_pos = (int) stash_count;
+    if (stash_count >= 1) m0 = p[stash_at + 0];
+    if (stash_count >= 2) m1 = p[stash_at + 1];
+    if (stash_count >= 3) m2 = p[stash_at + 2];
+    if (stash_count >= 4) m3 = p[stash_at + 3];
+    if (stash_count >= 5) m4 = p[stash_at + 4];
+    #undef MC_HEXAD
+  }
+
+  i64 scc_sum = (i64) vaddvq_s64(scc_acc64);
+  u64 lhs_sum = (u64) vaddvq_u64(lhs_sad);
+  st->cross_product += scc_sum + (i64)(128ULL * lhs_sum);
+
+  /*  Epilogue: process buf[body_end] for histogram + carry + MC.
+      Its product with buf[body_end-1] was already counted via the
+      shifted load in the last iter.  */
+  u8 last_b;
+  {
+    u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
+                : buf[body_end];
+    last_b = b;
+    st->total_bytes += body_end;
+    st->bank[(unsigned)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
+    st->total_bytes++;
+    switch (mc_pos) {
+      case 0: m0 = b; break;
+      case 1: m1 = b; break;
+      case 2: m2 = b; break;
+      case 3: m3 = b; break;
+      case 4: m4 = b; break;
+      default: m5 = b; break;
+    }
+    mc_pos++;
+    if (mc_pos == 6) {
+      u32 x = ((u32) m0 << 16) | ((u32) m1 << 8) | (u32) m2;
+      u32 y = ((u32) m3 << 16) | ((u32) m4 << 8) | (u32) m5;
+      u64 d = (u64) x * (u64) x + (u64) y * (u64) y;
+      mc_count++;
+      mc_inside += (d <= FASTENT_INCIRC);
+      mc_pos = 0;
+    }
+  }
+
+  st->mc_pos = mc_pos;
+  st->mc_buf[0] = m0; st->mc_buf[1] = m1; st->mc_buf[2] = m2;
+  st->mc_buf[3] = m3; st->mc_buf[4] = m4; st->mc_buf[5] = m5;
+  st->mc_count  = mc_count;
+  st->mc_inside = mc_inside;
+
+  st->carry_byte = last_b;
+  st->last_byte  = last_b;
+
+  return body_end + 1;
+}
+
 #endif
 
 /*  SIMD trampolines: the simd_body_impl above is templated on the
@@ -1122,11 +1389,13 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
     0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
 #elif defined(FASTENT_VARIANT_AVX512)
   /*  Unused on AVX-512: VPOPCNTB replaces the LUT lookups.  */
+#elif defined(FASTENT_VARIANT_NEON)
+  /*  Unused on NEON: vcntq_u8 replaces the LUT lookups.  */
 #else
   const FASTENT_SIMD_VEC popcnt_lut = _mm_setr_epi8(
     0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
 #endif
-#if !defined(FASTENT_VARIANT_AVX512)
+#if !defined(FASTENT_VARIANT_AVX512) && !defined(FASTENT_VARIANT_NEON)
   const FASTENT_SIMD_VEC nibble_mask = V_SET1_EPI8(0x0F);
 #endif
   const FASTENT_SIMD_VEC mask_7f     = V_SET1_EPI8(0x7F);
@@ -1164,6 +1433,16 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
     FASTENT_SIMD_VEC va_shr1 = V_AND(V_SRLI_EPI16(va, 1), mask_7f);
     FASTENT_SIMD_VEC pairs   = V_AND(va, va_shr1);
     FASTENT_SIMD_VEC pc_pairs = _mm512_popcnt_epi8(pairs);
+    acc_within = V_ADD_EPI64(acc_within, V_SAD_EPU8(pc_pairs, zero));
+#elif defined(FASTENT_VARIANT_NEON)
+    /*  Direct byte-wise popcount via vcntq_u8; horizontal-sum into
+        u64x2 via the vpaddl ladder folded into V_SAD_EPU8.  */
+    FASTENT_SIMD_VEC pc_va = vcntq_u8(va);
+    acc_ones = V_ADD_EPI64(acc_ones, V_SAD_EPU8(pc_va, zero));
+
+    FASTENT_SIMD_VEC va_shr1 = V_AND(V_SRLI_EPI16(va, 1), mask_7f);
+    FASTENT_SIMD_VEC pairs   = V_AND(va, va_shr1);
+    FASTENT_SIMD_VEC pc_pairs = vcntq_u8(pairs);
     acc_within = V_ADD_EPI64(acc_within, V_SAD_EPU8(pc_pairs, zero));
 #else
     /*  popcount(va) byte-wise via PSHUFB-LUT.  */
@@ -1232,9 +1511,11 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
         n_hexads added below.  */
     u64 mi_simd = 0;
     const u8 * q = p + p_idx;
+#if !defined(FASTENT_VARIANT_NEON)
     const __m128i mc_shuf = _mm_setr_epi8(2, 1, 0, -1, 5, 4, 3, -1,
                                           8, 7, 6, -1, 11, 10, 9, -1);
     const __m128i mc_lim  = _mm_set1_epi64x((i64)(FASTENT_INCIRC + 1ULL));
+#endif
     unsigned k = 0;
 #if defined(FASTENT_VARIANT_AVX2) || defined(FASTENT_VARIANT_AVX512)
     /*  4 hexads per iter via 256-bit. We need 24 bytes of source readable
@@ -1273,7 +1554,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
       int bits = _mm_movemask_pd(_mm_castsi128_pd(mask));
       mi_simd += (u64) __builtin_popcount(bits);
     }
-#else
+#elif !defined(FASTENT_VARIANT_NEON)
     (void) mc_shuf; (void) mc_lim;
 #endif
     /*  Scalar tail (0/1 hexad on AVX2+SSE41; full on SSSE3).  */
@@ -1318,6 +1599,10 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   __m128i s_c  = _mm_add_epi64(lo_c, hi_c);
   u64 sum_cross = (u64) _mm_cvtsi128_si64(s_c)
               + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(s_c, s_c));
+#elif defined(FASTENT_VARIANT_NEON)
+  u64 sum_ones   = vaddvq_u64(vreinterpretq_u64_u8(acc_ones));
+  u64 sum_within = vaddvq_u64(vreinterpretq_u64_u8(acc_within));
+  u64 sum_cross  = vaddvq_u64(vreinterpretq_u64_u8(acc_cross));
 #else
   u64 sum_ones = (u64) _mm_cvtsi128_si64(acc_ones)
               + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(acc_ones, acc_ones));

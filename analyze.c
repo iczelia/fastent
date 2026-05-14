@@ -106,7 +106,9 @@ fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
   fastent_analyze_fn fn = analyze_scalar;
 
 #if defined(__GNUC__) || defined(__clang__)
-  __builtin_cpu_init();
+  #if defined(HAVE_SSSE3) || defined(HAVE_SSE41) || defined(HAVE_AVX2) || defined(HAVE_AVX512)
+    __builtin_cpu_init();
+  #endif
   #ifdef HAVE_SSSE3
     if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = analyze_ssse3; }
   #endif
@@ -118,6 +120,11 @@ fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
   #endif
   #ifdef HAVE_AVX512
     if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_avx512; }
+  #endif
+  /*  NEON: mandatory on AArch64 PCS, so no runtime probe; we just
+      activate it whenever the variant TU was built.  */
+  #ifdef HAVE_NEON
+    v = FASTENT_VAR_NEON_; fn = analyze_neon;
   #endif
 #endif
 
@@ -131,6 +138,7 @@ const char * fastent_variant_name(fastent_variant v) {
     case FASTENT_VAR_AVX2_:   return "avx2";
     case FASTENT_VAR_SSE41_:  return "sse4.1";
     case FASTENT_VAR_SSSE3_:  return "ssse3";
+    case FASTENT_VAR_NEON_:   return "neon";
     case FASTENT_VAR_SCALAR: return "scalar";
   }
   return "scalar";
@@ -144,7 +152,9 @@ fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which) {
   fastent_analyze_fn fn = analyze_bits_scalar;
 
 #if defined(__GNUC__) || defined(__clang__)
-  __builtin_cpu_init();
+  #if defined(HAVE_SSSE3) || defined(HAVE_SSE41) || defined(HAVE_AVX2) || defined(HAVE_AVX512)
+    __builtin_cpu_init();
+  #endif
   #ifdef HAVE_SSSE3
     if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = analyze_bits_ssse3; }
   #endif
@@ -156,6 +166,9 @@ fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which) {
   #endif
   #ifdef HAVE_AVX512
     if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_bits_avx512; }
+  #endif
+  #ifdef HAVE_NEON
+    v = FASTENT_VAR_NEON_; fn = analyze_bits_neon;
   #endif
 #endif
 
@@ -169,7 +182,9 @@ fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which) {
   fastent_analyze_fn fn = analyze_fold_scalar;
 
 #if defined(__GNUC__) || defined(__clang__)
-  __builtin_cpu_init();
+  #if defined(HAVE_SSSE3) || defined(HAVE_SSE41) || defined(HAVE_AVX2) || defined(HAVE_AVX512)
+    __builtin_cpu_init();
+  #endif
   #ifdef HAVE_SSSE3
     if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = analyze_fold_ssse3; }
   #endif
@@ -181,6 +196,9 @@ fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which) {
   #endif
   #ifdef HAVE_AVX512
     if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_fold_avx512; }
+  #endif
+  #ifdef HAVE_NEON
+    v = FASTENT_VAR_NEON_; fn = analyze_fold_neon;
   #endif
 #endif
 
@@ -194,7 +212,9 @@ fastent_analyze_fn fastent_pick_fold_bits_variant(fastent_variant * which) {
   fastent_analyze_fn fn = analyze_bits_fold_scalar;
 
 #if defined(__GNUC__) || defined(__clang__)
-  __builtin_cpu_init();
+  #if defined(HAVE_SSSE3) || defined(HAVE_SSE41) || defined(HAVE_AVX2) || defined(HAVE_AVX512)
+    __builtin_cpu_init();
+  #endif
   #ifdef HAVE_SSSE3
     if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = analyze_bits_fold_ssse3; }
   #endif
@@ -206,6 +226,9 @@ fastent_analyze_fn fastent_pick_fold_bits_variant(fastent_variant * which) {
   #endif
   #ifdef HAVE_AVX512
     if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = analyze_bits_fold_avx512; }
+  #endif
+  #ifdef HAVE_NEON
+    v = FASTENT_VAR_NEON_; fn = analyze_bits_fold_neon;
   #endif
 #endif
 
@@ -219,7 +242,9 @@ fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which) {
   fastent_fold_fn fn = fold_scalar;
 
 #if defined(__GNUC__) || defined(__clang__)
-  __builtin_cpu_init();
+  #if defined(HAVE_SSSE3) || defined(HAVE_SSE41) || defined(HAVE_AVX2) || defined(HAVE_AVX512)
+    __builtin_cpu_init();
+  #endif
   #ifdef HAVE_SSSE3
     if (__builtin_cpu_supports("ssse3"))  { v = FASTENT_VAR_SSSE3_;  fn = fold_ssse3; }
   #endif
@@ -231,6 +256,9 @@ fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which) {
   #endif
   #ifdef HAVE_AVX512
     if (fastent_have_avx512_runtime())    { v = FASTENT_VAR_AVX512_; fn = fold_avx512; }
+  #endif
+  #ifdef HAVE_NEON
+    v = FASTENT_VAR_NEON_; fn = fold_neon;
   #endif
 #endif
 
