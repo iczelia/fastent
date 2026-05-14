@@ -49,6 +49,18 @@ else
 fi
 AM_CONDITIONAL([FASTENT_THREADS], [test "x$fastent_have_pthread" = "xyes"])
 
+# Windows host: cross-compile via mingw-w64 (any toolchain that
+# defines _WIN32) needs the fastent-win32.c TU for Unicode-path /
+# Unicode-console support.  Cygwin is excluded: its POSIX layer maps
+# open() through cygwin1.dll which already handles UTF-8 paths via
+# the cygwin DLL's internal narrowing, so our wrapper would be
+# redundant there.
+case "$host_os" in
+  mingw*|msys*) fastent_is_windows=yes ;;
+  *)            fastent_is_windows=no  ;;
+esac
+AM_CONDITIONAL([FASTENT_IS_WINDOWS], [test "x$fastent_is_windows" = "xyes"])
+
 # SIMD probes. Save user CFLAGS, try each -m... in turn, restore, set
 # AC_SUBST'd flags and HAVE_* defines + AM_CONDITIONAL.
 
