@@ -21,8 +21,9 @@ or, if no filename is given, from standard input.
 .PP
 Internally the inner loop is vectorised, uses a 4-way banked
 histogram, and dispatches at runtime to the best available SIMD
-variant (scalar / SSSE3 / SSE4.1 / AVX2).  Regular-file inputs are
-memory-mapped and processed by an optional pthread worker pool.
+variant (scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512).  Regular-file
+inputs are memory-mapped and processed by an optional pthread worker
+pool.
 
 .SH OPTIONS
 .TP
@@ -40,9 +41,13 @@ it is rendered as CSV.
 .TP
 .BR \-f ", " \-\-fold
 Fold upper-case letters to their lower-case equivalents before
-counting (ASCII A-Z and Latin-1 0xC0-0xDE excluding 0xD7).  This
-disables the SIMD inner loop because the sign-corrected vector kernel
-cannot apply the fold.
+counting (ASCII A-Z and Latin-1 0xC0-0xDE excluding 0xD7).  The fold
+is fused into the SIMD analyser body: each loaded vector is folded
+in-register before the histogram, serial-correlation, and Monte
+Carlo \(*p kernels consume it, so
+.B \-f
+keeps the full SIMD throughput rather than falling back to a scalar
+prepass.
 .TP
 .BR \-t ", " \-\-terse
 Emit results in CSV format suitable for downstream parsers.
@@ -178,16 +183,37 @@ when the input is a regular file, falling back to a 2 MiB
 .BR read (2)
 loop otherwise.  The histogram inner loop uses four banked
 sub-histograms to break the read-modify-write hazard chain; the
-serial-correlation cross-product is computed via
-.B VPMADDUBSW
-(AVX2 / SSSE3) with a sign-correction term derived from the
-byte sum.  On AVX2-capable x86_64 hardware single-threaded
-throughput typically exceeds 5 GB/s for regular-file inputs.
+serial-correlation cross-product is computed via signed widened
+multiply + horizontal add (the SSE/AVX2 path with a sign-correction
+term derived from the byte sum, the AVX-512 path with the same
+algorithm widened to 64-byte vectors).  Bit-mode population count
+uses
+.B VPOPCNTB
+on AVX-512 BITALG hosts and a PSHUFB nibble-LUT fallback otherwise.
+On a recent x86_64 host with AVX-512 single-thread throughput sits
+around 2.5 GB/s (byte) / 4.7 GB/s (bit); a saturated
+.B \-j auto
+sweep reaches roughly 15-17 GB/s before DDR4 bandwidth caps it.  See
+the README for the per-host scaling plot.
 
 .SH BUGS
-The optimum-compression figure is computed from per-byte (or
-per-bit) entropy and underestimates compressibility for sources
-with structure beyond a single reading frame.
+The optimum-compression figure derives from the first-order
+(byte-marginal or bit-marginal) Shannon entropy and is therefore a
+lower bound: it ignores any structure beyond a single byte/bit,
+including correlations, repeats, and longer-range patterns that a
+real compressor (e.g.\&
+.BR xz (1),
+.BR zstd (1))
+would exploit.  A source whose byte histogram is uniform but whose
+sample sequence is highly structured (digits of \(*p, an LCG stream)
+is reported as 0% compressible despite being reproducible from a
+tiny seed.
+.PP
+A perfectly tight bound would require the Kolmogorov complexity of
+the input -- the length of the shortest program that emits it.
+The author gladly offers co-authorship on the resulting paper
+to anyone who computes that quantity efficiently for arbitrary
+inputs.
 
 .SH AUTHOR
 Written by Kamila Szewczyk <k@iczelia.net>.
