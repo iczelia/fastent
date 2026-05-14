@@ -9,16 +9,26 @@ v1.0 (May 2026)
 
   * Initial release of fastent.
 
-  * Banked 4-way SIMD histogram in the inner loop.  Single-threaded
-    throughput on a modern AVX2 host typically exceeds 5 GB/s for
-    regular-file inputs.
+  * Banked 4-way SIMD histogram in the inner loop.
 
-  * Serial correlation cross-product computed via PMADDUBSW with a
-    sign-correction term derived on the fly from PSADBW; no scalar
-    fallback per byte.
+  * Serial correlation cross-product computed via widened signed
+    multiply + horizontal add (PMADDUBSW-style on SSE/AVX2; the same
+    algorithm widened to 64-byte vectors on AVX-512), with a
+    sign-correction term derived on the fly from the byte sum.  No
+    scalar fallback per byte.
+
+  * Bit-mode (-b) population count: VPOPCNTB on AVX-512
+    VPOPCNTDQ + BITALG hosts; PSHUFB nibble-LUT on AVX2 / SSE /
+    SSSE3; __builtin_popcount in the scalar fallback.
+
+  * Fused case-fold (-f) path: each loaded vector is folded
+    in-register before the histogram, SCC, and Monte Carlo Pi
+    kernels consume it -- no staging-copy prepass over the input,
+    so -f keeps full SIMD throughput.
 
   * Runtime CPU dispatch: one binary picks the highest available
-    variant among scalar / SSSE3 / SSE4.1 / AVX2 at startup via
+    variant among scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512 (F + BW +
+    CD + DQ + VL + VPOPCNTDQ + BITALG) at startup via
     __builtin_cpu_supports.  SIMD variants live in per-file static
     convenience libraries with isolated -m... CFLAGS so the rest of
     the binary stays at the configured baseline.
@@ -35,8 +45,14 @@ v1.0 (May 2026)
   * Outputs: human-readable, CSV (-t), or JSON (--json).  Adds a
     -p / --full-precision flag that renders every float at %.17g.
 
+  * Test + bench harness: `make check` runs a deterministic-fixture
+    sanity suite (fixtures live in $(builddir)/tests/fixtures so the
+    source tree stays read-only-clean); `make bench` sweeps 10
+    deterministic datasets through three modes and a power-of-two
+    -j ladder, with ent(1) timed alongside if it is on PATH.
+
   * Build system: GNU autotools (configure.ac / Makefile.am) with
-    AVX2 / SSE4.1 / SSSE3 intrinsic probes and per-variant CFLAGS
-    isolation.  ./bootstrap regenerates autotools artefacts;
+    SSSE3 / SSE4.2 / AVX2 / AVX-512 intrinsic probes and per-variant
+    CFLAGS isolation.  ./bootstrap regenerates autotools artefacts;
     ./configure --enable-native --enable-lto enables host-specific
     tuning and link-time optimisation.
