@@ -69,11 +69,22 @@ save_CFLAGS="$CFLAGS"
 # NEON.  Two ABIs to cover:
 #   AArch64 (`__aarch64__`): NEON is mandatory, baseline.  No flag.
 #   ARMv7-A (`__arm__`):     NEON is optional.  Needs `-mfpu=neon`
-#                            (and typically `-mfloat-abi=hard` set
-#                            elsewhere; we don't force it here).
+#                            and a float-ABI that matches the rest
+#                            of the build (see softfp note below).
 #
-# Probe with no flag first.  If that fails, retry with `-mfpu=neon`
-# so a Debian armhf default-baseline toolchain still gets the variant.
+# Probe with no flag first.  If that fails, detect the base float-ABI
+# and pick the right -mfpu/-mfloat-abi combination for the NEON TU.
+# Note on armel (-mfloat-abi=soft) hosts: forcing only `-mfpu=neon`
+# either fails outright or, on lenient toolchains, builds the NEON TU
+# with a vector calling convention that differs from the non-NEON
+# TUs (vectors in NEON regs vs. on the stack).  That mismatch is
+# silent at compile time and breaks at runtime.  The cure is to also
+# pass `-mfloat-abi=softfp` to the NEON TU: softfp uses the same
+# call boundary as soft (FP/vector args in GPRs+stack) so a soft
+# caller can invoke a softfp callee, while softfp still permits NEON
+# instructions and intrinsics inside the function body.  On hardfp
+# (__ARM_PCS_VFP) we must leave the ABI alone; switching that TU to
+# softfp would mismatch the rest of the program.
 # The probe exercises a few of the bread-and-butter intrinsics we
 # rely on (vcntq_u8 for popcount, vpaddlq_s16 for SCC reduction).
 # The AArch64-only ops (vqtbl1q_u8 / vaddvq_*) are emulated in
@@ -103,8 +114,50 @@ AC_COMPILE_IFELSE(
   [AC_MSG_RESULT([no])])
 
 if test "x$fastent_have_neon" = "xno"; then
-  CFLAGS="$save_CFLAGS -mfpu=neon"
-  AC_MSG_CHECKING([for NEON intrinsics with $CC -mfpu=neon])
+  # 32-bit ARM only: -mfpu=neon is a no-op (and an error in newer
+  # toolchains) on AArch64, x86, etc.  Skip the rest of the probe if
+  # we're not actually targeting __arm__.
+  CFLAGS="$save_CFLAGS"
+  AC_COMPILE_IFELSE(
+    [AC_LANG_SOURCE([[
+      #ifndef __arm__
+      #error not 32-bit ARM
+      #endif
+      int main(void) { return 0; }
+    ]])],
+    [fastent_is_arm32=yes],
+    [fastent_is_arm32=no])
+fi
+
+if test "x$fastent_have_neon" = "xno" && test "x$fastent_is_arm32" = "xyes"; then
+  # Detect base float-ABI: __ARM_PCS_VFP is set only for
+  # -mfloat-abi=hard.  Soft and softfp leave it unset (and use the
+  # same call boundary as each other).
+  CFLAGS="$save_CFLAGS"
+  AC_MSG_CHECKING([ARM float-ABI of the base CFLAGS])
+  AC_COMPILE_IFELSE(
+    [AC_LANG_SOURCE([[
+      #ifndef __ARM_PCS_VFP
+      #error not hard-float
+      #endif
+      int main(void) { return 0; }
+    ]])],
+    [fastent_arm_abi=hard],
+    [fastent_arm_abi=soft])
+  AC_MSG_RESULT([$fastent_arm_abi])
+
+  if test "x$fastent_arm_abi" = "xhard"; then
+    fastent_neon_try="-mfpu=neon"
+    fastent_neon_label="ARMv7-A hardfp; -mfpu=neon"
+  else
+    # Force softfp on the NEON TU so its call boundary matches the
+    # soft caller; without this the build is silently ABI-broken.
+    fastent_neon_try="-mfpu=neon -mfloat-abi=softfp"
+    fastent_neon_label="ARMv7-A softfp; -mfpu=neon -mfloat-abi=softfp"
+  fi
+
+  CFLAGS="$save_CFLAGS $fastent_neon_try"
+  AC_MSG_CHECKING([for NEON intrinsics with $CC $fastent_neon_try])
   AC_COMPILE_IFELSE(
     [AC_LANG_PROGRAM([[
       #include <arm_neon.h>
@@ -116,9 +169,9 @@ if test "x$fastent_have_neon" = "xno"; then
       int32x4_t  p = vpaddlq_s16(w);
       return (int) vgetq_lane_s32(p, 0);
     ]])],
-    [AC_MSG_RESULT([yes (ARMv7-A; -mfpu=neon)])
+    [AC_MSG_RESULT([yes ($fastent_neon_label)])
      AC_DEFINE([HAVE_NEON], [1], [Define if NEON intrinsics are available])
-     NEON_CFLAGS="-mfpu=neon"
+     NEON_CFLAGS="$fastent_neon_try"
      fastent_have_neon=yes],
     [AC_MSG_RESULT([no])])
 fi
