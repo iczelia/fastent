@@ -74,9 +74,10 @@ static int grow_buf_w(wchar_t ** pbuf, size_t * pbcap) {
 
 static int split_cmdline_w(const wchar_t * cmd, wchar_t *** out_wargv) {
   int argc = 0;
+  int pass;
   wchar_t ** wargv = NULL;
   wchar_t * buf = NULL;
-  for (int pass = 0; pass < 2; pass++) {
+  for (pass = 0; pass < 2; pass++) {
     const wchar_t * p = cmd;
     if (pass == 1) {
       wargv = (wchar_t **) calloc((size_t) argc + 1, sizeof(wchar_t *));
@@ -102,10 +103,9 @@ static int split_cmdline_w(const wchar_t * cmd, wchar_t *** out_wargv) {
           if (*p == L'"') {
             int slashes = nbs / 2;
             if (pass == 1) {
-              for (int i = 0; i < slashes; i++) {
+              Fi(slashes,
                 if (blen + 1 >= bcap && !grow_buf_w(&buf, &bcap)) goto fail;
-                buf[blen++] = L'\\';
-              }
+                buf[blen++] = L'\\');
             }
             if (nbs & 1) {
               if (pass == 1) {
@@ -119,10 +119,9 @@ static int split_cmdline_w(const wchar_t * cmd, wchar_t *** out_wargv) {
             }
           } else {
             if (pass == 1) {
-              for (int i = 0; i < nbs; i++) {
+              Fi(nbs,
                 if (blen + 1 >= bcap && !grow_buf_w(&buf, &bcap)) goto fail;
-                buf[blen++] = L'\\';
-              }
+                buf[blen++] = L'\\');
             }
           }
         } else if (*p == L'"') {
@@ -157,7 +156,7 @@ static int split_cmdline_w(const wchar_t * cmd, wchar_t *** out_wargv) {
 fail:
   free(buf);
   if (wargv) {
-    for (int j = 0; j < argc; j++) free(wargv[j]);
+    Fj(argc, free(wargv[j]));
     free(wargv);
   }
   return -1;
@@ -168,21 +167,23 @@ fail:
 int fastent_win32_argv_utf8(int * argc_out, char *** argv_out) {
   wchar_t ** wargv = NULL;
   int wargc = split_cmdline_w(GetCommandLineW(), &wargv);
+  char ** argv;
+  int i;
   if (wargc < 0) return -1;
 
-  char ** argv = (char **) calloc((size_t) wargc + 1, sizeof(char *));
+  argv = (char **) calloc((size_t) wargc + 1, sizeof(char *));
   if (!argv) {
-    for (int i = 0; i < wargc; i++) free(wargv[i]);
+    Fi(wargc, free(wargv[i]));
     free(wargv);
     return -1;
   }
-  for (int i = 0; i < wargc; i++) {
+  for (i = 0; i < wargc; i++) {
     argv[i] = wide_to_utf8(wargv[i]);
     free(wargv[i]);
     if (!argv[i]) {
-      for (int j = 0; j < i; j++) free(argv[j]);
+      Fj(i, free(argv[j]));
       free(argv);
-      for (int j = i + 1; j < wargc; j++) free(wargv[j]);
+      Fj0(wargc, i + 1, free(wargv[j]));
       free(wargv);
       return -1;
     }

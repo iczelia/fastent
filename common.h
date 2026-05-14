@@ -81,15 +81,13 @@ typedef double   f64;
   #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #endif
 
-/*  Tight int-counter for-loop macros.  Each iterates [0, n) or [s, n)
-    with i / j / k as the loop variable; the body comes through
-    __VA_ARGS__ so commas inside function calls work naturally.  */
-#define Fi(n, ...)        for (int i = 0; i < (n); i++) { __VA_ARGS__; }
-#define Fj(n, ...)        for (int j = 0; j < (n); j++) { __VA_ARGS__; }
-#define Fk(n, ...)        for (int k = 0; k < (n); k++) { __VA_ARGS__; }
-#define Fi0(n, s, ...)    for (int i = (s); i < (n); i++) { __VA_ARGS__; }
-#define Fj0(n, s, ...)    for (int j = (s); j < (n); j++) { __VA_ARGS__; }
-#define Fk0(n, s, ...)    for (int k = (s); k < (n); k++) { __VA_ARGS__; }
+/*  Tight int-counter for-loop macros, C89-compliant.  */
+#define Fi(n, body)        do { int i; for (i = 0; i < (n); i++) { body; } } while (0)
+#define Fj(n, body)        do { int j; for (j = 0; j < (n); j++) { body; } } while (0)
+#define Fk(n, body)        do { int k; for (k = 0; k < (n); k++) { body; } } while (0)
+#define Fi0(n, s, body)    do { int i; for (i = (s); i < (n); i++) { body; } } while (0)
+#define Fj0(n, s, body)    do { int j; for (j = (s); j < (n); j++) { body; } } while (0)
+#define Fk0(n, s, body)    do { int k; for (k = (s); k < (n); k++) { body; } } while (0)
 
 #ifndef FASTENT_MAJOR
   #define FASTENT_MAJOR 1

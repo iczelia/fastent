@@ -103,12 +103,12 @@ static int parse_int(const char * s, int * out) {
 }
 
 static int parse_args(int argc, char ** argv, fastent_options * o) {
+  int i;
+  int saw_path = 0;
   memset(o, 0, sizeof(*o));
   o->threads = 1;
 
-  int saw_path = 0;
-
-  for (int i = 1; i < argc; i++) {
+  for (i = 1; i < argc; i++) {
     const char * a = argv[i];
     if (a[0] == '-' && a[1] != '\0') {
       if (a[1] == '-') {
@@ -145,7 +145,8 @@ static int parse_args(int argc, char ** argv, fastent_options * o) {
         #undef LONG_IS
       } else {
         /*  Short option(s).  */
-        for (int k = 1; a[k]; k++) {
+        int k;
+        for (k = 1; a[k]; k++) {
           char c = a[k];
           switch (c) {
             case 'b': o->binary = 1; break;
