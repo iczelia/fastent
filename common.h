@@ -81,13 +81,24 @@ typedef double   f64;
   #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #endif
 
-/*  popcount: GCC/Clang lower to POPCNT; TCC and friends get a portable
-    bit-twiddle fallback.  __TINYC__ also defines __GNUC__, hence the
-    explicit exclusion.  */
-#if defined(__GNUC__) && !defined(__TINYC__)
+/*  popcount: GCC/Clang lower __builtin_popcount to a POPCNT instruction
+    when the TU is built with a flag that enables it (-mpopcnt,
+    -msse4.2, -mavx2, anything AVX-512).  Without such a flag on x86
+    the builtin falls through to libgcc's __popcountdi2 out-of-line
+    helper, which costs far more than the dozen bit-twiddle ops it
+    actually performs.  That penalty hits analyze-scalar.c (no -m
+    flags) and analyze-ssse3.c (-mssse3 alone) on the per-byte
+    bit-mode walker, where popcount is called twice per input byte.
+    Detect via __POPCNT__ and use an inline SWAR popcount on the
+    affected x86 TUs.  Non-x86 targets trust the builtin (AArch64
+    lowers via CNT, etc).  TCC and other non-GCC compilers always get
+    the SWAR path; __TINYC__ also defines __GNUC__ hence the explicit
+    exclusion.  */
+#if defined(__GNUC__) && !defined(__TINYC__) \
+    && !((defined(__i386__) || defined(__x86_64__)) && !defined(__POPCNT__))
   #define FASTENT_POPCOUNT32(x) ((unsigned) __builtin_popcount((unsigned)(x)))
 #else
-  static unsigned fastent_popcount32_(unsigned x) {
+  static inline unsigned fastent_popcount32_(unsigned x) {
     x = x - ((x >> 1) & 0x55555555u);
     x = (x & 0x33333333u) + ((x >> 2) & 0x33333333u);
     x = (x + (x >> 4)) & 0x0f0f0f0fu;
