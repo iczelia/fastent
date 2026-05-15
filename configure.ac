@@ -104,26 +104,13 @@ if test "x$fastent_is_dos" = "xyes"; then
 fi
 AM_CONDITIONAL([FASTENT_DOS], [test "x$fastent_is_dos" = "xyes"])
 
-# pthread (optional). When disabled, the binary is single-threaded and
-# never calls into the threadpool module.  DJGPP has no pthread.
 AC_ARG_ENABLE([threads],
-  [AS_HELP_STRING([--disable-threads],[build a single-threaded fastent (no pthread dep)])],
+  [AS_HELP_STRING([--disable-threads],[build a single-threaded fastent])],
   [enable_threads=$enableval], [enable_threads=yes])
 if test "x$fastent_is_dos" = "xyes"; then
   enable_threads=no
 fi
-if test "x$enable_threads" = "xyes"; then
-  AX_PTHREAD([
-    AC_DEFINE([FASTENT_HAVE_PTHREAD], [1], [Have pthreads])
-    LIBS="$PTHREAD_LIBS $LIBS"
-    CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
-    CC="$PTHREAD_CC"
-    fastent_have_pthread=yes
-  ], [fastent_have_pthread=no])
-else
-  fastent_have_pthread=no
-fi
-AM_CONDITIONAL([FASTENT_THREADS], [test "x$fastent_have_pthread" = "xyes"])
+# Thread backend selection is deferred to after Windows target detection.
 
 # Windows host: cross-compile via mingw-w64 (any toolchain that
 # defines _WIN32) needs the fastent-win32.c TU for Unicode-path /
@@ -165,6 +152,30 @@ if test "x$fastent_is_windows" = "xyes"; then
 fi
 AC_SUBST([FASTENT_WIN_CPPFLAGS])
 AC_SUBST([FASTENT_WIN_LDFLAGS])
+
+# Threads (pthread on POSIX, CreateThread + CONDITION_VARIABLE on
+# Win32 Vista+).  When disabled, the threadpool TUs compile to nothing.
+fastent_have_threads=no
+if test "x$enable_threads" = "xyes"; then
+  if test "x$fastent_is_windows" = "xyes"; then
+    if test "x$fastent_win_target" = "xwin95"; then
+      AC_MSG_NOTICE([threads disabled: Win95 lacks CONDITION_VARIABLE])
+    else
+      AC_DEFINE([FASTENT_HAVE_THREADS], [1], [Have a thread backend])
+      fastent_have_threads=yes
+    fi
+  else
+    AX_PTHREAD([
+      AC_DEFINE([FASTENT_HAVE_THREADS], [1], [Have a thread backend])
+      AC_DEFINE([FASTENT_HAVE_PTHREAD], [1], [Use pthread backend])
+      LIBS="$PTHREAD_LIBS $LIBS"
+      CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
+      CC="$PTHREAD_CC"
+      fastent_have_threads=yes
+    ], [])
+  fi
+fi
+AM_CONDITIONAL([FASTENT_THREADS], [test "x$fastent_have_threads" = "xyes"])
 
 # SIMD probes. Save user CFLAGS, try each -m... in turn, restore, set
 # AC_SUBST'd flags and HAVE_* defines + AM_CONDITIONAL.  DJGPP (i386

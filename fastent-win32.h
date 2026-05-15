@@ -37,6 +37,13 @@ int  fastent_win32_mmap(int fd, void ** out_base,
                         void ** out_handle);
 void fastent_win32_munmap(void * base, void * handle);
 
+/*  Open a file for async reads (FILE_FLAG_OVERLAPPED +
+    FILE_FLAG_SEQUENTIAL_SCAN).  Returns a HANDLE that the caller
+    binds to an IOCP, or NULL on failure.  *out_size is the file
+    size in bytes on success.  */
+void * fastent_win32_open_overlapped(const char * utf8_path,
+                                     unsigned long long * out_size);
+
 /*  PrefetchVirtualMemory (Win 8+); no-op below.  */
 void fastent_win32_mmap_prefetch(void * base, unsigned long long size);
 

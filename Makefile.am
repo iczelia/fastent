@@ -4,12 +4,14 @@ AM_CFLAGS = -std=c99 -Wall -Wextra
 
 bin_PROGRAMS  = fastent
 noinst_HEADERS = analyze.h analyze-impl.h chisq.h \
-                 threadpool.h common.h fastent-win32.h \
+                 analyze-vec-x86.h analyze-vec-neon.h analyze-vec-wasm.h \
+                 common.h fastent-win32.h \
                  fastent-math.h log2_tables.h \
-                 fastent-options.h output.h \
-                 port-cpu.h port-io.h port-term.h port-os.h
+                 fastent-options.h output.h cli.h runner.h \
+                 port-cpu.h port-io.h port-term.h port-os.h port-thread.h
 
-fastent_SOURCES = fastent.c analyze.c analyze-scalar.c chisq.c \
+fastent_SOURCES = fastent.c cli.c runner.c \
+                  analyze.c analyze-scalar.c chisq.c \
                   fastent-math.c \
                   output-default.c output-terse.c output-json.c \
                   output-histogram.c \
@@ -18,7 +20,7 @@ fastent_SOURCES = fastent.c analyze.c analyze-scalar.c chisq.c \
                   port-term-posix.c port-term-win32.c port-term-djgpp.c \
                   port-os-posix.c port-os-win32.c
 if FASTENT_THREADS
-fastent_SOURCES += threadpool.c
+fastent_SOURCES += port-thread-posix.c port-thread-win32.c
 endif
 if FASTENT_IS_WINDOWS
 fastent_SOURCES += fastent-win32.c

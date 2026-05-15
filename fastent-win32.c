@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <fcntl.h>
 #include <io.h>
 #include <wchar.h>
@@ -278,6 +279,42 @@ int fastent_win32_mmap(int fd, void ** out_base,
 void fastent_win32_munmap(void * base, void * handle) {
   if (base)   UnmapViewOfFile(base);
   if (handle) CloseHandle((HANDLE) handle);
+}
+
+void * fastent_win32_open_overlapped(const char * utf8_path,
+                                     unsigned long long * out_size) {
+  HANDLE h = INVALID_HANDLE_VALUE;
+  LARGE_INTEGER li;
+  if (!utf8_path || !out_size) return NULL;
+#ifndef FASTENT_WIN_LEGACY
+  {
+    int n = MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, NULL, 0);
+    if (n <= 0) return NULL;
+    wchar_t * w = (wchar_t *) malloc((size_t) n * sizeof(wchar_t));
+    if (!w) return NULL;
+    if (MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, w, n) <= 0) {
+      free(w); return NULL;
+    }
+    h = CreateFileW(w, GENERIC_READ, FILE_SHARE_READ, NULL,
+                    OPEN_EXISTING,
+                    FILE_FLAG_OVERLAPPED | FILE_FLAG_SEQUENTIAL_SCAN,
+                    NULL);
+    free(w);
+  }
+#else
+  h = CreateFileA(utf8_path, GENERIC_READ, FILE_SHARE_READ, NULL,
+                  OPEN_EXISTING,
+                  FILE_FLAG_OVERLAPPED | FILE_FLAG_SEQUENTIAL_SCAN,
+                  NULL);
+#endif
+  if (h == INVALID_HANDLE_VALUE) return NULL;
+  if (GetFileType(h) != FILE_TYPE_DISK
+      || !GetFileSizeEx(h, &li) || li.QuadPart <= 0) {
+    CloseHandle(h);
+    return NULL;
+  }
+  *out_size = (unsigned long long) li.QuadPart;
+  return h;
 }
 
 void fastent_win32_set_console_fg(int cls) {

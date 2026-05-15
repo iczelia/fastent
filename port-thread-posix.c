@@ -1,10 +1,12 @@
-/*  fastent: threadpool implementation. Built only when FASTENT_THREADS is on.
-    Static partition; workers wait on a condition variable for a generation
-    counter to advance.  */
+/*  fastent: pthread-backed thread pool.  Static partition; workers wait
+    on a condition variable for a generation counter to advance.
 
-#include "threadpool.h"  /*  Pulls common.h with feature macros.  */
+    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
-#ifdef FASTENT_HAVE_PTHREAD
+#include "common.h"
+#include "port-thread.h"
+
+#if defined(FASTENT_HAVE_THREADS) && !defined(_WIN32)
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -29,7 +31,7 @@ static void * worker_main(void * arg) {
   int k = ((struct worker_args *) arg)->k;
   free(arg);
 
-  /*  No explicit affinity. Empirically on Zen 3 / CCD architectures
+  /*  No explicit affinity.  Empirically on Zen 3 / CCD architectures
       pinning N=ncpu/2..ncpu workers to fixed CPU IDs straddles SMT
       pairs and CCD boundaries and slightly hurts -j auto throughput.
       Let the scheduler place threads.  */
