@@ -487,8 +487,8 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - { id: wasm32, em_extra: "",           node_extra: ""                             }
-          - { id: wasm64, em_extra: "-sMEMORY64", node_extra: "--experimental-wasm-memory64" }
+          - { id: wasm32, em_extra: ""           }
+          - { id: wasm64, em_extra: "-sMEMORY64" }
     steps:
       - name: install emscripten
         uses: mymindstorm/setup-emsdk@v14
@@ -524,16 +524,14 @@ jobs:
           emmake make -j"$(nproc)"
 
       - name: smoke test under node
-        env:
-          NX: ${{ matrix.target.node_extra }}
         run: |
           cd build
           ls -la fastent*
           dd if=/dev/urandom bs=4096 count=4 status=none > smoke.bin
-          node $NX ./fastent --version
-          node $NX ./fastent -t  smoke.bin
-          node $NX ./fastent -tb smoke.bin
-          node $NX ./fastent -tf smoke.bin
+          node ./fastent --version
+          node ./fastent -t  smoke.bin
+          node ./fastent -tb smoke.bin
+          node ./fastent -tf smoke.bin
 
       - name: package binary
         env:
