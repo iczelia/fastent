@@ -522,6 +522,21 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m512i vbs0 = _mm512_xor_si512(vb0, sign_xor);
     __m512i vbs1 = _mm512_xor_si512(vb1, sign_xor);
 
+#ifdef FASTENT_AVX512_HAVE_VNNI
+    /*  VPDPBUSD fuses (u8 * i8) byte-multiply, 4-way horizontal sum,
+        and i32 accumulate into a single uop.  Saves the cvtep*_epi16,
+        mullo_epi16, and madd_epi16 chain for both halves.  Per i32
+        lane the accumulated value is sum of 4 byte-products in
+        [-32640, 32385]; over a 128-byte stride that's 4 lanes of
+        contributions, so we widen to i64 once per iter as before.  */
+    __m512i sum32 = _mm512_setzero_si512();
+    sum32 = _mm512_dpbusd_epi32(sum32, va0, vbs0);
+    sum32 = _mm512_dpbusd_epi32(sum32, va1, vbs1);
+    __m512i sum64_lo = _mm512_cvtepi32_epi64(_mm512_castsi512_si256(sum32));
+    __m512i sum64_hi = _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(sum32, 1));
+    scc_acc64 = _mm512_add_epi64(scc_acc64,
+                  _mm512_add_epi64(sum64_lo, sum64_hi));
+#else
     /*  Widen each 64-byte vector into two i16 lanes (32 i16 each).  */
     __m512i va0_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(va0));
     __m512i va0_hi = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(va0, 1));
@@ -552,6 +567,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m512i sum64_hi = _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(sum32, 1));
     scc_acc64 = _mm512_add_epi64(scc_acc64,
                   _mm512_add_epi64(sum64_lo, sum64_hi));
+#endif
     /*  LHS byte sum via PSADBW for the sign correction.  */
     __m512i sad0 = _mm512_sad_epu8(va0, zero512);
     __m512i sad1 = _mm512_sad_epu8(va1, zero512);

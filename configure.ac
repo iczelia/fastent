@@ -468,26 +468,31 @@ for fastent_avx512_try in "-mevex512 $AVX512_CC_FLAGS_BASE" "$AVX512_CC_FLAGS_BA
     [AC_MSG_RESULT([no])])
 done
 
-# AVX-512 BITALG augment: enables _mm512_popcnt_epi8 (VPOPCNTB) for a
-# fast byte popcount in the bit-mode body.  Only probed if base AVX-512
-# is available; the resulting TU exports _avx512_bitalg-suffixed symbols
-# the dispatcher prefers on hosts with BITALG.
+# AVX-512 BITALG + VNNI augment.
+#   BITALG enables _mm512_popcnt_epi8 (VPOPCNTB) for the bit-mode body.
+#   VNNI   enables _mm512_dpbusd_epi32   (VPDPBUSD)  for the byte-mode SCC.
+# We probe them together because every shipping chip that has BITALG also
+# has VNNI (Ice Lake / Tiger Lake / Sapphire Rapids / Zen 4); collapsing
+# them into a single tier keeps the variant table small.  The resulting
+# TU exports _avx512_bitalg-suffixed symbols the dispatcher prefers on
+# hosts with both features.
 AVX512_BITALG_CFLAGS=""
 if test "x$AVX512_CFLAGS" != "x"; then
-  AVX512_BITALG_TRY="$AVX512_CFLAGS -mavx512bitalg"
+  AVX512_BITALG_TRY="$AVX512_CFLAGS -mavx512bitalg -mavx512vnni"
   CFLAGS="$save_CFLAGS $AVX512_BITALG_TRY"
-  AC_MSG_CHECKING([for AVX-512 BITALG intrinsics with $CC])
+  AC_MSG_CHECKING([for AVX-512 BITALG + VNNI intrinsics with $CC])
   AC_COMPILE_IFELSE(
     [AC_LANG_PROGRAM([[
       #include <immintrin.h>
     ]], [[
       __m512i a = _mm512_set1_epi8(1);
       __m512i c = _mm512_popcnt_epi8(a);
-      return (int) _mm512_reduce_add_epi64(c);
+      __m512i d = _mm512_dpbusd_epi32(c, a, a);
+      return (int) _mm512_reduce_add_epi64(d);
     ]])],
     [AC_MSG_RESULT([yes])
      AC_DEFINE([HAVE_AVX512_BITALG], [1],
-       [Define if AVX-512 BITALG (VPOPCNTB) intrinsics are available])
+       [Define if AVX-512 BITALG + VNNI intrinsics are available])
      AVX512_BITALG_CFLAGS="$AVX512_BITALG_TRY"],
     [AC_MSG_RESULT([no])])
 fi
