@@ -60,9 +60,12 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
   const f64 denom = totalc * sum_x2 - scct2_sq;
   out->scc = (denom == 0.0) ? -100000.0 : (totalc * scct1 - scct2_sq) / denom;
 
-  /*  Mean. Unguarded division to match original behaviour on empty
-      input (yields -nan, formatted as "-nan" in default mode).  */
-  out->mean = sum_x / totalc;
+  /*  Mean. Short-circuit empty input to NAN so the printed string is
+      stable across libc/ISA: glibc on x86 prints 0.0/0.0 as "-nan",
+      musl on aarch64 prints "nan" (the sign of the IEEE default NaN
+      depends on the FPU).  NAN is the +NaN constant from <math.h>
+      and reliably formats as "nan" on every conforming printf.  */
+  out->mean = (out->total_samples > 0) ? (sum_x / totalc) : NAN;
 
   /*  Chi-square + entropy.  */
   const f64 cexp = totalc / (f64) bins;
