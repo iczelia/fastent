@@ -4,15 +4,10 @@
 
 #include "analyze.h"  /*  Pulls common.h with feature macros.  */
 #include "chisq.h"
+#include "fastent-math.h"
 
 #include <math.h>
 #include <string.h>
-
-#define FASTENT_LOG2OF10 3.32192809488736234787
-
-static inline f64 fastent_log2(f64 x) {
-  return FASTENT_LOG2OF10 * log10(x);
-}
 
 /*  State init / merge.  */
 
@@ -74,7 +69,7 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
      const f64 a = (f64) out->hist[i] - cexp;
      chisq += (a * a) / cexp;
      const f64 p = (f64) out->hist[i] / totalc;
-     if (p > 0.0) entropy += p * fastent_log2(1.0 / p))
+     entropy += fastent_entropy_term(p))
   out->chi_square = chisq;  out->entropy = entropy;
 
   out->chi_probability = fastent_chisq_tail(chisq, binary);

@@ -4,9 +4,11 @@ AM_CFLAGS = -std=c99 -Wall -Wextra
 
 bin_PROGRAMS  = fastent
 noinst_HEADERS = analyze.h analyze-impl.h chisq.h fastent-io.h \
-                 threadpool.h common.h fastent-win32.h
+                 threadpool.h common.h fastent-win32.h \
+                 fastent-math.h log2_tables.h
 
-fastent_SOURCES = fastent.c analyze.c analyze-scalar.c chisq.c fastent-io.c
+fastent_SOURCES = fastent.c analyze.c analyze-scalar.c chisq.c fastent-io.c \
+                  fastent-math.c
 if FASTENT_THREADS
 fastent_SOURCES += threadpool.c
 endif
