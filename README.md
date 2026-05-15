@@ -1,57 +1,115 @@
 # fastent
 
-A high-throughput entropy and randomness tester for byte streams.
+fastent - high-throughput entropy and randomness tester for byte and bit streams,
+with deterministic multi-threaded output and runtime SIMD dispatch.
+Licensed under the terms of GNU GPL version 3 only - see [`COPYING`](COPYING).
+Report issues to Kamila Szewczyk &lt;k@iczelia.net&gt;.
+Project homepage: https://github.com/iczelia/fastent
 
-Licensed under the GNU General Public License, version 3 only;
-see [`COPYING`](COPYING).
+[![CI](https://github.com/iczelia/fastent/actions/workflows/ci.yml/badge.svg?branch=trunk)](https://github.com/iczelia/fastent/actions/workflows/ci.yml)
 
-## What it does
+![GPLv3](contrib/gplv3.png)
 
-`fastent` applies five tests of randomness to a byte (or, with `-b`,
-bit) stream and reports:
+## What it reports
 
-- Shannon entropy in bits per sample
-- chi-square statistic and tail probability
-- arithmetic mean
-- Monte Carlo value of pi
-- serial correlation coefficient
-
-Results are emitted in human-readable, CSV (`-t`), or JSON (`--json`)
-form.
+Shannon entropy, chi-square statistic with tail probability, arithmetic
+mean, Monte Carlo value of pi, and serial correlation coefficient.
+Byte mode by default; bit mode under `-b`.  Output formats: human-readable,
+CSV (`-t`), JSON (`--json`); add a per-value occurrence table with `-c`.
 
 ## Highlights
 
-- 4-way banked SIMD histogram in the inner loop;
+- 4-way banked SIMD histogram in the inner loop, breaking the
+  read-modify-write hazard chain on the increment-memory path
 - serial-correlation cross-product via `VPMADDUBSW` with an on-the-fly
-  sign-correction derived from `PSADBW`;
-- bit-mode population count via `VPOPCNTB` (AVX-512 BITALG), falling
-  back to a PSHUFB nibble LUT on AVX2 / SSE;
-- memory-maps regular-file inputs with `MADV_SEQUENTIAL`;
-- runtime dispatch to the best available variant
-  (scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512) via a CPUID query;
+  sign-correction derived from `PSADBW`
+- bit-mode population count via `VPOPCNTB` (AVX-512 BITALG), with a
+  PSHUFB nibble lookup fallback on AVX2 / SSE
+- regular-file inputs memory-mapped with `MADV_SEQUENTIAL` and
+  `POSIX_FADV_SEQUENTIAL`; stream sources go through a 2 MiB aligned
+  `read(2)` loop
+- runtime CPU dispatch across scalar / SSSE3 / SSE4.1 / AVX2 /
+  AVX-512 (F + BW + CD + DQ + VL + VPOPCNTDQ + BITALG) via a CPUID
+  query
 - optional pthread worker pool partitioning the mmap region into
-  6-aligned slabs so the Monte-Carlo Pi state machine never crosses
-  threads; merge order is deterministic and yields byte-identical
-  output to the single-threaded run.
+  6-aligned slabs so the Monte Carlo Pi state machine never crosses
+  a thread; merge order is fixed and the multi-threaded output is
+  byte-identical to `-j 1`
+- portable C99 sources: builds under gcc, clang, mingw-w64, DJGPP,
+  and TinyCC; only the SIMD bodies need a vendor-extended compiler
 
-### Ryzen 9 5950X desktop (16C/32T, dual-channel DDR4, Zen 3)
+## Requirements
+
+- Any C99 compiler with a working libc (gcc, clang, tcc all known to work)
+- autotools (`autoconf`, `automake`), `make`
+- `pthreads` (optional; build without via `--disable-threads`)
+
+## Build from a release tarball
+
+```sh
+./configure --enable-native --enable-lto
+make -j"$(nproc)"
+make check
+```
+
+## Build from git
+
+```sh
+./bootstrap
+./configure --enable-native --enable-lto
+make -j"$(nproc)"
+make check
+```
+
+## Install
+
+```sh
+sudo make install
+```
+
+## Configure options
+
+- `--enable-native` - `-march=native -mtune=native`
+- `--enable-lto` - link-time optimisation
+- `--disable-threads` - single-threaded build, no pthread dependency
+- `--with-windows-target=vista|win95` - Windows target version
+  - `vista` (default): wide-API path, modern PE subsystem
+  - `win95`: narrow-API path, PE subsystem 4.0, kernel32 + msvcrt imports only
+
+## Supported platforms
+
+Verified to compile and pass `make check`:
+
+Primary platforms:
+- Linux: x86_64, i386, aarch64, armhf (gcc, clang, tcc)
+- Windows: x86_64, i686, aarch64 (mingw-w64, zig cc)
+- macOS: x86_64, aarch64 (clang)
+
+Exotic Linux (musl, fully static; smoke-tested under qemu-user):
+- riscv64, ppc64le, ppc64, powerpc, s390x, loongarch64,
+  mips, mipsel, mips64, mips64el
+
+Exotic Linux (glibc, fully static; build-validated):
+- alpha, sparc64, sparc, m68k, hppa, arc, sh4
+
+Legacy targets:
+- Windows 95 (i686, mingw-w64 + `--with-windows-target=win95`)
+- MS-DOS (i386, DJGPP with CWSDPMI baked into the executable)
+
+Pre-built binaries for every target are published with each tagged
+release.  Cross-compile recipes for every platform live in
+[`.github/workflows/release.yml`](.github/workflows/release.yml).
+
+## Throughput
 
 `make bench` sweeps 10 deterministic datasets (random, zeros, counter,
 dna, ascii, biased, sparse-bits, lcg, walk, stripes) at 512 MiB each
 through three modes and a power-of-two `-j` ladder, with `ent(1)`
-timed alongside as a single-threaded baseline.  Five timed runs per
-cell after a warmup; page cache hot.
+timed alongside as a single-threaded baseline.
 
 ![throughput scaling](doc/bench.png)
 
-Log-log axes, so ideal linear scaling reads as a straight line of
-unit slope and the gap to ent reads as a constant log-vertical
-offset.  Mode is encoded by colour; each colour has three layers: ten
-thin per-dataset curves (the band thickness is the dataset spread),
-the bold cross-dataset median on top, and the dashed horizontal
-ent(1) baseline at the bottom.
-
-Headline numbers (median across the 10 datasets, MiB/s):
+Median throughput on a Ryzen 9 5950X (16C/32T, dual-channel DDR4):
 
 | jobs    |  byte  |  bit   | byte + `-f` |
 |:--------|-------:|-------:|------------:|
@@ -61,98 +119,34 @@ Headline numbers (median across the 10 datasets, MiB/s):
 | `-j 16` | 13 244 | **17 308** |    11 826 |
 | `-j 32` | **15 707** | 17 070 |  **14 475** |
 
-vs `ent(1)`: a single fastent worker is 22 to 90x faster than ent
-in the same mode; the full pthread sweep stretches that to 140 to
-327x before DDR4 bandwidth caps it (bit mode flattens by `-j 8`,
-byte and byte + `-f` keep climbing through `-j 32` thanks to the
-cheaper per-byte inner loop being more compute-bound).
+Numbers in MiB/s.  A single fastent worker is 22 to 90x faster than
+`ent(1)`; saturated multi-threaded `fastent` reaches 140 to 327x
+before DDR4 bandwidth caps it.
 
 ### Why the per-core ceiling
 
-The byte-histogram inner loop does 64 indexed read-modify-write stores
-per 64-byte stride into four banked u32 counters.  The AVX-512 path
-(activated when the host advertises AVX-512F + BW + CD + VPOPCNTDQ +
-BITALG) doubles the stride to 128 bytes and runs SCC, fold, and MC Pi
-at 64-byte vector width; the histogram itself stays banked-scalar
-because `VPSCATTERDD` is roughly 16 c reciprocal throughput for a
-16-element zmm scatter on current x86 (Zen 3 / Zen 4 alike), losing
-to the 4-banked scalar inc-mem chain which hits ~0.5 c/B at the
-ROB-rate limit.
+The byte-histogram inner loop does 64 indexed read-modify-write
+stores per 64-byte stride into four banked u32 counters.  The
+AVX-512 path (activated when the host advertises AVX-512F + BW + CD
++ VPOPCNTDQ + BITALG) doubles the stride to 128 bytes and runs SCC,
+fold, and Monte Carlo Pi at 64-byte vector width.  The histogram
+itself stays banked-scalar: `VPSCATTERDD` is roughly 16 c reciprocal
+throughput for a 16-element zmm scatter on current x86 (Zen 3 / Zen
+4 alike), losing to the 4-banked scalar inc-mem chain which hits
+~0.5 c/B at the ROB-rate limit.
 
-Past the per-core compute ceiling, headroom comes from multi-threading.
-Pass `-j N` to spread the mmap region across N pthread workers; slabs
-are 6-aligned so the Monte-Carlo Pi state machine never crosses
-threads, and adjacent slab boundary products are stitched into the
-serial-correlation sum at merge time.  `-j auto` resolves to
-`sysconf(_SC_NPROCESSORS_ONLN)`.
+Past the per-core compute ceiling, headroom comes from
+multi-threading.  Slabs are 6-aligned so the Monte Carlo Pi state
+machine never crosses threads, and adjacent slab boundary products
+are stitched into the serial-correlation sum at merge time.  `-j
+auto` resolves to `sysconf(_SC_NPROCESSORS_ONLN)` (GetSystemInfo on
+Windows).
 
-## Building
-
-From a release tarball:
-
-```
-$ ./configure --enable-native --enable-lto
-$ make
-$ sudo make install
-```
-
-From a git clone (autotools artefacts aren't checked in):
-
-```
-$ ./bootstrap
-$ ./configure --enable-native --enable-lto
-$ make
-$ sudo make install
-```
-
-Without host-specific tuning, drop `--enable-native --enable-lto`.  The
-tuned build is 5 to 25 percent faster than the generic one on top of
-the figures in the benchmark section.
-
-### Configure options
-
-| flag | effect |
-|:--|:--|
-| `--enable-native`            | `-march=native -mtune=native` |
-| `--enable-lto`               | link-time optimisation |
-| `--disable-threads`          | single-threaded build, no pthread dependency |
-| `--with-windows-target=vista` | default Windows target (wide API, Vista+) |
-| `--with-windows-target=win95` | legacy Windows target (narrow API, PE 4.0, kernel32 + msvcrt imports only) |
-
-### Supported platforms
-
-Native build is x86_64 Linux with gcc 12 or newer (gcc 15 in the
-release CI), clang 18 or newer, or any C99 compiler with a working
-libc.  TCC builds cleanly under `--disable-threads`.
-
-Pre-built binaries are published for each tagged release:
-
-- Linux (musl, fully static): x86_64, i386, aarch64, armhf, riscv64,
-  ppc64le, ppc64, ppc, s390x, loongarch64, mips, mipsel, mips64,
-  mips64el.
-- Linux (glibc, fully static): alpha, sparc64, sparc, m68k, hppa,
-  arc, sh4.
-- Windows (mingw-w64, fully static): x86_64, i686, aarch64.
-- Windows 95 (kernel32 + msvcrt only, PE subsystem 4.0): i686.
-- macOS (libSystem stub, SDK-baseline): x86_64, aarch64.
-- MS-DOS (DJGPP with CWSDPMI baked in, self-contained): i386.
-
-Cross-compile recipes for every target are in
-[`.github/workflows/release.yml`](.github/workflows/release.yml).
-
-## Testing
-
-`make check` runs a self-contained sanity suite over deterministic
-fixtures.  See [`tests/run-tests.sh`](tests/run-tests.sh).
-
-`make bench` runs the full matrix (10 deterministic datasets, three
-modes, power-of-two `-j` sweep, with `ent(1)` timed alongside if it
-is on `PATH`).  `make bench-quick` cuts file size to 64 MiB, runs 3
-trials per cell, and only times `-j 1` and `-j nproc` for a sub-minute
-smoke run.  Override `SIZE_MB`, `RUNS`, `WARMUP`, `JOBS`, `MODES`,
-`DATASETS`, or `ENT` on the make command line; see
+`make bench-quick` is a sub-minute smoke variant (64 MiB, 3 trials,
+`-j 1` and `-j nproc` only).  Override `SIZE_MB`, `RUNS`, `WARMUP`,
+`JOBS`, `MODES`, `DATASETS`, `ENT` on the make command line; see
 [`tests/bench.sh`](tests/bench.sh).
 
 ## See also
 
-- `rngtest(1)`, `dieharder(1)`, `od(1)`
+`rngtest(1)`, `dieharder(1)`, `od(1)`, `ent(1)`
