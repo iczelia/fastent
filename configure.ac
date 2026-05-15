@@ -29,7 +29,28 @@ AC_DEFINE([FASTENT_MINOR], [fastent_version_minor], [Minor version number])
 
 AC_C_RESTRICT
 AC_C_INLINE
-AC_CHECK_HEADERS([sys/mman.h sys/stat.h fcntl.h unistd.h immintrin.h sys/auxv.h])
+AC_CHECK_HEADERS([sys/mman.h sys/stat.h fcntl.h unistd.h immintrin.h sys/auxv.h linux/io_uring.h])
+
+# io_uring: Linux 5.1+ async I/O.  We use raw syscalls (no liburing dep),
+# but we need both <linux/io_uring.h> (for the SQE/CQE layouts) AND a
+# __NR_io_uring_setup that the kernel headers expose.  At runtime
+# io_uring_setup may still ENOSYS on older kernels; we fall back to the
+# read(2) stream path in that case unless the user explicitly asked for
+# --io=uring.
+if test "x$ac_cv_header_linux_io_uring_h" = "xyes"; then
+  AC_MSG_CHECKING([for __NR_io_uring_setup])
+  AC_COMPILE_IFELSE(
+    [AC_LANG_PROGRAM([[
+      #include <sys/syscall.h>
+      #include <linux/io_uring.h>
+    ]], [[
+      int n = __NR_io_uring_setup + __NR_io_uring_enter;
+      return n != 0;
+    ]])],
+    [AC_MSG_RESULT([yes])
+     AC_DEFINE([HAVE_IO_URING], [1], [Define if io_uring is available])],
+    [AC_MSG_RESULT([no])])
+fi
 
 # WebAssembly hosts: emscripten's libc resolves mmap / madvise /
 # posix_fadvise through JS-side `env::__syscall_*` imports that the

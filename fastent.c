@@ -53,7 +53,8 @@ typedef struct {
   int terse;          /*  -t  */
   int json;           /*  --json  */
   int full_precision; /*  -p / --full-precision  */
-  int no_mmap;        /*  --no-mmap  */
+  int no_mmap;        /*  --no-mmap (deprecated alias for --io=stream)  */
+  int io_mode;        /*  --io={auto,mmap,stream,uring}  */
   int threads;        /*  -j / --threads  (0 = auto, 1 = default)  */
   const char * path;  /*  positional (NULL = stdin)  */
 } fastent_options;
@@ -80,7 +81,9 @@ static void print_help(void) {
   printf("           -p,  --full-precision     Render every float at %%.17g\n");
   printf("           -j N --threads=N          Use N worker threads"
          " (default 1)\n");
-  printf("                --no-mmap            Read via read(2), not mmap(2)\n");
+  printf("                --no-mmap            Alias for --io=stream\n");
+  printf("                --io=MODE            mmap (default for regular files),\n");
+  printf("                                     stream, uring (Linux 5.1+), auto\n");
   printf("                --json               Emit results as JSON\n");
   printf("           -V,  --version            Print version and exit\n");
   printf("           -h,  --help               Print this message\n");
@@ -132,6 +135,17 @@ static int parse_args(int argc, char ** argv, fastent_options * o) {
         else if (LONG_IS("json"))           o->json = 1;
         else if (LONG_IS("full-precision")) o->full_precision = 1;
         else if (LONG_IS("no-mmap"))        o->no_mmap = 1;
+        else if (LONG_IS("io")) {
+          if (!val) {
+            if (i + 1 >= argc) { fprintf(stderr, "--io requires an argument\n"); return -1; }
+            val = argv[++i];
+          }
+          if      (!strcmp(val, "auto"))   o->io_mode = (int) FASTENT_IO_AUTO;
+          else if (!strcmp(val, "mmap"))   o->io_mode = (int) FASTENT_IO_MMAP;
+          else if (!strcmp(val, "stream")) o->io_mode = (int) FASTENT_IO_STREAM;
+          else if (!strcmp(val, "uring"))  o->io_mode = (int) FASTENT_IO_URING;
+          else { fprintf(stderr, "unknown --io mode: %s\n", val); return -1; }
+        }
         else if (LONG_IS("help"))         { print_help(); exit(0); }
         else if (LONG_IS("version"))      { print_version(); exit(0); }
         else if (LONG_IS("threads")) {
@@ -496,9 +510,16 @@ int main(int argc, char ** argv) {
 #endif
 
   fastent_source src;
-  if (fastent_src_open(&src, o.path, o.no_mmap) != 0) {
-    if (o.path) fprintf(stderr, "cannot open file %s\n", o.path);
-    else        perror("stdin");
+  /*  Resolve I/O mode: explicit --io= wins, then --no-mmap maps to
+      stream, otherwise AUTO.  */
+  fastent_io_mode io_mode = (fastent_io_mode) o.io_mode;
+  if (io_mode == FASTENT_IO_AUTO && o.no_mmap) io_mode = FASTENT_IO_STREAM;
+  if (fastent_src_open(&src, o.path, io_mode) != 0) {
+    if (o.path) {
+      fprintf(stderr, "cannot open file %s: %s\n", o.path, strerror(errno));
+    } else {
+      perror("stdin");
+    }
     return 2;
   }
 
