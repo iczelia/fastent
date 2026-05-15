@@ -253,6 +253,15 @@ static int fastent_have_avx512_bitalg_runtime(void) { return 0; }
 
 #endif
 
+/*  WASM SIMD128 runtime probe.  WebAssembly's feature flags are
+    module-load-gated by the host runtime; a binary built with
+    -msimd128 either runs (the runtime advertises SIMD128) or fails
+    to instantiate.  By the time analyze.c executes the probe is a
+    constant 1.  */
+#ifdef HAVE_WASM128
+static inline int fastent_have_wasm128_runtime(void) { return 1; }
+#endif
+
 /*  NEON runtime probe.
     AArch64: NEON is mandatory per the procedure call standard, so the
              probe is a constant 1.
@@ -299,6 +308,9 @@ fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
   #ifdef HAVE_NEON
     if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = analyze_neon; }
   #endif
+  #ifdef HAVE_WASM128
+    if (fastent_have_wasm128_runtime())        { v = FASTENT_VAR_WASM128_;      fn = analyze_wasm128; }
+  #endif
 
   if (which) *which = v;
   return fn;
@@ -312,6 +324,7 @@ const char * fastent_variant_name(fastent_variant v) {
     case FASTENT_VAR_SSE41_:        return "sse4.1";
     case FASTENT_VAR_SSSE3_:        return "ssse3";
     case FASTENT_VAR_NEON_:         return "neon";
+    case FASTENT_VAR_WASM128_:      return "wasm-simd128";
     case FASTENT_VAR_SCALAR:        return "scalar";
   }
   return "scalar";
@@ -342,6 +355,9 @@ fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which) {
   #ifdef HAVE_NEON
     if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = analyze_bits_neon; }
   #endif
+  #ifdef HAVE_WASM128
+    if (fastent_have_wasm128_runtime())        { v = FASTENT_VAR_WASM128_;      fn = analyze_bits_wasm128; }
+  #endif
 
   if (which) *which = v;
   return fn;
@@ -369,6 +385,9 @@ fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which) {
   #endif
   #ifdef HAVE_NEON
     if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = analyze_fold_neon; }
+  #endif
+  #ifdef HAVE_WASM128
+    if (fastent_have_wasm128_runtime())        { v = FASTENT_VAR_WASM128_;      fn = analyze_fold_wasm128; }
   #endif
 
   if (which) *which = v;
@@ -398,6 +417,9 @@ fastent_analyze_fn fastent_pick_fold_bits_variant(fastent_variant * which) {
   #ifdef HAVE_NEON
     if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = analyze_bits_fold_neon; }
   #endif
+  #ifdef HAVE_WASM128
+    if (fastent_have_wasm128_runtime())        { v = FASTENT_VAR_WASM128_;      fn = analyze_bits_fold_wasm128; }
+  #endif
 
   if (which) *which = v;
   return fn;
@@ -425,6 +447,9 @@ fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which) {
   #endif
   #ifdef HAVE_NEON
     if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = fold_neon; }
+  #endif
+  #ifdef HAVE_WASM128
+    if (fastent_have_wasm128_runtime())        { v = FASTENT_VAR_WASM128_;      fn = fold_wasm128; }
   #endif
 
   if (which) *which = v;

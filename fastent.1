@@ -1,6 +1,6 @@
 .\" Manual page for fastent.
 .\" Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only.
-.TH FASTENT 1 "May 2026" "fastent 1.0" "User Commands"
+.TH FASTENT 1 "May 2026" "fastent 1.1" "User Commands"
 
 .SH NAME
 fastent \- pseudorandom byte stream entropy and randomness tester
@@ -217,6 +217,12 @@ macOS on x86_64 and aarch64.
 .IP \(bu 2
 MS-DOS on i386 (DJGPP + CWSDPMI baked in; no separate DPMI host
 needed).
+.IP \(bu 2
+WebAssembly on wasm32 and wasm64 (emscripten, self-contained
+single-file
+.B node
+launcher with NODERAWFS host-fs bridge); the wasm64 launcher needs
+.B "node --experimental-wasm-memory64 fastent.js" .
 .PP
 The SIMD fast paths are only present on x86 builds; on every other
 target the scalar loop is selected.  The scalar loop is still 4-way

@@ -1,5 +1,15 @@
 2026-05-15  Kamila Szewczyk  <k@iczelia.net>
 
+	v1.1:  WebAssembly support.
+
+	Platforms: WebAssembly via emscripten with -sSTANDALONE_WASM,
+	for both wasm32 and wasm64 (-sMEMORY64); -msimd128 enables
+	WebAssembly SIMD128 codegen so the scalar inner loops
+	auto-vectorise.  Smoke-tested under wasmtime (the wasm64
+	binary needs -W memory64).
+
+2026-05-15  Kamila Szewczyk  <k@iczelia.net>
+
 	v1.0:  Initial release of fastent.
 
 	Tests: Shannon entropy, chi-square (with tail probability),

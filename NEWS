@@ -5,6 +5,16 @@ This file contains user-visible changes for each release.  For a
 complete source-level history, see the ChangeLog.
 
 -------------------------------------------------------------------------------
+v1.1 (May 2026)
+
+  WebAssembly support.  fastent now builds under emscripten with
+  -sSTANDALONE_WASM, for both wasm32 and wasm64 (-sMEMORY64);
+  -msimd128 enables 128-bit SIMD codegen so the scalar inner loops
+  auto-vectorise to WebAssembly SIMD128.  Pre-built binaries are
+  shipped with each release; the wasm64 binary needs a runtime
+  with the memory64 proposal enabled (e.g. wasmtime -W memory64).
+
+-------------------------------------------------------------------------------
 v1.0 (May 2026)
 
   Initial release.

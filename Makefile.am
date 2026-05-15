@@ -61,6 +61,13 @@ libfastent_neon_a_CFLAGS    = $(AM_CFLAGS) $(NEON_CFLAGS)
 fastent_LDADD              += libfastent_neon.a
 endif
 
+if HAVE_WASM128
+noinst_LIBRARIES               += libfastent_wasm128.a
+libfastent_wasm128_a_SOURCES    = analyze-wasm128simd.c
+libfastent_wasm128_a_CFLAGS     = $(AM_CFLAGS) $(WASM128_CFLAGS)
+fastent_LDADD                  += libfastent_wasm128.a
+endif
+
 dist_man_MANS = fastent.1
 
 EXTRA_DIST = README.md NEWS ChangeLog AUTHORS COPYING bootstrap \

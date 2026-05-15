@@ -474,6 +474,86 @@ jobs:
           path: dist/fastent-*-dos-i386.zip
           if-no-files-found: error
 
+  # WebAssembly: emscripten with -sNODERAWFS, smoke-tested under node.
+  # wasm32 and wasm64 (-sMEMORY64); -msimd128 enables 128-bit SIMD
+  # codegen.  -sSINGLE_FILE folds the .wasm into the launcher .js as
+  # a self-contained artifact.  wasm64 needs node's experimental
+  # memory64 flag at run time.
+  cross-binaries-wasm:
+    name: emscripten / ${{ matrix.target.id }}
+    needs: dist
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { id: wasm32, em_extra: "",           node_extra: ""                             }
+          - { id: wasm64, em_extra: "-sMEMORY64", node_extra: "--experimental-wasm-memory64" }
+    steps:
+      - name: install emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.74'
+
+      - name: install node 24 (V8 with table64 / memory64 support)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: download tarball
+        uses: actions/download-artifact@v6
+        with:
+          name: fastent-dist
+
+      - name: unpack
+        run: |
+          tar xzf fastent-*.tar.gz
+          ln -s fastent-*/ fastent-src
+
+      - name: configure + build
+        env:
+          EMX: ${{ matrix.target.em_extra }}
+        run: |
+          mkdir build && cd build
+          fl="-O3 -msimd128 -sNODERAWFS=1 -sSINGLE_FILE=1 -sEXIT_RUNTIME=1 $EMX"
+          emconfigure ../fastent-src/configure \
+            --host=wasm32-unknown-emscripten \
+            --disable-threads \
+            CFLAGS="$fl" \
+            LDFLAGS="$fl"
+          emmake make -j"$(nproc)"
+
+      - name: smoke test under node
+        env:
+          NX: ${{ matrix.target.node_extra }}
+        run: |
+          cd build
+          ls -la fastent*
+          dd if=/dev/urandom bs=4096 count=4 status=none > smoke.bin
+          node $NX ./fastent --version
+          node $NX ./fastent -t  smoke.bin
+          node $NX ./fastent -tb smoke.bin
+          node $NX ./fastent -tf smoke.bin
+
+      - name: package binary
+        env:
+          ID: ${{ matrix.target.id }}
+        run: |
+          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
+          name="fastent-${ver}-wasi-${ID}"
+          mkdir -p "dist/$name"
+          cp build/fastent "dist/$name/fastent.js"
+          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
+             fastent-src/fastent.1 "dist/$name/"
+          (cd dist && tar -czf "${name}.tar.gz" "$name")
+
+      - name: upload binary artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: fastent-wasi-${{ matrix.target.id }}
+          path: dist/fastent-*-wasi-${{ matrix.target.id }}.tar.gz
+          if-no-files-found: error
+
   # TinyCC: lets the scalar core compile under a minimal C compiler.
   # SIMD probes auto-fail (no -mavx etc.), threads disabled.
   build-tcc:

@@ -38,6 +38,8 @@
 #ifdef FASTENT_HAVE_SIMD
   #if defined(FASTENT_VARIANT_NEON)
     #include <arm_neon.h>
+  #elif defined(FASTENT_VARIANT_WASM128)
+    #include <wasm_simd128.h>
   #else
     #include <immintrin.h>
   #endif
@@ -213,6 +215,45 @@
   /*  Cast the unused b through (void) so callers that pre-declare a
       `zero` vector on the stack don't trip -Wunused-variable.  */
   #define V_SAD_EPU8(a, b)     (((void)(b)), fastent_neon_sad_zero((a)))
+#elif defined(FASTENT_VARIANT_WASM128)
+  /*  WebAssembly SIMD128.  128-bit lane width like NEON / SSE; ops we
+      pull from the spec (no proposal-only intrinsics):
+        - direct byte popcount via wasm_i8x16_popcnt (bit-mode body)
+        - fused mul+pair-sum via wasm_i32x4_dot_i16x8 (PMADDWD analogue)
+          which subsumes the NEON mulq_s16 + vpaddlq_s16 ladder
+        - wasm_i8x16_swizzle: PSHUFB / vqtbl1q_u8 semantics (zeros
+          lanes with high-bit-set or out-of-range indices)
+      PSADBW has no direct WASM equivalent; we emulate via the same
+      extadd-pairwise ladder NEON uses for V_SAD_EPU8.  */
+  #define FASTENT_VAR_SUFFIX _wasm128
+  #define FASTENT_SIMD_VEC   v128_t
+  #define FASTENT_SIMD_VLEN  16
+  #define V_SET1_EPI8(x)       wasm_i8x16_splat((int8_t)(x))
+  #define V_SETZERO()          wasm_i64x2_splat(0)
+  #define V_LOAD(p)            wasm_v128_load((const void *)(p))
+  #define V_STORE(p, v)        wasm_v128_store((void *)(p), (v))
+  #define V_AND(a, b)          wasm_v128_and((a), (b))
+  #define V_OR(a, b)           wasm_v128_or((a), (b))
+  /*  wasm_v128_andnot(x, y) = x & ~y; x86 V_ANDNOT(a, b) = ~a & b.  */
+  #define V_ANDNOT(a, b)       wasm_v128_andnot((b), (a))
+  #define V_ADD_EPI8(a, b)     wasm_i8x16_add((a), (b))
+  #define V_ADD_EPI64(a, b)    wasm_i64x2_add((a), (b))
+  #define V_SUBS_EPU8(a, b)    wasm_u8x16_sub_sat((a), (b))
+  #define V_CMPEQ_EPI8(a, b)   wasm_i8x16_eq((a), (b))
+  #define V_SRLI_EPI16(a, n)   wasm_u16x8_shr((a), (n))
+  #define V_SHUFFLE_EPI8(t, i) wasm_i8x16_swizzle((t), (i))
+
+  static __attribute__((always_inline)) inline v128_t
+  fastent_wasm_sad_zero(v128_t a) {
+    v128_t s16 = wasm_i16x8_extadd_pairwise_u8x16(a);
+    v128_t s32 = wasm_i32x4_extadd_pairwise_u16x8(s16);
+    /*  4 u32 -> 2 u64 via two extmul-by-1 widenings and an add.  */
+    v128_t ones = wasm_i32x4_splat(1);
+    v128_t s64_lo = wasm_u64x2_extmul_low_u32x4(s32, ones);
+    v128_t s64_hi = wasm_u64x2_extmul_high_u32x4(s32, ones);
+    return wasm_i64x2_add(s64_lo, s64_hi);
+  }
+  #define V_SAD_EPU8(a, b)     (((void)(b)), fastent_wasm_sad_zero((a)))
 #else
   #define FASTENT_VAR_SUFFIX _scalar
 #endif
@@ -1283,6 +1324,208 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   return body_end + 1;
 }
 
+#elif defined(FASTENT_VARIANT_WASM128)
+
+/*  WebAssembly SIMD128 byte-mode body.
+
+    Stride = 32 bytes (two 16-byte vectors), mirroring the SSE / NEON
+    bodies.  The SCC kernel uses wasm_i32x4_dot_i16x8: signed i16 x i16
+    pairwise-summed into i32 lanes, fusing the NEON mulq_s16 + vpaddlq
+    pair into a single op.  LHS byte-sum for the 128*sum sign correction
+    is computed via the same extadd-pairwise ladder NEON uses for SAD.
+    Histogram + MC Pi reuse the scalar 4-banked inc-mem chain; MC Pi has
+    no SIMD bulk (only ~5 hexads per iter, same call as NEON).  */
+
+static __attribute__((always_inline)) inline sz
+FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
+                           const u8 * FASTENT_RESTRICT buf,
+                           sz len, int fold) {
+  if (len < 33) return 0;
+  const sz body_max = len - 16;
+  sz iters = body_max / 32;
+  if (iters == 0) return 0;
+  const sz body_end = iters * 32;
+
+  u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
+  if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
+  if (st->have_carry)
+    st->cross_product += (i64) st->carry_byte * (i64) b0_user;
+  st->have_carry = 1;
+
+  const v128_t sign_xor = wasm_i8x16_splat((int8_t) 0x80);
+  v128_t scc_acc64 = wasm_i64x2_splat(0);
+  v128_t lhs_sad   = wasm_i64x2_splat(0);
+
+  u32 * FASTENT_RESTRICT b0 = st->bank[0];
+  u32 * FASTENT_RESTRICT b1 = st->bank[1];
+  u32 * FASTENT_RESTRICT b2 = st->bank[2];
+  u32 * FASTENT_RESTRICT b3 = st->bank[3];
+
+  int mc_pos     = st->mc_pos;
+  u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
+  u8  m3 = st->mc_buf[3], m4 = st->mc_buf[4], m5 = st->mc_buf[5];
+  u64 mc_count   = st->mc_count;
+  u64 mc_inside  = st->mc_inside;
+
+  const v128_t ones32 = wasm_i32x4_splat(1);
+
+  for (sz i = 0; i < body_end; i += 32) {
+    __builtin_prefetch(buf + i + 512, 0, 1);
+
+    v128_t va0 = wasm_v128_load(buf + i +  0);
+    v128_t vb0 = wasm_v128_load(buf + i +  1);
+    v128_t va1 = wasm_v128_load(buf + i + 16);
+    v128_t vb1 = wasm_v128_load(buf + i + 17);
+    if (fold) {
+      va0 = FASTENT_FN(fold_vec_inline)(va0);
+      vb0 = FASTENT_FN(fold_vec_inline)(vb0);
+      va1 = FASTENT_FN(fold_vec_inline)(va1);
+      vb1 = FASTENT_FN(fold_vec_inline)(vb1);
+    }
+    v128_t vbs0 = wasm_v128_xor(vb0, sign_xor);
+    v128_t vbs1 = wasm_v128_xor(vb1, sign_xor);
+
+    /*  Widen va u8 -> i16 (zero); vbs i8 -> i16 (sign).  */
+    v128_t va0_lo = wasm_i16x8_extend_low_u8x16(va0);
+    v128_t va0_hi = wasm_i16x8_extend_high_u8x16(va0);
+    v128_t va1_lo = wasm_i16x8_extend_low_u8x16(va1);
+    v128_t va1_hi = wasm_i16x8_extend_high_u8x16(va1);
+    v128_t vb0_lo = wasm_i16x8_extend_low_i8x16(vbs0);
+    v128_t vb0_hi = wasm_i16x8_extend_high_i8x16(vbs0);
+    v128_t vb1_lo = wasm_i16x8_extend_low_i8x16(vbs1);
+    v128_t vb1_hi = wasm_i16x8_extend_high_i8x16(vbs1);
+
+    /*  dot_i16x8: signed i16 x i16 -> i32 pair-summed (PMADDWD).
+        Net 4 i32 lanes per dot, 8 byte-pair products per dot.  */
+    v128_t s0_lo = wasm_i32x4_dot_i16x8(va0_lo, vb0_lo);
+    v128_t s0_hi = wasm_i32x4_dot_i16x8(va0_hi, vb0_hi);
+    v128_t s1_lo = wasm_i32x4_dot_i16x8(va1_lo, vb1_lo);
+    v128_t s1_hi = wasm_i32x4_dot_i16x8(va1_hi, vb1_hi);
+
+    /*  Widen i32 lane sums to i64 before cross-iter accumulation; an
+        i32 acc would overflow on consistent-sign inputs.  */
+    v128_t sum32 = wasm_i32x4_add(wasm_i32x4_add(s0_lo, s0_hi),
+                                  wasm_i32x4_add(s1_lo, s1_hi));
+    v128_t sum64_lo = wasm_i64x2_extend_low_i32x4(sum32);
+    v128_t sum64_hi = wasm_i64x2_extend_high_i32x4(sum32);
+    scc_acc64 = wasm_i64x2_add(scc_acc64,
+                  wasm_i64x2_add(sum64_lo, sum64_hi));
+
+    /*  LHS byte sum for the 128*sum_a sign correction.  */
+    v128_t sa0_16 = wasm_i16x8_extadd_pairwise_u8x16(va0);
+    v128_t sa1_16 = wasm_i16x8_extadd_pairwise_u8x16(va1);
+    v128_t sa_16  = wasm_i16x8_add(sa0_16, sa1_16);
+    v128_t sa_32  = wasm_i32x4_extadd_pairwise_u16x8(sa_16);
+    v128_t sa_64_lo = wasm_u64x2_extmul_low_u32x4(sa_32, ones32);
+    v128_t sa_64_hi = wasm_u64x2_extmul_high_u32x4(sa_32, ones32);
+    lhs_sad = wasm_i64x2_add(lhs_sad,
+                wasm_i64x2_add(sa_64_lo, sa_64_hi));
+
+    /*  Histogram + MC stage buffer (fold mode) or direct buf reads.  */
+    u8 stage[32] __attribute__((aligned(16)));
+    const u8 * p;
+    if (fold) {
+      wasm_v128_store(stage +  0, va0);
+      wasm_v128_store(stage + 16, va1);
+      const u8 * sp = stage;
+      __asm__("" : "+r"(sp) :: "memory");
+      p = sp;
+    } else {
+      p = buf + i;
+    }
+    #define HIST4(o) \
+      b0[p[(o) + 0]]++; b1[p[(o) + 1]]++; \
+      b2[p[(o) + 2]]++; b3[p[(o) + 3]]++
+    HIST4( 0); HIST4( 4); HIST4( 8); HIST4(12);
+    HIST4(16); HIST4(20); HIST4(24); HIST4(28);
+    #undef HIST4
+
+    /*  MC Pi: scalar drain + scalar bulk + scalar stash (NEON-style).  */
+    #define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
+      u32 x = ((u32)(x0) << 16) | ((u32)(x1) << 8) | (u32)(x2); \
+      u32 y = ((u32)(y0) << 16) | ((u32)(y1) << 8) | (u32)(y2); \
+      u64 d = (u64) x * (u64) x + (u64) y * (u64) y; \
+      mc_count++; \
+      mc_inside += (d <= FASTENT_INCIRC); \
+    } while (0)
+
+    unsigned p_idx;
+    switch (mc_pos) {
+      case 0: p_idx = 0; break;
+      case 1: m1=p[0]; m2=p[1]; m3=p[2]; m4=p[3]; m5=p[4];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 5; break;
+      case 2: m2=p[0]; m3=p[1]; m4=p[2]; m5=p[3];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 4; break;
+      case 3: m3=p[0]; m4=p[1]; m5=p[2];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 3; break;
+      case 4: m4=p[0]; m5=p[1];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 2; break;
+      default: m5=p[0];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
+    }
+    int n_hexads = (int)((32u - p_idx) / 6u);
+    Fk(n_hexads,
+       unsigned o = p_idx + (unsigned) k * 6u;
+       MC_HEXAD(p[o+0], p[o+1], p[o+2], p[o+3], p[o+4], p[o+5]))
+    unsigned stash_at    = p_idx + (unsigned) n_hexads * 6u;
+    unsigned stash_count = 32u - stash_at;
+    mc_pos = (int) stash_count;
+    if (stash_count >= 1) m0 = p[stash_at + 0];
+    if (stash_count >= 2) m1 = p[stash_at + 1];
+    if (stash_count >= 3) m2 = p[stash_at + 2];
+    if (stash_count >= 4) m3 = p[stash_at + 3];
+    if (stash_count >= 5) m4 = p[stash_at + 4];
+    #undef MC_HEXAD
+  }
+
+  i64 scc_sum = (i64) wasm_i64x2_extract_lane(scc_acc64, 0)
+              + (i64) wasm_i64x2_extract_lane(scc_acc64, 1);
+  u64 lhs_sum = (u64) wasm_i64x2_extract_lane(lhs_sad, 0)
+              + (u64) wasm_i64x2_extract_lane(lhs_sad, 1);
+  st->cross_product += scc_sum + (i64)(128ULL * lhs_sum);
+
+  /*  Epilogue: process buf[body_end] for histogram + carry + MC.  Its
+      SCC pair with buf[body_end-1] was already counted via the last
+      iter's shifted load.  */
+  u8 last_b;
+  {
+    u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
+                : buf[body_end];
+    last_b = b;
+    st->total_bytes += body_end;
+    st->bank[(unsigned)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
+    st->total_bytes++;
+    switch (mc_pos) {
+      case 0: m0 = b; break;
+      case 1: m1 = b; break;
+      case 2: m2 = b; break;
+      case 3: m3 = b; break;
+      case 4: m4 = b; break;
+      default: m5 = b; break;
+    }
+    mc_pos++;
+    if (mc_pos == 6) {
+      u32 x = ((u32) m0 << 16) | ((u32) m1 << 8) | (u32) m2;
+      u32 y = ((u32) m3 << 16) | ((u32) m4 << 8) | (u32) m5;
+      u64 d = (u64) x * (u64) x + (u64) y * (u64) y;
+      mc_count++;
+      mc_inside += (d <= FASTENT_INCIRC);
+      mc_pos = 0;
+    }
+  }
+
+  st->mc_pos = mc_pos;
+  st->mc_buf[0] = m0; st->mc_buf[1] = m1; st->mc_buf[2] = m2;
+  st->mc_buf[3] = m3; st->mc_buf[4] = m4; st->mc_buf[5] = m5;
+  st->mc_count  = mc_count;
+  st->mc_inside = mc_inside;
+
+  st->carry_byte = last_b;
+  st->last_byte  = last_b;
+
+  return body_end + 1;
+}
+
 #endif
 
 /*  SIMD trampolines: the simd_body_impl above is templated on the
@@ -1454,12 +1697,15 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   #endif
 #elif defined(FASTENT_VARIANT_NEON)
   /*  Unused on NEON: vcntq_u8 replaces the LUT lookups.  */
+#elif defined(FASTENT_VARIANT_WASM128)
+  /*  Unused on WASM: wasm_i8x16_popcnt replaces the LUT lookups.  */
 #else
   const FASTENT_SIMD_VEC popcnt_lut = _mm_setr_epi8(
     0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
 #endif
 #if !((defined(FASTENT_VARIANT_AVX512) && defined(FASTENT_AVX512_HAVE_BITALG)) \
-      || defined(FASTENT_VARIANT_NEON))
+      || defined(FASTENT_VARIANT_NEON) \
+      || defined(FASTENT_VARIANT_WASM128))
   const FASTENT_SIMD_VEC nibble_mask = V_SET1_EPI8(0x0F);
 #endif
   const FASTENT_SIMD_VEC mask_7f     = V_SET1_EPI8(0x7F);
@@ -1507,6 +1753,16 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
     FASTENT_SIMD_VEC va_shr1 = V_AND(V_SRLI_EPI16(va, 1), mask_7f);
     FASTENT_SIMD_VEC pairs   = V_AND(va, va_shr1);
     FASTENT_SIMD_VEC pc_pairs = vcntq_u8(pairs);
+    acc_within = V_ADD_EPI64(acc_within, V_SAD_EPU8(pc_pairs, zero));
+#elif defined(FASTENT_VARIANT_WASM128)
+    /*  Direct byte-wise popcount via wasm_i8x16_popcnt; sum via the
+        extadd-pairwise ladder folded into V_SAD_EPU8.  */
+    FASTENT_SIMD_VEC pc_va = wasm_i8x16_popcnt(va);
+    acc_ones = V_ADD_EPI64(acc_ones, V_SAD_EPU8(pc_va, zero));
+
+    FASTENT_SIMD_VEC va_shr1 = V_AND(V_SRLI_EPI16(va, 1), mask_7f);
+    FASTENT_SIMD_VEC pairs   = V_AND(va, va_shr1);
+    FASTENT_SIMD_VEC pc_pairs = wasm_i8x16_popcnt(pairs);
     acc_within = V_ADD_EPI64(acc_within, V_SAD_EPU8(pc_pairs, zero));
 #else
     /*  popcount(va) byte-wise via PSHUFB-LUT.  */
@@ -1575,7 +1831,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
         n_hexads added below.  */
     u64 mi_simd = 0;
     const u8 * q = p + p_idx;
-#if !defined(FASTENT_VARIANT_NEON)
+#if !defined(FASTENT_VARIANT_NEON) && !defined(FASTENT_VARIANT_WASM128)
     const __m128i mc_shuf = _mm_setr_epi8(2, 1, 0, -1, 5, 4, 3, -1,
                                           8, 7, 6, -1, 11, 10, 9, -1);
     const __m128i mc_lim  = _mm_set1_epi64x((i64)(FASTENT_INCIRC + 1ULL));
@@ -1618,7 +1874,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
       int bits = _mm_movemask_pd(_mm_castsi128_pd(mask));
       mi_simd += (u64) FASTENT_POPCOUNT32(bits);
     }
-#elif !defined(FASTENT_VARIANT_NEON)
+#elif !defined(FASTENT_VARIANT_NEON) && !defined(FASTENT_VARIANT_WASM128)
     (void) mc_shuf; (void) mc_lim;
 #endif
     /*  Scalar tail (0/1 hexad on AVX2+SSE41; full on SSSE3).  */
@@ -1667,6 +1923,13 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   u64 sum_ones   = fastent_neon_addvq_u64(vreinterpretq_u64_u8(acc_ones));
   u64 sum_within = fastent_neon_addvq_u64(vreinterpretq_u64_u8(acc_within));
   u64 sum_cross  = fastent_neon_addvq_u64(vreinterpretq_u64_u8(acc_cross));
+#elif defined(FASTENT_VARIANT_WASM128)
+  u64 sum_ones   = (u64) wasm_i64x2_extract_lane(acc_ones, 0)
+                 + (u64) wasm_i64x2_extract_lane(acc_ones, 1);
+  u64 sum_within = (u64) wasm_i64x2_extract_lane(acc_within, 0)
+                 + (u64) wasm_i64x2_extract_lane(acc_within, 1);
+  u64 sum_cross  = (u64) wasm_i64x2_extract_lane(acc_cross, 0)
+                 + (u64) wasm_i64x2_extract_lane(acc_cross, 1);
 #else
   u64 sum_ones = (u64) _mm_cvtsi128_si64(acc_ones)
               + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(acc_ones, acc_ones));

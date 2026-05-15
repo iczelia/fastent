@@ -1,5 +1,5 @@
 m4_define([fastent_version_major], [1])
-m4_define([fastent_version_minor], [0])
+m4_define([fastent_version_minor], [1])
 m4_define([fastent_version], [fastent_version_major.fastent_version_minor])
 
 AC_PREREQ([2.69])
@@ -30,6 +30,20 @@ AC_DEFINE([FASTENT_MINOR], [fastent_version_minor], [Minor version number])
 AC_C_RESTRICT
 AC_C_INLINE
 AC_CHECK_HEADERS([sys/mman.h sys/stat.h fcntl.h unistd.h immintrin.h sys/auxv.h])
+
+# WebAssembly hosts: emscripten's libc resolves mmap / madvise /
+# posix_fadvise through JS-side `env::__syscall_*` imports that the
+# wasm runtime can't supply in STANDALONE_WASM mode (module
+# instantiation rejects unresolved imports even if the call site
+# never fires).  Force-disable detection so the source falls back to
+# the plain read(2) path on those targets.
+case $host_os in
+  *emscripten*|*wasi*)
+    ac_cv_func_mmap=no
+    ac_cv_func_madvise=no
+    ac_cv_func_posix_fadvise=no
+    ;;
+esac
 AC_CHECK_FUNCS([mmap madvise posix_fadvise posix_memalign aligned_alloc getauxval pledge])
 
 # libm: log10 / sqrt / pow / fabs / lgamma all live here.
@@ -133,7 +147,10 @@ AC_SUBST([FASTENT_WIN_LDFLAGS])
 
 # SIMD probes. Save user CFLAGS, try each -m... in turn, restore, set
 # AC_SUBST'd flags and HAVE_* defines + AM_CONDITIONAL.  DJGPP (i386
-# baseline) and Win95 (pre-SSE hardware) bypass the probe block.
+# baseline), Win95 (pre-SSE hardware), and WebAssembly targets bypass
+# the probe block: on emscripten/wasi the x86 intrinsics either don't
+# compile or get emulated through wasm SIMD128, and we'd rather let the
+# scalar variant auto-vectorise under -msimd128.
 fastent_skip_simd=no
 if test "x$fastent_is_dos" = "xyes"; then
   fastent_skip_simd=yes
@@ -141,6 +158,9 @@ fi
 if test "x$fastent_win_target" = "xwin95"; then
   fastent_skip_simd=yes
 fi
+case $host_os in
+  *emscripten*|*wasi*) fastent_skip_simd=yes ;;
+esac
 SSSE3_CFLAGS=""
 SSE41_CFLAGS=""
 AVX2_CFLAGS=""
@@ -392,18 +412,62 @@ CFLAGS="$save_CFLAGS"
 
 fi  # end !fastent_skip_simd
 
+# WebAssembly SIMD128 (wasm32/wasm64). Independent of the x86/NEON
+# probe block; only fires when the host triple says emscripten/wasi.
+# The wasm_simd128.h header is gated to those targets, so the probe
+# naturally fails elsewhere.  Opt-out via --disable-wasm128 for hosts
+# whose runtime doesn't implement the SIMD128 proposal (the scalar
+# variant is still selected at dispatch time in that case).
+AC_ARG_ENABLE([wasm128],
+  [AS_HELP_STRING([--disable-wasm128],[skip the WebAssembly SIMD128 analyse body])],
+  [enable_wasm128=$enableval], [enable_wasm128=yes])
+WASM128_CFLAGS=""
+fastent_have_wasm128=no
+if test "x$enable_wasm128" = "xyes"; then
+case $host_os in
+  *emscripten*|*wasi*)
+    CFLAGS="$save_CFLAGS -msimd128"
+    AC_MSG_CHECKING([for WebAssembly SIMD128 intrinsics with $CC -msimd128])
+    AC_COMPILE_IFELSE(
+      [AC_LANG_PROGRAM([[
+        #include <wasm_simd128.h>
+      ]], [[
+        v128_t a = wasm_i8x16_splat(1);
+        v128_t b = wasm_i8x16_popcnt(a);
+        v128_t c = wasm_i8x16_swizzle(a, b);
+        v128_t d = wasm_i32x4_dot_i16x8(wasm_i16x8_splat(1),
+                                        wasm_i16x8_splat(1));
+        v128_t e = wasm_i16x8_extadd_pairwise_u8x16(a);
+        v128_t f = wasm_i32x4_extadd_pairwise_u16x8(e);
+        v128_t g = wasm_u64x2_extmul_low_u32x4(f, wasm_i32x4_splat(1));
+        return (int) wasm_i8x16_extract_lane(c, 0)
+             + (int) wasm_i32x4_extract_lane(d, 0)
+             + (int) wasm_i64x2_extract_lane(g, 0);
+      ]])],
+      [AC_MSG_RESULT([yes])
+       AC_DEFINE([HAVE_WASM128], [1], [Define if WebAssembly SIMD128 intrinsics are available])
+       WASM128_CFLAGS="-msimd128"
+       fastent_have_wasm128=yes],
+      [AC_MSG_RESULT([no])])
+    CFLAGS="$save_CFLAGS"
+    ;;
+esac
+fi
+
 AC_SUBST([SSSE3_CFLAGS])
 AC_SUBST([SSE41_CFLAGS])
 AC_SUBST([AVX2_CFLAGS])
 AC_SUBST([AVX512_CFLAGS])
 AC_SUBST([AVX512_BITALG_CFLAGS])
 AC_SUBST([NEON_CFLAGS])
+AC_SUBST([WASM128_CFLAGS])
 AM_CONDITIONAL([HAVE_SSSE3],         [test "x$SSSE3_CFLAGS"         != "x"])
 AM_CONDITIONAL([HAVE_SSE41],         [test "x$SSE41_CFLAGS"         != "x"])
 AM_CONDITIONAL([HAVE_AVX2],          [test "x$AVX2_CFLAGS"          != "x"])
 AM_CONDITIONAL([HAVE_AVX512],        [test "x$AVX512_CFLAGS"        != "x"])
 AM_CONDITIONAL([HAVE_AVX512_BITALG], [test "x$AVX512_BITALG_CFLAGS" != "x"])
 AM_CONDITIONAL([HAVE_NEON],          [test "x$fastent_have_neon"    = "xyes"])
+AM_CONDITIONAL([HAVE_WASM128],       [test "x$fastent_have_wasm128" = "xyes"])
 
 # Optional optimisations.
 AC_ARG_ENABLE([native],

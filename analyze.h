@@ -69,7 +69,8 @@ typedef enum {
   FASTENT_VAR_AVX2_         = 3,
   FASTENT_VAR_AVX512_       = 4,
   FASTENT_VAR_AVX512_BITALG = 5,
-  FASTENT_VAR_NEON_         = 6
+  FASTENT_VAR_NEON_         = 6,
+  FASTENT_VAR_WASM128_      = 7
 } fastent_variant;
 
 typedef void (* fastent_analyze_fn)(fastent_chunk_state *, const u8 *, sz);
@@ -98,6 +99,9 @@ void analyze_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, sz len);
 #ifdef HAVE_NEON
 void analyze_neon(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
+#ifdef HAVE_WASM128
+void analyze_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
 
 /*  Fused fold+analyse entries: same SIMD body as analyze_<variant> but
     each loaded vector is case-folded in-register before histogram /
@@ -121,6 +125,9 @@ void analyze_fold_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, sz len
 #endif
 #ifdef HAVE_NEON
 void analyze_fold_neon(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_WASM128
+void analyze_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which);
@@ -148,6 +155,9 @@ void analyze_bits_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, sz len
 #ifdef HAVE_NEON
 void analyze_bits_neon(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
+#ifdef HAVE_WASM128
+void analyze_bits_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
 
 /*  Fused fold + bit-mode analysers.  */
 void analyze_bits_fold_scalar(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -168,6 +178,9 @@ void analyze_bits_fold_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, s
 #endif
 #ifdef HAVE_NEON
 void analyze_bits_fold_neon(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_WASM128
+void analyze_bits_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
 fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which);
@@ -195,6 +208,9 @@ void fold_avx512_bitalg(u8 * buf, sz len);
 #endif
 #ifdef HAVE_NEON
 void fold_neon(u8 * buf, sz len);
+#endif
+#ifdef HAVE_WASM128
+void fold_wasm128(u8 * buf, sz len);
 #endif
 
 fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which);

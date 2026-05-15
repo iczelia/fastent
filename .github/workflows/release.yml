@@ -270,6 +270,64 @@ jobs:
         with:
           files: dist/fastent-*-windows-i686-win95.zip
 
+  binaries-wasm:
+    name: emscripten / ${{ matrix.target.id }}
+    needs: source-release
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { id: wasm32, em_extra: ""           }
+          - { id: wasm64, em_extra: "-sMEMORY64" }
+    steps:
+      - name: install emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.74'
+
+      - name: download source
+        uses: actions/download-artifact@v6
+        with:
+          name: fastent-dist
+
+      - name: unpack
+        run: |
+          tar xzf fastent-*.tar.gz
+          ln -s fastent-*/ fastent-src
+
+      - name: configure + build
+        env:
+          EMX: ${{ matrix.target.em_extra }}
+        run: |
+          mkdir build && cd build
+          fl="-O3 -msimd128 -sNODERAWFS=1 -sSINGLE_FILE=1 -sEXIT_RUNTIME=1 $EMX"
+          emconfigure ../fastent-src/configure \
+            --host=wasm32-unknown-emscripten \
+            --disable-threads \
+            CFLAGS="$fl" \
+            LDFLAGS="$fl"
+          emmake make -j"$(nproc)"
+
+      - name: package
+        env:
+          ID: ${{ matrix.target.id }}
+        run: |
+          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
+          name="fastent-${ver}-wasi-${ID}"
+          mkdir -p "dist/$name"
+          cp build/fastent "dist/$name/fastent.js"
+          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
+             fastent-src/fastent.1 "dist/$name/"
+          (cd dist && tar -czf "${name}.tar.gz" "$name")
+
+      - name: publish binary
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: dist/fastent-*-wasi-${{ matrix.target.id }}.tar.gz
+
   binary-dos:
     name: djgpp / dos-i386
     needs: source-release

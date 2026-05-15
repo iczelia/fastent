@@ -72,6 +72,9 @@ sudo make install
 - `--enable-native` - `-march=native -mtune=native`
 - `--enable-lto` - link-time optimisation
 - `--disable-threads` - single-threaded build, no pthread dependency
+- `--disable-wasm128` - skip the WebAssembly SIMD128 analyse body
+  (target older wasm runtimes without the SIMD128 proposal; scalar
+  variant dispatches in its place)
 - `--with-windows-target=vista|win95` - Windows target version
   - `vista` (default): wide-API path, modern PE subsystem
   - `win95`: narrow-API path, PE subsystem 4.0, kernel32 + msvcrt imports only
@@ -91,6 +94,13 @@ Exotic Linux (musl, fully static; smoke-tested under qemu-user):
 
 Exotic Linux (glibc, fully static; build-validated):
 - alpha, sparc64, sparc, m68k, hppa, arc, sh4
+
+WebAssembly (emscripten, single-file node launcher; `-msimd128`):
+- wasm32: `node fastent.js ...`
+- wasm64: `node --experimental-wasm-memory64 fastent.js ...` (-sMEMORY64)
+
+Self-contained `.js` per target (the wasm is base64-embedded via
+`-sSINGLE_FILE`); `-sNODERAWFS` routes the libc through node's `fs`.
 
 Legacy targets:
 - Windows 95 (i686, mingw-w64 + `--with-windows-target=win95`)
