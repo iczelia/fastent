@@ -21,52 +21,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>  /*  sysconf  */
-
-#if !defined(_WIN32) && !defined(__DJGPP__)
-  #include <sys/ioctl.h>  /*  TIOCGWINSZ  */
-#endif
-
-#ifdef __DJGPP__
-  #include <conio.h>     /*  textcolor / cputs for BIOS-attribute output  */
-#endif
-
-#ifdef _WIN32
-  #include "fastent-win32.h"
-#endif
 
 #include "analyze.h"
-#include "fastent-io.h"
+#include "fastent-options.h"
+#include "output.h"
+#include "port-io.h"
+#include "port-os.h"
 #ifdef FASTENT_HAVE_PTHREAD
   #include "threadpool.h"
 #endif
-
-#ifndef M_PI
-  #define M_PI 3.14159265358979323846
-#endif
-
-/*  Printable, non-whitespace bytes in C0/Latin-1.  */
-static inline int fastent_is_displayable(unsigned c) {
-  return (c >= 0x21u && c <= 0x7Eu) || c >= 0xA1u;
-}
-
-/*  Options.  */
-
-typedef struct {
-  int binary;         /*  -b  */
-  int counts;         /*  -c  */
-  int fold;           /*  -f  */
-  int terse;          /*  -t  */
-  int json;           /*  --json  */
-  int full_precision; /*  -p / --full-precision  */
-  int no_mmap;        /*  --no-mmap (deprecated alias for --io=stream)  */
-  int io_mode;        /*  --io={auto,mmap,stream,uring}  */
-  int histogram;      /*  -H / --histogram  */
-  int histogram_log;  /*  --log  (log-y for the histogram)  */
-  int color;          /*  --color={auto,always,never}, 0=never 1=auto 2=always  */
-  int threads;        /*  -j / --threads  (0 = auto, 1 = default)  */
-  const char * path;  /*  positional (NULL = stdin)  */
-} fastent_options;
 
 /*  Help / version.  */
 
@@ -338,358 +301,32 @@ static void run_stream(fastent_chunk_state * st, const fastent_options * o,
   }
 }
 
-static int color_active(int color_opt) {
-  if (color_opt == 0) return 0;
-  if (color_opt == 2) return 1;
-  if (getenv("NO_COLOR")) return 0;
-#if defined(FASTENT_WIN_LEGACY)
-  return 0;
-#else
-  return isatty(1);
-#endif
-}
-
-typedef enum { GLYPHS_UNICODE = 0, GLYPHS_CP437 = 1, GLYPHS_ASCII = 2 } glyph_mode;
-
-static glyph_mode pick_glyphs(void) {
-#if defined(__DJGPP__) || defined(FASTENT_WIN_LEGACY)
-  return isatty(1) ? GLYPHS_CP437 : GLYPHS_ASCII;
-#else
-  return GLYPHS_UNICODE;
-#endif
-}
-
-static int term_width(void) {
-#if defined(__DJGPP__) || defined(FASTENT_WIN_LEGACY) || defined(_WIN32)
-  return 80;
-#elif defined(TIOCGWINSZ)
-  struct winsize w;
-  if (isatty(1) && ioctl(1, TIOCGWINSZ, &w) == 0 && w.ws_col > 0)
-    return (int) w.ws_col;
-  return 80;
-#else
-  return 80;
-#endif
-}
-
-static void print_histogram(const fastent_result * r, const fastent_options * o) {
-  const int bins = o->binary ? 2 : 256;
-  static const char * const glyphs_unicode[9] = {
-    " ", "\xe2\x96\x81", "\xe2\x96\x82", "\xe2\x96\x83",
-         "\xe2\x96\x84", "\xe2\x96\x85", "\xe2\x96\x86",
-         "\xe2\x96\x87", "\xe2\x96\x88"
-  };
-  static const char * const glyphs_cp437[3] = { " ", "\xdc", "\xdb" };
-  static const char * const glyphs_ascii[2] = { " ", "#" };
-  const glyph_mode gmode = pick_glyphs();
-  const char * const * blocks;
-  int sub;
-  switch (gmode) {
-    case GLYPHS_CP437:   blocks = glyphs_cp437;   sub = 2; break;
-    case GLYPHS_ASCII:   blocks = glyphs_ascii;   sub = 1; break;
-    case GLYPHS_UNICODE:
-    default:             blocks = glyphs_unicode; sub = 8; break;
-  }
-  const int height = 8;
-  const int levels = height * sub;
-
-  /*  Downsample 256 bins to the smallest power-of-2 group that fits.  */
-  int group = 1;
-  if (!o->binary) {
-    int w = term_width();
-    if (w < 1) w = 80;
-    while (bins / group > w && group < bins) group <<= 1;
-  }
-  const int cols = bins / group;
-
-  u64 grouped[256];
-  int c;
-  for (c = 0; c < cols; c++) {
-    u64 sum = 0;
-    int j;
-    for (j = 0; j < group; j++) sum += r->hist[c * group + j];
-    grouped[c] = sum;
-  }
-
-  u64 max = 0;
-  for (c = 0; c < cols; c++) if (grouped[c] > max) max = grouped[c];
-  if (max == 0) {
-    printf("(histogram: no samples)\n\n");
-    return;
-  }
-
-  const int use_color = color_active(o->color);
-
-  int row;
-  for (row = 0; row < height; row++) {
-    const int row_bot = (height - 1 - row) * sub;
-    const int row_top = row_bot + sub;
-    int last_class = -1;
-    const double log_denom = o->histogram_log
-                             ? log((double) max + 1.0) : 0.0;
-    for (c = 0; c < cols; c++) {
-      double frac;
-      if (o->histogram_log) {
-        frac = grouped[c] == 0 ? 0.0
-             : log((double) grouped[c] + 1.0) / log_denom;
-      } else {
-        frac = (double) grouped[c] / (double) max;
-      }
-      int hh = (int)(frac * (double) levels + 0.5);
-      if (hh > levels) hh = levels;
-      const char * glyph;
-      if (hh >= row_top)      glyph = blocks[sub];
-      else if (hh <= row_bot) glyph = blocks[0];
-      else                    glyph = blocks[hh - row_bot];
-      int first_byte = c * group;
-      int cls = (first_byte < 32 || first_byte == 127) ? 0
-              : (first_byte < 128 ? 1 : 2);
-      if (use_color && cls != last_class) {
-#if defined(__DJGPP__)
-        static const int dos_pal[3] = { DARKGRAY, LIGHTGRAY, LIGHTCYAN };
-        fflush(stdout);
-        textcolor(dos_pal[cls]);
-#elif defined(_WIN32)
-        fastent_win32_set_console_fg(cls);
-#else
-        static const char * const ansi[3] = {
-          "\x1b[2m", "\x1b[0m", "\x1b[36m"
-        };
-        fputs(ansi[cls], stdout);
-#endif
-        last_class = cls;
-      }
-#if defined(__DJGPP__)
-      if (use_color) cputs(glyph);
-      else           fputs(glyph, stdout);
-#else
-      fputs(glyph, stdout);
-#endif
-    }
-    if (use_color) {
-#if defined(__DJGPP__)
-      fflush(stdout);
-      textcolor(LIGHTGRAY);
-#elif defined(_WIN32)
-      fastent_win32_set_console_fg(-1);
-#else
-      fputs("\x1b[0m", stdout);
-#endif
-    }
-    putchar('\n');
-  }
-  if (bins == 256) {
-    int tick_every = cols / 8;
-    if (tick_every < 1) tick_every = 1;
-    for (c = 0; c < cols; c++) putchar((c % tick_every == 0) ? '|' : '-');
-    putchar('\n');
-    for (c = 0; c < cols; c++) {
-      if (c % tick_every == 0) {
-        int label = c * group;
-        char buf[8];
-        int n = snprintf(buf, sizeof(buf), "%d", label);
-        if (n > tick_every) n = tick_every;
-        printf("%.*s", n, buf);
-        int rest = tick_every - n;
-        while (rest-- > 0 && (c + 1) % tick_every != 0) {
-          putchar(' ');
-          break;
-        }
-        c += tick_every - 1;
-      }
-    }
-    putchar('\n');
-  } else {
-    printf("0 1\n");
-  }
-  u64 raw_peak = 0;
-  int peak_v   = 0;
-  Fi(bins, if (r->hist[i] > raw_peak) { raw_peak = r->hist[i]; peak_v = i; })
-  printf("(peak %llu sample%s at byte %d",
-         (unsigned long long) raw_peak,
-         raw_peak == 1 ? "" : "s",
-         peak_v);
-  if (!o->binary && fastent_is_displayable((unsigned) peak_v))
-    printf(" '%c'", (char) peak_v);
-  if (group > 1)         printf(", %d bytes/col", group);
-  if (o->histogram_log)  printf(", log y");
-  printf(")\n\n");
-}
-
-static void print_counts_default(const fastent_result * r, int binary) {
-  const int bins = binary ? 2 : 256;
-  printf("Value Char Occurrences Fraction\n");
-  Fi(bins,
-     if (r->hist[i] == 0) continue;
-     char ch = fastent_is_displayable((unsigned) i) ? (char) i : ' ';
-     printf("%3d   %c   %10llu   %f\n", i, ch,
-            (unsigned long long) r->hist[i],
-            (f64) r->hist[i] / (f64) r->total_samples))
-  printf("\nTotal:    %10llu   %f\n\n",
-         (unsigned long long) r->total_samples, 1.0);
-}
-
-static void print_counts_terse(const fastent_result * r, int binary) {
-  const int bins = binary ? 2 : 256;
-  printf("2,Value,Occurrences,Fraction\n");
-  Fi(bins,
-     printf("3,%d,%llu,%f\n", i,
-            (unsigned long long) r->hist[i],
-            (f64) r->hist[i] / (f64) r->total_samples))
-}
-
-static void print_default(const fastent_result * r, const fastent_options * o) {
-  const char * samp = o->binary ? "bit" : "byte";
-  const int fp = o->full_precision;
-
-  if (o->counts)    print_counts_default(r, o->binary);
-  if (o->histogram) print_histogram(r, o);
-
-  if (fp) printf("Entropy = %.17g bits per %s.\n", r->entropy, samp);
-  else    printf("Entropy = %f bits per %s.\n",    r->entropy, samp);
-
-  printf("\nOptimum compression would reduce the size\n");
-  const f64 per = o->binary ? 1.0 : 8.0;
-  const int comp_pct = (int)(short)(100.0 * (per - r->entropy) / per);
-  printf("of this %llu %s file by %d percent.\n\n",
-         (unsigned long long) r->total_samples, samp, comp_pct);
-
-  if (fp) {
-    printf("Chi square distribution for %llu samples is %.17g, and randomly\n",
-           (unsigned long long) r->total_samples, r->chi_square);
-  } else {
-    printf("Chi square distribution for %llu samples is %1.2f, and randomly\n",
-           (unsigned long long) r->total_samples, r->chi_square);
-  }
-  if      (r->chi_probability < 0.0001)
-    printf("would exceed this value less than 0.01 percent of the times.\n\n");
-  else if (r->chi_probability > 0.9999)
-    printf("would exceed this value more than 99.99 percent of the times.\n\n");
-  else if (fp)
-    printf("would exceed this value %.17g percent of the times.\n\n",
-           r->chi_probability * 100);
-  else
-    printf("would exceed this value %1.2f percent of the times.\n\n",
-           r->chi_probability * 100);
-
-  if (fp) {
-    printf("Arithmetic mean value of data %ss is %.17g (%.17g = random).\n",
-           samp, r->mean, o->binary ? 0.5 : 127.5);
-  } else {
-    printf("Arithmetic mean value of data %ss is %1.4f (%.1f = random).\n",
-           samp, r->mean, o->binary ? 0.5 : 127.5);
-  }
-  if (fp) {
-    printf("Monte Carlo value for Pi is %.17g (error %.17g percent).\n",
-           r->monte_pi, 100.0 * (fabs(M_PI - r->monte_pi) / M_PI));
-  } else {
-    printf("Monte Carlo value for Pi is %1.9f (error %1.2f percent).\n",
-           r->monte_pi, 100.0 * (fabs(M_PI - r->monte_pi) / M_PI));
-  }
-  printf("Serial correlation coefficient is ");
-  if (r->scc >= -99999) {
-    if (fp) printf("%.17g (totally uncorrelated = 0.0).\n", r->scc);
-    else    printf("%1.6f (totally uncorrelated = 0.0).\n", r->scc);
-  } else {
-    printf("undefined (all values equal!).\n");
-  }
-}
-
-static void print_terse(const fastent_result * r, const fastent_options * o) {
-  printf("0,File-%ss,Entropy,Chi-square,Mean,Monte-Carlo-Pi,Serial-Correlation\n",
-         o->binary ? "bit" : "byte");
-  if (o->full_precision) {
-    printf("1,%llu,%.17g,%.17g,%.17g,%.17g,%.17g\n",
-           (unsigned long long) r->total_samples,
-           r->entropy, r->chi_square, r->mean, r->monte_pi, r->scc);
-  } else {
-    printf("1,%llu,%f,%f,%f,%f,%f\n",
-           (unsigned long long) r->total_samples,
-           r->entropy, r->chi_square, r->mean, r->monte_pi, r->scc);
-  }
-  if (o->counts) print_counts_terse(r, o->binary);
-}
-
-static void print_json(const fastent_result * r, const fastent_options * o) {
-  const char * samp = o->binary ? "bit" : "byte";
-  const int fp = o->full_precision;
-  const char * fmt_fp = fp ? "%.17g" : "%g";
-  const f64 per = o->binary ? 1.0 : 8.0;
-  const int comp_pct = (int)(short)(100.0 * (per - r->entropy) / per);
-
-  printf("{\n");
-  printf("  \"unit\": \"%s\",\n", samp);
-  printf("  \"samples\": %llu,\n", (unsigned long long) r->total_samples);
-  printf("  \"entropy\": "); printf(fmt_fp, r->entropy); printf(",\n");
-  printf("  \"optimum_compression_percent\": %d,\n", comp_pct);
-  printf("  \"chi_square\": {\n");
-  printf("    \"statistic\": "); printf(fmt_fp, r->chi_square); printf(",\n");
-  printf("    \"df\": %d,\n", o->binary ? 1 : 255);
-  printf("    \"p_exceed\": "); printf(fmt_fp, r->chi_probability); printf("\n");
-  printf("  },\n");
-  printf("  \"arithmetic_mean\": "); printf(fmt_fp, r->mean); printf(",\n");
-  printf("  \"monte_carlo_pi\": {\n");
-  printf("    \"value\": "); printf(fmt_fp, r->monte_pi); printf(",\n");
-  printf("    \"error_percent\": ");
-  printf(fmt_fp, 100.0 * (fabs(M_PI - r->monte_pi) / M_PI));
-  printf("\n  },\n");
-  printf("  \"serial_correlation\": ");
-  if (r->scc < -99999) printf("null");
-  else                 printf(fmt_fp, r->scc);
-  if (o->counts) {
-    printf(",\n  \"occurrences\": [\n");
-    const int bins = o->binary ? 2 : 256;
-    int first = 1;
-    Fi(bins,
-       if (r->hist[i] == 0) continue;
-       if (!first) printf(",\n");
-       first = 0;
-       printf("    { \"value\": %d, \"count\": %llu, \"fraction\": ",
-              i, (unsigned long long) r->hist[i]);
-       printf(fmt_fp, (f64) r->hist[i] / (f64) r->total_samples);
-       printf(" }"))
-    printf("\n  ]");
-  }
-  printf("\n}\n");
-}
 
 /*  Main entry.  */
 
 int main(int argc, char ** argv) {
-#ifdef _WIN32
-  /*  Replace MSVCRT's CP_ACP-narrowed argv with UTF-8 from
-      GetCommandLineW() and set the console to CP_UTF8.  */
-  fastent_win32_init_console();
-  if (fastent_win32_argv_utf8(&argc, &argv) != 0) {
-    fprintf(stderr, "fastent: failed to decode Windows command line\n");
+  fastent_os_init_console();
+  if (fastent_os_argv_utf8(&argc, &argv) != 0) {
+    fprintf(stderr, "fastent: failed to decode command line\n");
     return 2;
   }
-#endif
 
   fastent_options o;
   int rc = parse_args(argc, argv, &o);
   if (rc != 0) return rc < 0 ? 1 : rc;
 
-#ifdef _WIN32
-  if (!o.path) fastent_win32_set_stdin_binary();
-#endif
+  if (!o.path) fastent_os_set_stdin_binary();
 
-#ifdef HAVE_PLEDGE
   /*  rpath only needed to open the positional argument; the second
       pledge after src_open() drops it.  */
-  if (pledge(o.path ? "stdio rpath" : "stdio", NULL) == -1) {
+  if (fastent_os_pledge(o.path ? "stdio rpath" : "stdio") == -1) {
     perror("pledge");
     return 2;
   }
-#endif
 
 #ifdef FASTENT_HAVE_PTHREAD
   if (o.threads < 0) {
-#ifdef _WIN32
-    long n = fastent_win32_num_cpus();
-#else
-    long n = sysconf(_SC_NPROCESSORS_ONLN);
-#endif
+    long n = fastent_os_num_cpus();
     o.threads = n > 0 && n < 1024 ? (int) n : 1;
   }
   if (o.threads > 1) fastent_set_num_threads(o.threads);
@@ -707,12 +344,10 @@ int main(int argc, char ** argv) {
     return 2;
   }
 
-#ifdef HAVE_PLEDGE
-  if (o.path && pledge("stdio", NULL) == -1) {
+  if (o.path && fastent_os_pledge("stdio") == -1) {
     perror("pledge");
     return 2;
   }
-#endif
 
   fastent_variant var = FASTENT_VAR_SCALAR;
   fastent_analyze_fn fn_byte      = fastent_pick_variant(&var);
@@ -735,9 +370,9 @@ int main(int argc, char ** argv) {
   fastent_result result;
   fastent_finalize(&st, o.binary, &result);
 
-  if      (o.json)  print_json(&result, &o);
-  else if (o.terse) print_terse(&result, &o);
-  else              print_default(&result, &o);
+  if      (o.json)  fastent_print_json(&result, &o);
+  else if (o.terse) fastent_print_terse(&result, &o);
+  else              fastent_print_default(&result, &o);
 
   return 0;
 }

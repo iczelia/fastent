@@ -1,8 +1,11 @@
-/*  fastent: I/O layer.
+/*  fastent: POSIX I/O backend (mmap, stream read, optional io_uring).
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
-#include "fastent-io.h"   /*  Pulls common.h with feature macros (must be first).  */
+#include "common.h"
+#include "port-io.h"
+
+#ifndef _WIN32
 
 #include <errno.h>
 #include <stdint.h>
@@ -21,27 +24,11 @@
 #ifdef HAVE_IO_URING
   #include <sys/syscall.h>
   #include <linux/io_uring.h>
-  /*  Ring control words are kernel-shared; volatile-only suffices
-      because io_uring_enter is a syscall (barrier from userland).  */
 #endif
 
-/*  MinGW under -std=c99 hides POSIX/CRT names; route via the helpers.  */
-#ifdef _WIN32
-  #include "fastent-win32.h"
-  #define FASTENT_OPEN_RD(p)      fastent_win32_open_utf8((p), O_RDONLY | O_BINARY)
-  #define FASTENT_CLOSE(fd)       fastent_win32_close((fd))
-  #define FASTENT_READ(fd, b, n)  fastent_win32_read((fd), (b), (n))
-#else
-  #ifndef O_BINARY
-    #define O_BINARY 0
-  #endif
-  #define FASTENT_OPEN_RD(p)      open((p), O_RDONLY | O_BINARY)
-  #define FASTENT_CLOSE(fd)       close((fd))
-  #define FASTENT_READ(fd, b, n)  read((fd), (b), (n))
+#ifndef O_BINARY
+  #define O_BINARY 0
 #endif
-
-#define FASTENT_STREAM_BUF (2u * 1024u * 1024u)  /*  2 MiB per read()  */
-
 #ifndef MADV_SEQUENTIAL
   #define MADV_SEQUENTIAL 0
 #endif
@@ -52,34 +39,9 @@
   #define POSIX_FADV_SEQUENTIAL 0
 #endif
 
-#define FASTENT_STREAM_ALIGN 4096u
-
-static int alloc_aligned(void ** out_raw, void ** out_user, sz cap) {
-  void * raw  = NULL;
-  void * user = NULL;
-#if HAVE_POSIX_MEMALIGN
-  if (posix_memalign(&raw, FASTENT_STREAM_ALIGN, cap) != 0) raw = NULL;
-  user = raw;
-#elif HAVE_ALIGNED_ALLOC
-  raw = aligned_alloc(FASTENT_STREAM_ALIGN, cap);
-  user = raw;
-#else
-  raw = malloc(cap + FASTENT_STREAM_ALIGN);
-  if (raw) {
-    uintptr_t a = ((uintptr_t) raw + (FASTENT_STREAM_ALIGN - 1))
-                  & ~(uintptr_t)(FASTENT_STREAM_ALIGN - 1);
-    user = (void *) a;
-  }
-#endif
-  if (!raw) return -1;
-  *out_raw  = raw;
-  *out_user = user;
-  return 0;
-}
-
 static int alloc_stream_buf(fastent_source * s) {
   void * raw = NULL, * user = NULL;
-  if (alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) return -1;
+  if (fastent_io_alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) return -1;
   s->stream_buf     = (u8 *) user;
   s->stream_buf_raw = raw;
   s->stream_buf_cap = FASTENT_STREAM_BUF;
@@ -115,7 +77,7 @@ typedef struct {
   int      prev_returned;
   u64      next_submit_offset;
   u64      file_size;
-} fastent_uring_state;
+} uring_state;
 
 static long io_uring_setup_sys(unsigned entries, struct io_uring_params * p) {
   return syscall(__NR_io_uring_setup, entries, p);
@@ -126,7 +88,7 @@ static long io_uring_enter_sys(int fd, unsigned to_submit,
                  flags, NULL, (size_t) 0);
 }
 
-static int uring_submit_read(fastent_uring_state * u, int src_fd, int slot) {
+static int uring_submit_read(uring_state * u, int src_fd, int slot) {
   uint32_t tail = *u->sq_ktail;
   uint32_t mask = *u->sq_ring_mask;
   uint32_t idx  = tail & mask;
@@ -145,8 +107,8 @@ static int uring_submit_read(fastent_uring_state * u, int src_fd, int slot) {
   sqe->len       = (uint32_t) to_read;
   sqe->user_data = (uint64_t) slot;
 
-  u->sq_array[idx]    = idx;
-  u->slot_done[slot]  = 0;
+  u->sq_array[idx]     = idx;
+  u->slot_done[slot]   = 0;
   u->slot_result[slot] = 0;
 
   *u->sq_ktail = tail + 1;
@@ -160,7 +122,7 @@ static int uring_submit_read(fastent_uring_state * u, int src_fd, int slot) {
   }
 }
 
-static int uring_wait(fastent_uring_state * u, int target_slot) {
+static int uring_wait(uring_state * u, int target_slot) {
   while (!u->slot_done[target_slot]) {
     uint32_t head = *u->cq_khead;
     uint32_t tail = *u->cq_ktail;
@@ -181,7 +143,7 @@ static int uring_wait(fastent_uring_state * u, int target_slot) {
   return 0;
 }
 
-static void uring_destroy(fastent_uring_state * u) {
+static void uring_destroy(uring_state * u) {
   if (!u) return;
   for (unsigned i = 0; i < FASTENT_URING_SLOTS; i++) {
     if (u->slot_buf_raw[i]) free(u->slot_buf_raw[i]);
@@ -194,8 +156,8 @@ static void uring_destroy(fastent_uring_state * u) {
   free(u);
 }
 
-static fastent_uring_state * uring_setup(int src_fd, u64 file_size) {
-  fastent_uring_state * u = calloc(1, sizeof(*u));
+static uring_state * uring_setup(int src_fd, u64 file_size) {
+  uring_state * u = calloc(1, sizeof(*u));
   if (!u) return NULL;
   u->ring_fd = -1;
 
@@ -241,7 +203,7 @@ static fastent_uring_state * uring_setup(int src_fd, u64 file_size) {
 
   for (unsigned i = 0; i < FASTENT_URING_SLOTS; i++) {
     void * raw = NULL, * user = NULL;
-    if (alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) {
+    if (fastent_io_alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) {
       uring_destroy(u); return NULL;
     }
     u->slot_buf[i]     = (u8 *) user;
@@ -284,16 +246,14 @@ int fastent_src_open(fastent_source * s, const char * path,
     return 0;
   }
 
-  int fd = FASTENT_OPEN_RD(path);
+  int fd = open(path, O_RDONLY | O_BINARY);
   if (fd < 0) return -1;
   s->opened_fd = 1;
   s->fd = fd;
 
   u64 file_size = 0;
   int is_regular = 0;
-#ifdef _WIN32
-  is_regular = 1;  /*  CreateFileMapping enforces disk-fd later.  */
-#elif defined(HAVE_SYS_STAT_H)
+#ifdef HAVE_SYS_STAT_H
   {
     struct stat st;
     if (fstat(fd, &st) == 0 && S_ISREG(st.st_mode)) {
@@ -314,8 +274,8 @@ int fastent_src_open(fastent_source * s, const char * path,
       if (alloc_stream_buf(s) < 0) goto close_fail;
       return 0;
     }
-    fastent_uring_state * u = uring_setup(fd, file_size);
-    if (!u) goto close_fail;   /*  Probably ENOSYS on a pre-5.1 kernel.  */
+    uring_state * u = uring_setup(fd, file_size);
+    if (!u) goto close_fail;
     s->kind           = FASTENT_SRC_URING;
     s->size           = file_size;
     s->stream_buf_cap = FASTENT_STREAM_BUF;
@@ -335,22 +295,6 @@ int fastent_src_open(fastent_source * s, const char * path,
     return 0;
   }
 
-#ifdef _WIN32
-  if (mode != FASTENT_IO_STREAM) {
-    void *             base   = NULL;
-    void *             handle = NULL;
-    unsigned long long sz_out = 0;
-    if (fastent_win32_mmap(fd, &base, &sz_out, &handle) == 0) {
-      s->kind       = FASTENT_SRC_MMAP;
-      s->map        = base;
-      s->size       = (u64) sz_out;
-      s->map_handle = handle;
-      fastent_win32_mmap_prefetch(base, sz_out);
-      return 0;
-    }
-    if (mode == FASTENT_IO_MMAP) goto close_fail;
-  }
-#else
 #ifdef HAVE_SYS_STAT_H
   if (mode != FASTENT_IO_STREAM && is_regular && file_size > 0) {
 #ifdef HAVE_MMAP
@@ -379,7 +323,6 @@ int fastent_src_open(fastent_source * s, const char * path,
     errno = ESPIPE; goto close_fail;
   }
 #endif
-#endif
 
   s->kind = FASTENT_SRC_STREAM;
   if (alloc_stream_buf(s) < 0) goto close_fail;
@@ -388,7 +331,7 @@ int fastent_src_open(fastent_source * s, const char * path,
 close_fail:
   {
     int saved = errno;
-    if (s->opened_fd && s->fd >= 0) FASTENT_CLOSE(s->fd);
+    if (s->opened_fd && s->fd >= 0) close(s->fd);
     s->fd = -1;
     s->opened_fd = 0;
     errno = saved;
@@ -400,8 +343,8 @@ sz fastent_src_read(fastent_source * s) {
   if (s->kind == FASTENT_SRC_STREAM) {
     sz off = 0;
     while (off < s->stream_buf_cap) {
-      long n = (long) FASTENT_READ(s->fd, s->stream_buf + off,
-                                    s->stream_buf_cap - off);
+      long n = (long) read(s->fd, s->stream_buf + off,
+                           s->stream_buf_cap - off);
       if (n < 0)  { if (errno == EINTR) continue;  return (sz) -1; }
       if (n == 0) break;
       off += (sz) n;
@@ -410,7 +353,7 @@ sz fastent_src_read(fastent_source * s) {
   }
 #ifdef HAVE_IO_URING
   if (s->kind == FASTENT_SRC_URING) {
-    fastent_uring_state * u = (fastent_uring_state *) s->uring_state;
+    uring_state * u = (uring_state *) s->uring_state;
     if (u->prev_returned >= 0) {
       if (uring_submit_read(u, s->fd, u->prev_returned) < 0) return (sz) -1;
       u->prev_returned = -1;
@@ -436,20 +379,15 @@ void fastent_src_close(fastent_source * s) {
   if (!s) return;
 
   if (s->kind == FASTENT_SRC_MMAP && s->map) {
-#ifdef _WIN32
-    fastent_win32_munmap(s->map, s->map_handle);
-    s->map_handle = NULL;
-#else
 #ifdef HAVE_MMAP
     munmap(s->map, (size_t) s->size);
-#endif
 #endif
     s->map = NULL;
   }
 
 #ifdef HAVE_IO_URING
   if (s->kind == FASTENT_SRC_URING && s->uring_state) {
-    uring_destroy((fastent_uring_state *) s->uring_state);
+    uring_destroy((uring_state *) s->uring_state);
     s->uring_state = NULL;
     s->stream_buf  = NULL;
   }
@@ -461,7 +399,9 @@ void fastent_src_close(fastent_source * s) {
     s->stream_buf     = NULL;
   }
 
-  if (s->opened_fd && s->fd >= 0) FASTENT_CLOSE(s->fd);
+  if (s->opened_fd && s->fd >= 0) close(s->fd);
   s->fd = -1;
   s->kind = FASTENT_SRC_NONE;
 }
+
+#endif  /*  !_WIN32  */

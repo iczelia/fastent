@@ -1,11 +1,14 @@
-/*  fastent: I/O layer.
+/*  fastent: portable I/O source abstraction.
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
-#ifndef FASTENT_IO_H
-#define FASTENT_IO_H
+#ifndef FASTENT_PORT_IO_H
+#define FASTENT_PORT_IO_H
 
 #include "common.h"
+
+#define FASTENT_STREAM_BUF   (2u * 1024u * 1024u)
+#define FASTENT_STREAM_ALIGN 4096u
 
 typedef enum {
   FASTENT_SRC_NONE,
@@ -26,8 +29,8 @@ typedef struct {
   int          fd;
   void *       map;
   u64          size;
-  void *       map_handle;     /*  Win32 CreateFileMapping handle; NULL on POSIX.  */
-  u8 *         stream_buf;     /*  URING rotates across N slots.  */
+  void *       map_handle;
+  u8 *         stream_buf;
   void *       stream_buf_raw;
   sz           stream_buf_cap;
   int          opened_fd;
@@ -43,5 +46,8 @@ int  fastent_src_open(fastent_source * s, const char * path,
 sz   fastent_src_read(fastent_source * s);
 
 void fastent_src_close(fastent_source * s);
+
+/*  Aligned buffer alloc used by both backends; lives in port-io.c.  */
+int  fastent_io_alloc_aligned(void ** out_raw, void ** out_user, sz cap);
 
 #endif

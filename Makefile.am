@@ -3,12 +3,20 @@ ACLOCAL_AMFLAGS = -I m4
 AM_CFLAGS = -std=c99 -Wall -Wextra
 
 bin_PROGRAMS  = fastent
-noinst_HEADERS = analyze.h analyze-impl.h chisq.h fastent-io.h \
+noinst_HEADERS = analyze.h analyze-impl.h chisq.h \
                  threadpool.h common.h fastent-win32.h \
-                 fastent-math.h log2_tables.h
+                 fastent-math.h log2_tables.h \
+                 fastent-options.h output.h \
+                 port-cpu.h port-io.h port-term.h port-os.h
 
-fastent_SOURCES = fastent.c analyze.c analyze-scalar.c chisq.c fastent-io.c \
-                  fastent-math.c
+fastent_SOURCES = fastent.c analyze.c analyze-scalar.c chisq.c \
+                  fastent-math.c \
+                  output-default.c output-terse.c output-json.c \
+                  output-histogram.c \
+                  port-cpu-x86.c port-cpu-arm.c port-cpu-other.c \
+                  port-io.c port-io-posix.c port-io-win32.c \
+                  port-term-posix.c port-term-win32.c port-term-djgpp.c \
+                  port-os-posix.c port-os-win32.c
 if FASTENT_THREADS
 fastent_SOURCES += threadpool.c
 endif
