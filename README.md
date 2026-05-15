@@ -28,8 +28,7 @@ form.
   back to a PSHUFB nibble LUT on AVX2 / SSE;
 - memory-maps regular-file inputs with `MADV_SEQUENTIAL`;
 - runtime dispatch to the best available variant
-  (scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512) via
-  `__builtin_cpu_supports`;
+  (scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512) via a CPUID query;
 - optional pthread worker pool partitioning the mmap region into
   6-aligned slabs so the Monte-Carlo Pi state machine never crosses
   threads; merge order is deterministic and yields byte-identical
@@ -89,15 +88,6 @@ serial-correlation sum at merge time.  `-j auto` resolves to
 
 ## Building
 
-From a git clone (autotools artefacts not committed):
-
-```
-$ ./bootstrap
-$ ./configure --enable-native --enable-lto
-$ make
-$ sudo make install
-```
-
 From a release tarball:
 
 ```
@@ -106,21 +96,49 @@ $ make
 $ sudo make install
 ```
 
-Generic build (no host-specific tuning):
+From a git clone (autotools artefacts aren't checked in):
 
 ```
-$ ./configure
+$ ./bootstrap
+$ ./configure --enable-native --enable-lto
 $ make
+$ sudo make install
 ```
 
-Single-threaded build (drops the pthread dependency):
+Without host-specific tuning, drop `--enable-native --enable-lto`.  The
+tuned build is 5 to 25 percent faster than the generic one on top of
+the figures in the benchmark section.
 
-```
-$ ./configure --disable-threads
-```
+### Configure options
 
-Host-specific tuning and LTO improve performance by another 5-25% on top
-of the baseline presented in the benchmark section.
+| flag | effect |
+|:--|:--|
+| `--enable-native`            | `-march=native -mtune=native` |
+| `--enable-lto`               | link-time optimisation |
+| `--disable-threads`          | single-threaded build, no pthread dependency |
+| `--with-windows-target=vista` | default Windows target (wide API, Vista+) |
+| `--with-windows-target=win95` | legacy Windows target (narrow API, PE 4.0, kernel32 + msvcrt imports only) |
+
+### Supported platforms
+
+Native build is x86_64 Linux with gcc 12 or newer (gcc 15 in the
+release CI), clang 18 or newer, or any C99 compiler with a working
+libc.  TCC builds cleanly under `--disable-threads`.
+
+Pre-built binaries are published for each tagged release:
+
+- Linux (musl, fully static): x86_64, i386, aarch64, armhf, riscv64,
+  ppc64le, ppc64, ppc, s390x, loongarch64, mips, mipsel, mips64,
+  mips64el.
+- Linux (glibc, fully static): alpha, sparc64, sparc, m68k, hppa,
+  arc, sh4.
+- Windows (mingw-w64, fully static): x86_64, i686, aarch64.
+- Windows 95 (kernel32 + msvcrt only, PE subsystem 4.0): i686.
+- macOS (libSystem stub, SDK-baseline): x86_64, aarch64.
+- MS-DOS (DJGPP with CWSDPMI baked in, self-contained): i386.
+
+Cross-compile recipes for every target are in
+[`.github/workflows/release.yml`](.github/workflows/release.yml).
 
 ## Testing
 

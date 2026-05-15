@@ -19,11 +19,11 @@ coefficient.  The byte stream is read from
 .I file
 or, if no filename is given, from standard input.
 .PP
-Internally the inner loop is vectorised, uses a 4-way banked
-histogram, and dispatches at runtime to the best available SIMD
-variant (scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512).  Regular-file
-inputs are memory-mapped and processed by an optional pthread worker
-pool.
+The inner loop is vectorised, uses a 4-way banked histogram, and
+dispatches at runtime to the best available SIMD variant on the host
+(scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512).  Regular-file inputs are
+memory-mapped and processed by an optional pthread worker pool with
+deterministic output.
 
 .SH OPTIONS
 .TP
@@ -195,6 +195,64 @@ around 2.5 GB/s (byte) / 4.7 GB/s (bit); a saturated
 .B \-j auto
 sweep reaches roughly 15-17 GB/s before DDR4 bandwidth caps it.  See
 the README for the per-host scaling plot.
+
+.SH PLATFORMS
+.B fastent
+is portable across every Unix-like host with a working C99 compiler
+and libc.  Pre-built binaries are published for each release, all
+fully static (except macOS, which links the platform SDK stub):
+.IP \(bu 2
+Linux on x86_64, i386, aarch64, armhf, riscv64, ppc64le, ppc64,
+powerpc, s390x, loongarch64, mips, mipsel, mips64, mips64el, alpha,
+sparc64, sparc, m68k, hppa, arc, sh4.
+.IP \(bu 2
+Windows on x86_64, i686, and aarch64; a separate Win95-compatible
+i686 build limits its import table to
+.B kernel32.dll
+and
+.B msvcrt.dll
+and runs on every Windows release from 95 onward.
+.IP \(bu 2
+macOS on x86_64 and aarch64.
+.IP \(bu 2
+MS-DOS on i386 (DJGPP + CWSDPMI baked in; no separate DPMI host
+needed).
+.PP
+The SIMD fast paths are only present on x86 builds; on every other
+target the scalar loop is selected.  The scalar loop is still 4-way
+banked, so non-x86 hosts keep most of the per-byte throughput.
+
+.SH ENVIRONMENT
+.B fastent
+does not consult any environment variables.  The thread count comes
+from
+.B \-j
+/
+.B \-\-threads
+on the command line only.
+
+.SH "DETERMINISM"
+Output is byte-for-byte reproducible across thread counts.  The
+internal arithmetic is all integer, slab boundaries are aligned to
+multiples of six so the Monte Carlo \(*p state machine never crosses
+a thread, and the merge order is fixed.  A given input produces
+the same numbers under
+.B \-j 1
+and
+.BR "\-j auto" .
+
+.SH "MEMORY USE"
+Regular-file inputs are memory-mapped read-only: virtual address
+space proportional to the input, resident-set growth driven by the
+kernel's read-ahead.  Stream inputs (stdin, pipes, unmappable files,
+.BR \-\-no-mmap )
+use a single 2 MiB aligned read buffer regardless of input size.
+Each worker thread under
+.B \-j N
+holds a small per-slab accumulator (a few KiB) plus the histogram
+bins; total resident overhead under
+.B "\-j auto"
+stays well under a megabyte on top of the mapped region.
 
 .SH BUGS
 The optimum-compression figure derives from the first-order

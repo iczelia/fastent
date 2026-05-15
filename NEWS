@@ -7,52 +7,84 @@ complete source-level history, see the ChangeLog.
 -------------------------------------------------------------------------------
 v1.0 (May 2026)
 
-  * Initial release of fastent.
+  Initial release.
 
-  * Banked 4-way SIMD histogram in the inner loop.
+  Tests reported
+  --------------
 
-  * Serial correlation cross-product computed via widened signed
-    multiply + horizontal add (PMADDUBSW-style on SSE/AVX2; the same
-    algorithm widened to 64-byte vectors on AVX-512), with a
-    sign-correction term derived on the fly from the byte sum.  No
-    scalar fallback per byte.
+  Shannon entropy, chi-square statistic with tail probability,
+  arithmetic mean, Monte Carlo value of pi, and serial correlation
+  coefficient.  Byte mode by default; bit mode under -b (two-bin
+  histogram, mean relative to 0.5, chi-square with one degree of
+  freedom; Monte Carlo Pi stays byte-driven).  -f folds upper-case
+  letters (ASCII A-Z and Latin-1 0xC0-0xDE except 0xD7) to lower
+  case in-line, with no scalar prepass.
 
-  * Bit-mode (-b) population count: VPOPCNTB on AVX-512
-    VPOPCNTDQ + BITALG hosts; PSHUFB nibble-LUT on AVX2 / SSE /
-    SSSE3; __builtin_popcount in the scalar fallback.
+  Outputs
+  -------
 
-  * Fused case-fold (-f) path: each loaded vector is folded
-    in-register before the histogram, SCC, and Monte Carlo Pi
-    kernels consume it -- no staging-copy prepass over the input,
-    so -f keeps full SIMD throughput.
+  Human-readable text by default, CSV under -t, and JSON under
+  --json.  -c adds a per-value occurrence table to any of them.
+  -p / --full-precision renders every floating-point value at %.17g.
 
-  * Runtime CPU dispatch: one binary picks the highest available
-    variant among scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512 (F + BW +
-    CD + DQ + VL + VPOPCNTDQ + BITALG) at startup via
-    __builtin_cpu_supports.  SIMD variants live in per-file static
-    convenience libraries with isolated -m... CFLAGS so the rest of
-    the binary stays at the configured baseline.
+  Throughput
+  ----------
 
-  * Fast I/O: mmap(2) with MADV_SEQUENTIAL / POSIX_FADV_SEQUENTIAL
-    for regular files; a 2 MiB read(2) loop for stdin and unmappable
-    sources.  --no-mmap forces the read(2) path.
+  Banked SIMD histogram (four sub-bins per pass to break the
+  read-modify-write hazard chain), serial-correlation cross-product
+  via signed widened multiply + horizontal add (PMADDUBSW on
+  SSE/AVX2, the same algorithm widened on AVX-512), bit-mode
+  population count via VPOPCNTB on AVX-512 BITALG hosts and a
+  PSHUFB nibble lookup elsewhere.  One binary runtime-dispatches
+  scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512 (F + BW + CD + DQ + VL
+  + VPOPCNTDQ + BITALG) via a CPUID query; SIMD variants live in
+  per-file static archives with isolated -m... CFLAGS.
 
-  * Optional pthread worker pool (-j N / --threads N) partitioning
-    the mmap region into 6-aligned slabs so the Monte-Carlo Pi state
-    machine never crosses threads; merge order is deterministic and
-    yields byte-identical output to the single-threaded run.
+  Regular-file inputs are memory-mapped with MADV_SEQUENTIAL +
+  POSIX_FADV_SEQUENTIAL.  Stdin and unmappable sources go through
+  a 2 MiB read(2) loop; --no-mmap forces that path everywhere.
 
-  * Outputs: human-readable, CSV (-t), or JSON (--json).  Adds a
-    -p / --full-precision flag that renders every float at %.17g.
+  -j N / --threads N partitions the mmap region across N pthread
+  workers along 6-aligned slab boundaries so the Monte Carlo Pi
+  state machine never crosses a thread, with adjacent slab
+  products stitched into the serial-correlation sum at merge time.
+  Output is byte-identical to the single-threaded run.  -j auto
+  resolves to sysconf(_SC_NPROCESSORS_ONLN) (GetSystemInfo on
+  Windows).
 
-  * Test + bench harness: `make check` runs a deterministic-fixture
-    sanity suite (fixtures live in $(builddir)/tests/fixtures so the
-    source tree stays read-only-clean); `make bench` sweeps 10
-    deterministic datasets through three modes and a power-of-two
-    -j ladder, with ent(1) timed alongside if it is on PATH.
+  Platforms
+  ---------
 
-  * Build system: GNU autotools (configure.ac / Makefile.am) with
-    SSSE3 / SSE4.2 / AVX2 / AVX-512 intrinsic probes and per-variant
-    CFLAGS isolation.  ./bootstrap regenerates autotools artefacts;
-    ./configure --enable-native --enable-lto enables host-specific
-    tuning and link-time optimisation.
+  Native builds: any C99 compiler with a working libc.  TCC
+  compiles under --disable-threads.
+
+  Cross-compile and pre-built binary support:
+
+  - Linux musl: x86_64, i386, aarch64, armhf, riscv64, ppc64le,
+    ppc64, ppc, s390x, loongarch64, mips, mipsel, mips64, mips64el.
+  - Linux glibc: alpha, sparc64, sparc, m68k, hppa, arc, sh4.
+  - Windows (mingw-w64): x86_64, i686, aarch64.
+  - Windows 95: i686 with --with-windows-target=win95
+    (kernel32 + msvcrt imports only, PE subsystem 4.0,
+    no Unicode wide-API dependencies).
+  - macOS (libSystem-stubbed): x86_64, aarch64.
+  - MS-DOS via DJGPP: i386, with CWSDPMI baked into the .exe so
+    no separate CWSDPMI.EXE is needed at runtime.
+
+  Build system
+  ------------
+
+  GNU autotools.  ./bootstrap regenerates the autotools artefacts
+  from configure.ac / Makefile.am.  ./configure --enable-native
+  --enable-lto enables host-specific tuning and link-time
+  optimisation.  --disable-threads drops the pthread dependency.
+  --with-windows-target=vista|win95 selects the Windows target.
+
+  Testing
+  -------
+
+  make check runs a deterministic-fixture sanity suite (fixtures
+  live under $(builddir)/tests/fixtures so the source tree stays
+  read-only).  make bench sweeps 10 datasets through three modes
+  and a power-of-two -j ladder, with ent(1) timed alongside if it
+  is on PATH; make bench-quick is the sub-minute smoke variant.
