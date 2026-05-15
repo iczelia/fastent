@@ -21,6 +21,12 @@
 #ifdef HAVE_IO_URING
   #include <sys/syscall.h>
   #include <linux/io_uring.h>
+  /*  The SQ/CQ ring control words are shared with the kernel, but
+      the kernel only touches them inside io_uring_enter - a syscall,
+      hence a full barrier from userland.  `volatile` on the ring
+      pointers is enough to stop the compiler from caching values
+      across our reads; no explicit acquire/release builtin needed
+      for our non-SQPOLL, single-threaded use.  */
 #endif
 
 /*  Windows MSVCRT's open(2) re-narrows the path argument through the
@@ -117,14 +123,14 @@ typedef struct {
   struct io_uring_sqe * sqes;
   size_t  sqes_size;
   /*  SQ ring control words (pointers into the SQ mmap).  */
-  uint32_t * sq_khead;
-  uint32_t * sq_ktail;
-  uint32_t * sq_ring_mask;
-  uint32_t * sq_array;
+  volatile uint32_t * sq_khead;
+  volatile uint32_t * sq_ktail;
+  volatile uint32_t * sq_ring_mask;
+           uint32_t * sq_array;
   /*  CQ ring control words.  */
-  uint32_t * cq_khead;
-  uint32_t * cq_ktail;
-  uint32_t * cq_ring_mask;
+  volatile uint32_t * cq_khead;
+  volatile uint32_t * cq_ktail;
+  volatile uint32_t * cq_ring_mask;
   struct io_uring_cqe * cqes;
   /*  Per-slot buffers and pending I/O bookkeeping.  */
   u8 *     slot_buf[FASTENT_URING_SLOTS];
@@ -148,7 +154,7 @@ static long io_uring_enter_sys(int fd, unsigned to_submit,
 }
 
 static int uring_submit_read(fastent_uring_state * u, int src_fd, int slot) {
-  uint32_t tail = __atomic_load_n(u->sq_ktail, __ATOMIC_RELAXED);
+  uint32_t tail = *u->sq_ktail;
   uint32_t mask = *u->sq_ring_mask;
   uint32_t idx  = tail & mask;
   struct io_uring_sqe * sqe = &u->sqes[idx];
@@ -175,7 +181,7 @@ static int uring_submit_read(fastent_uring_state * u, int src_fd, int slot) {
   u->slot_done[slot]  = 0;
   u->slot_result[slot] = 0;
 
-  __atomic_store_n(u->sq_ktail, tail + 1, __ATOMIC_RELEASE);
+  *u->sq_ktail = tail + 1;
   u->next_submit_offset = off + (u64) to_read;
 
   for (;;) {
@@ -188,8 +194,8 @@ static int uring_submit_read(fastent_uring_state * u, int src_fd, int slot) {
 
 static int uring_wait(fastent_uring_state * u, int target_slot) {
   while (!u->slot_done[target_slot]) {
-    uint32_t head = __atomic_load_n(u->cq_khead, __ATOMIC_RELAXED);
-    uint32_t tail = __atomic_load_n(u->cq_ktail, __ATOMIC_ACQUIRE);
+    uint32_t head = *u->cq_khead;
+    uint32_t tail = *u->cq_ktail;
 
     while (head != tail) {
       uint32_t mask = *u->cq_ring_mask;
@@ -199,7 +205,7 @@ static int uring_wait(fastent_uring_state * u, int target_slot) {
       u->slot_done[slot]   = 1;
       head++;
     }
-    __atomic_store_n(u->cq_khead, head, __ATOMIC_RELEASE);
+    *u->cq_khead = head;
     if (u->slot_done[target_slot]) break;
 
     /*  Block until at least one CQE arrives.  */
