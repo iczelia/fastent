@@ -262,6 +262,27 @@
 #define FASTENT_CAT(a, b)  FASTENT_CAT2(a, b)
 #define FASTENT_FN(name)   FASTENT_CAT(name, FASTENT_VAR_SUFFIX)
 
+/*  Stage-buffer pointer launder.  Each SIMD body writes the freshly
+    computed (or freshly folded) vector to a stack stage buffer, then
+    issues 16/32/64 scalar byte loads from it to drive the banked
+    histogram.  Without a launder the compiler sees through stage[]
+    and rewrites the byte loads as a vpextrb/umov chain off the source
+    vector register; that serialises the histogram on the FP->GP
+    datapath and costs ~2x on x86 byte mode, ~1.5x on NEON.
+    On GCC/Clang we use the canonical empty-asm pointer launder.
+    Other compilers (MSVC, XLC, ...) lack GCC-style inline asm; the
+    `volatile` qualifier forbids the same store-to-load fold and
+    produces byte-identical codegen to the asm launder on GCC and
+    Clang (verified on the HIST4-unrolled body), so it's a safe
+    cross-compiler substitute rather than a degradation.  */
+#if defined(__GNUC__) || defined(__clang__)
+  #define FASTENT_STAGE_PTR    const u8 *
+  #define FASTENT_LAUNDER(sp)  __asm__("" : "+r"(sp) :: "memory")
+#else
+  #define FASTENT_STAGE_PTR    const volatile u8 *
+  #define FASTENT_LAUNDER(sp)  ((void) 0)
+#endif
+
 /*  In-register case fold helpers. These produce a byte (or vector of
     bytes) that has ASCII A-Z and Latin-1 0xC0-0xDE (excluding 0xD7)
     mapped to lower-case; every other byte passes through unchanged.
@@ -491,12 +512,12 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
         reads into a vpextrb chain off the just-stored vector, which
         serialises the histogram and costs ~2x.  */
     u8 stage[64] __attribute__((aligned(32)));
-    const u8 * p;
+    FASTENT_STAGE_PTR p;
     if (fold) {
       _mm256_store_si256((__m256i *) (stage +  0), va0);
       _mm256_store_si256((__m256i *) (stage + 32), va1);
-      const u8 * sp = stage;
-      __asm__("" : "+r"(sp) :: "memory");
+      FASTENT_STAGE_PTR sp = stage;
+      FASTENT_LAUNDER(sp);
       p = sp;
     } else {
       p = buf + i;
@@ -752,12 +773,12 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
         an L1-resident stack stage (with the same asm pointer laundering
         as the AVX2 path); else we read directly from buf.  */
     u8 stage[128] __attribute__((aligned(64)));
-    const u8 * p;
+    FASTENT_STAGE_PTR p;
     if (fold) {
       _mm512_store_si512((void *) (stage +  0), va0);
       _mm512_store_si512((void *) (stage + 64), va1);
-      const u8 * sp = stage;
-      __asm__("" : "+r"(sp) :: "memory");
+      FASTENT_STAGE_PTR sp = stage;
+      FASTENT_LAUNDER(sp);
       p = sp;
     } else {
       p = buf + i;
@@ -998,12 +1019,12 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     /*  Same stage-buffer + asm-launder pattern as the AVX2 body; the
         asm is what forces movzbl-from-L1 instead of vpextrb.  */
     u8 stage[32] __attribute__((aligned(16)));
-    const u8 * p;
+    FASTENT_STAGE_PTR p;
     if (fold) {
       _mm_store_si128((__m128i *) (stage +  0), va0);
       _mm_store_si128((__m128i *) (stage + 16), va1);
-      const u8 * sp = stage;
-      __asm__("" : "+r"(sp) :: "memory");
+      FASTENT_STAGE_PTR sp = stage;
+      FASTENT_LAUNDER(sp);
       p = sp;
     } else {
       p = buf + i;
@@ -1223,12 +1244,12 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
     /*  Histogram + MC stage buffer (fold mode) or direct buf reads.  */
     u8 stage[32] __attribute__((aligned(16)));
-    const u8 * p;
+    FASTENT_STAGE_PTR p;
     if (fold) {
       vst1q_u8(stage +  0, va0);
       vst1q_u8(stage + 16, va1);
-      const u8 * sp = stage;
-      __asm__("" : "+r"(sp) :: "memory");
+      FASTENT_STAGE_PTR sp = stage;
+      FASTENT_LAUNDER(sp);
       p = sp;
     } else {
       p = buf + i;
@@ -1423,12 +1444,12 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
     /*  Histogram + MC stage buffer (fold mode) or direct buf reads.  */
     u8 stage[32] __attribute__((aligned(16)));
-    const u8 * p;
+    FASTENT_STAGE_PTR p;
     if (fold) {
       wasm_v128_store(stage +  0, va0);
       wasm_v128_store(stage + 16, va1);
-      const u8 * sp = stage;
-      __asm__("" : "+r"(sp) :: "memory");
+      FASTENT_STAGE_PTR sp = stage;
+      FASTENT_LAUNDER(sp);
       p = sp;
     } else {
       p = buf + i;
@@ -1795,11 +1816,11 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
         Same stage-buffer + asm-launder pattern as the byte-mode body
         when fold is set (forces movzbl-from-L1, not vpextrb).  */
     u8 bits_stage[FASTENT_SIMD_VLEN] __attribute__((aligned(32)));
-    const u8 * p;
+    FASTENT_STAGE_PTR p;
     if (fold) {
       V_STORE(bits_stage, va);
-      const u8 * sp = bits_stage;
-      __asm__("" : "+r"(sp) :: "memory");
+      FASTENT_STAGE_PTR sp = bits_stage;
+      FASTENT_LAUNDER(sp);
       p = sp;
     } else {
       p = buf + i;
