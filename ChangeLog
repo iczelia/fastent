@@ -1,12 +1,107 @@
 2026-05-15  Kamila Szewczyk  <k@iczelia.net>
 
-	v1.1:  WebAssembly support.
+	v1.1:  recursive mode, AArch64 NEON / SVE2, AVX-512 BITALG,
+	io_uring (Linux) and IOCP (Windows), WebAssembly SIMD128,
+	histogram visualisation, DOS / Win9x support, platform port
+	abstraction.
 
-	Platforms: WebAssembly via emscripten with -sSTANDALONE_WASM,
-	for both wasm32 and wasm64 (-sMEMORY64); -msimd128 enables
-	WebAssembly SIMD128 codegen so the scalar inner loops
-	auto-vectorise.  Smoke-tested under wasmtime (the wasm64
-	binary needs -W memory64).
+	New analyse variants and runtime dispatch:
+	  - AArch64 NEON (baseline) and ARMv7-A NEON (-mfpu=neon, with
+	    softfp / hardfp ABI selection at configure time).
+	  - AArch64 SVE2 with variable vector length, picked at runtime
+	    via HWCAP2_SVE2 (AT_HWCAP2 on Linux, elf_aux_info on FreeBSD,
+	    sysctlbyname("hw.optional.arm.FEAT_SVE2") on macOS).
+	  - AVX-512 BITALG variant using VPOPCNTB for the bit-mode body;
+	    F + BW remains the base tier for hosts without BITALG.
+	  - WebAssembly SIMD128 body driven by wasm_i32x4_dot_i16x8 +
+	    wasm_i8x16_popcnt; gated on -msimd128 at configure time.
+
+	I/O:
+	  - --io={auto,mmap,stream,uring} replaces the binary
+	    --no-mmap toggle (which stays as an alias for --io=stream).
+	  - io_uring backend on Linux 5.1+: four overlapping 2 MiB
+	    reads via raw __NR_io_uring_setup / __NR_io_uring_enter,
+	    no liburing dependency.  Falls back to stream on
+	    pre-5.1 kernels (ENOSYS) unless the user forced --io=uring.
+	  - IOCP backend on Windows Vista+: same four-slot pipeline
+	    over overlapped ReadFile + GetQueuedCompletionStatus.
+	    Selected by --io=uring on Windows for cross-platform
+	    symmetry; ENOSYS under --with-windows-target=win95.
+
+	Output:
+	  - -H / --histogram: terminal block-plot of the byte (or bit)
+	    distribution.  Glyphs selected per console: 8-level Unicode
+	    blocks (U+2581..U+2588) by default, single-byte CP 437
+	    (0xDC / 0xDB) on DOS / Win9x consoles, ASCII '#' / ' ' for
+	    redirected output.  --color=auto|always|never picks dim /
+	    default / accent foreground per byte class (control,
+	    ASCII, high-bit).  --log toggles a logarithmic Y axis.
+	  - -r / --recursive: walk a directory; emit one CSV row per
+	    regular file (or a JSON array under --json).  Path column
+	    plus the same six summary metrics as terse mode.
+	  - --sort-by=COL[:asc|:desc] for recursive output where COL
+	    is path, samples, entropy, chisq, mean, pi, scc.
+
+	Platforms:
+	  - WebAssembly via emscripten with -sSTANDALONE_WASM, for both
+	    wasm32 and wasm64 (-sMEMORY64).  The wasm64 binary needs a
+	    runtime with the memory64 proposal enabled (e.g. wasmtime
+	    -W memory64).
+	  - MS-DOS via DJGPP with CWSDPMI baked into the .exe.  Native
+	    console output uses CP 437 block glyphs and DJGPP <conio.h>
+	    textcolor / cputs for BIOS-attribute colour without ANSI.SYS.
+	  - Windows 95 / 98 / ME via --with-windows-target=win95
+	    (kernel32 + msvcrt only, PE subsystem 4.0, narrow path API).
+	  - Linux on alpha, sparc64, sparc, m68k, hppa, arc, sh4 (glibc
+	    static) added to the smoke-test matrix.
+	  - OpenBSD pledge(2) support via AC_CHECK_FUNCS([pledge]):
+	    "stdio rpath" before open, "stdio" after.
+
+	Build / portability:
+	  - Platform port layer (port-cpu, port-io, port-term, port-os,
+	    port-thread, port-walk) replaces the previous tower of
+	    #ifdef _WIN32 / __DJGPP__ inside fastent.c / analyze.c /
+	    fastent-io.c.  Each port has a header plus per-platform
+	    -posix.c / -win32.c (+ -djgpp.c for term, -arm.c / -x86.c /
+	    -other.c for cpu).  Win32 implementations cross-compile under
+	    mingw-w64; the Vista+ surface (SRWLOCK, CONDITION_VARIABLE,
+	    CancelIoEx) is gated on !FASTENT_WIN_LEGACY.
+	  - Thread pool migrated to a port (port-thread.h):  pthread on
+	    POSIX, CreateThread + SRWLOCK + CONDITION_VARIABLE on
+	    Win32 Vista+.  Win95 target keeps threads disabled.
+	  - Windows native build picks up UTF-8 paths and a UTF-8
+	    console: argv is reconstructed from GetCommandLineW with a
+	    manual MSVCRT-compatible splitter, SetConsoleOutputCP /
+	    SetConsoleCP set to CP_UTF8, file paths routed through
+	    _wopen / CreateFileW.
+	  - analyze-impl.h's V_* macro table broken out into
+	    analyze-vec-{x86,neon,wasm}.h; the inner-loop template is
+	    unchanged but the macro definitions for each ISA family now
+	    live in their own header.
+	  - Variant dispatcher is table-driven: one fastent_variant
+	    table walked by a single pick function, replacing four
+	    near-identical pick_*_variant helpers.
+
+	Math:
+	  - New fastent-math entropy-term function (p * log2(1/p))
+	    based on a double-double Horner expansion + 128-entry
+	    log-table, faithfully rounded, with no libm log dependency.
+	    Replaces the previous libm log2 call so chi-square /
+	    entropy output is bit-identical across libcs and FPUs.
+	  - Split-domain rewrite (q = 1 - p exact via Sterbenz) avoids
+	    cancellation when p is close to 1.
+
+	Misc:
+	  - TinyCC compatibility: no __atomic_* builtins, no
+	    __builtin_fma along the hot path; io_uring backend uses
+	    volatile-only ring pointers because io_uring_enter is
+	    itself the kernel-side barrier.
+	  - vzeroupper added at the AVX2 / AVX-512 tail to avoid SSE
+	    state-machine penalties when the caller returns into
+	    non-AVX code.
+	  - Explicit POPCNT inclusion in the GCC builtin gate so the
+	    bit-mode scalar walker doesn't fall through to libgcc's
+	    __popcountdi2 out-of-line helper on -mssse3-only TUs.
 
 2026-05-15  Kamila Szewczyk  <k@iczelia.net>
 

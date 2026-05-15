@@ -6,7 +6,9 @@
 #include "runner.h"
 
 #include "port-thread.h"
+#include "port-walk.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -124,4 +126,132 @@ void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
     if (n == 0) break;
     body(st, src->stream_buf, n);
   }
+}
+
+/*  Recursive mode.  */
+
+typedef struct {
+  const fastent_options * o;
+  fastent_analyze_fn fn_byte;
+  fastent_analyze_fn fn_bits;
+  fastent_analyze_fn fn_byte_fold;
+  fastent_analyze_fn fn_bits_fold;
+  fastent_recursive_row * rows;
+  sz                       count;
+  sz                       cap;
+} recursive_ctx;
+
+static int analyse_one_(const char * path, recursive_ctx * c) {
+  /*  Force mmap when possible (regular files); fall back to stream on
+      open errors so we don't abort the whole walk.  */
+  fastent_source src;
+  fastent_io_mode io = (fastent_io_mode) c->o->io_mode;
+  if (io == FASTENT_IO_AUTO && c->o->no_mmap) io = FASTENT_IO_STREAM;
+  if (fastent_src_open(&src, path, io) != 0) {
+    fprintf(stderr, "skip %s: %s\n", path, strerror(errno));
+    return 0;
+  }
+
+  fastent_chunk_state st;
+  fastent_chunk_state_init(&st);
+  if (src.kind == FASTENT_SRC_MMAP) {
+    fastent_run_mmap(&st, c->o, c->fn_byte, c->fn_bits,
+                     c->fn_byte_fold, c->fn_bits_fold,
+                     (const u8 *) src.map, src.size);
+  } else {
+    fastent_run_stream(&st, c->o, c->fn_byte, c->fn_bits,
+                       c->fn_byte_fold, c->fn_bits_fold, &src);
+  }
+  fastent_src_close(&src);
+
+  fastent_result r;
+  fastent_finalize(&st, c->o->binary, &r);
+
+  if (c->count == c->cap) {
+    sz nc = c->cap ? c->cap * 2 : 32;
+    fastent_recursive_row * nr =
+      (fastent_recursive_row *) realloc(c->rows, nc * sizeof(*nr));
+    if (!nr) { errno = ENOMEM; return -1; }
+    c->rows = nr;
+    c->cap  = nc;
+  }
+  c->rows[c->count].path   = (char *) malloc(strlen(path) + 1);
+  if (!c->rows[c->count].path) { errno = ENOMEM; return -1; }
+  memcpy(c->rows[c->count].path, path, strlen(path) + 1);
+  c->rows[c->count].result = r;
+  c->count++;
+  return 0;
+}
+
+static int walk_cb_(const char * path, void * vctx) {
+  return analyse_one_(path, (recursive_ctx *) vctx);
+}
+
+int fastent_run_recursive(const char * root, const fastent_options * o,
+                          fastent_analyze_fn fn_byte,
+                          fastent_analyze_fn fn_bits,
+                          fastent_analyze_fn fn_byte_fold,
+                          fastent_analyze_fn fn_bits_fold,
+                          fastent_recursive_row ** out_rows,
+                          sz * out_n) {
+  recursive_ctx c;
+  c.o            = o;
+  c.fn_byte      = fn_byte;
+  c.fn_bits      = fn_bits;
+  c.fn_byte_fold = fn_byte_fold;
+  c.fn_bits_fold = fn_bits_fold;
+  c.rows         = NULL;
+  c.count        = 0;
+  c.cap          = 0;
+  int rc = fastent_walk(root, walk_cb_, &c);
+  if (rc != 0) {
+    fastent_rows_free(c.rows, c.count);
+    return -1;
+  }
+  *out_rows = c.rows;
+  *out_n    = c.count;
+  return 0;
+}
+
+void fastent_rows_free(fastent_recursive_row * rows, sz n) {
+  if (!rows) return;
+  for (sz i = 0; i < n; i++) free(rows[i].path);
+  free(rows);
+}
+
+static int g_sort_by_  = 0;
+static int g_sort_desc_ = 0;
+
+static double row_key_(const fastent_recursive_row * r) {
+  switch ((fastent_sort_by) g_sort_by_) {
+    case FASTENT_SORT_SAMPLES:    return (double) r->result.total_samples;
+    case FASTENT_SORT_ENTROPY:    return r->result.entropy;
+    case FASTENT_SORT_CHI_SQUARE: return r->result.chi_square;
+    case FASTENT_SORT_MEAN:       return r->result.mean;
+    case FASTENT_SORT_MONTE_PI:   return r->result.monte_pi;
+    case FASTENT_SORT_SCC:        return r->result.scc;
+    default:                      return 0.0;
+  }
+}
+
+static int cmp_(const void * a, const void * b) {
+  const fastent_recursive_row * ra = (const fastent_recursive_row *) a;
+  const fastent_recursive_row * rb = (const fastent_recursive_row *) b;
+  int rc;
+  if (g_sort_by_ == FASTENT_SORT_PATH) {
+    rc = strcmp(ra->path, rb->path);
+  } else {
+    double ka = row_key_(ra);
+    double kb = row_key_(rb);
+    rc = (ka < kb) ? -1 : (ka > kb) ? 1 : 0;
+  }
+  return g_sort_desc_ ? -rc : rc;
+}
+
+void fastent_rows_sort(fastent_recursive_row * rows, sz n,
+                       const fastent_options * o) {
+  if (o->sort_by == FASTENT_SORT_NONE || n < 2) return;
+  g_sort_by_  = o->sort_by;
+  g_sort_desc_ = o->sort_desc;
+  qsort(rows, n, sizeof *rows, cmp_);
 }

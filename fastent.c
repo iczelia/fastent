@@ -42,8 +42,13 @@ int main(int argc, char ** argv) {
 
   if (!o.path) fastent_os_set_stdin_binary();
 
-  /*  rpath only needed to open the positional argument; the second
-      pledge after src_open() drops it.  */
+  if (o.recursive && !o.path) {
+    fprintf(stderr, "fastent: -r requires a directory path\n");
+    return 1;
+  }
+
+  /*  rpath needed to open files; recursive mode also needs to walk
+      directories so it stays at rpath for the lifetime of the run.  */
   if (fastent_os_pledge(o.path ? "stdio rpath" : "stdio") == -1) {
     perror("pledge");
     return 2;
@@ -56,6 +61,26 @@ int main(int argc, char ** argv) {
   }
   if (o.threads > 1) fastent_set_num_threads(o.threads);
 #endif
+
+  fastent_analyze_fn fn_byte      = fastent_pick_variant(NULL);
+  fastent_analyze_fn fn_bits      = fastent_pick_bits_variant(NULL);
+  fastent_analyze_fn fn_byte_fold = fastent_pick_fold_byte_variant(NULL);
+  fastent_analyze_fn fn_bits_fold = fastent_pick_fold_bits_variant(NULL);
+
+  if (o.recursive) {
+    fastent_recursive_row * rows = NULL;
+    sz n = 0;
+    if (fastent_run_recursive(o.path, &o, fn_byte, fn_bits,
+                              fn_byte_fold, fn_bits_fold, &rows, &n) != 0) {
+      fprintf(stderr, "fastent: %s: %s\n", o.path, strerror(errno));
+      return 2;
+    }
+    fastent_rows_sort(rows, n, &o);
+    if (o.json) fastent_print_recursive_json(rows, n, &o);
+    else        fastent_print_recursive_csv (rows, n, &o);
+    fastent_rows_free(rows, n);
+    return 0;
+  }
 
   fastent_source src;
   fastent_io_mode io_mode = (fastent_io_mode) o.io_mode;
@@ -73,11 +98,6 @@ int main(int argc, char ** argv) {
     perror("pledge");
     return 2;
   }
-
-  fastent_analyze_fn fn_byte      = fastent_pick_variant(NULL);
-  fastent_analyze_fn fn_bits      = fastent_pick_bits_variant(NULL);
-  fastent_analyze_fn fn_byte_fold = fastent_pick_fold_byte_variant(NULL);
-  fastent_analyze_fn fn_bits_fold = fastent_pick_fold_bits_variant(NULL);
 
   fastent_chunk_state st;
   fastent_chunk_state_init(&st);

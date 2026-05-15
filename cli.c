@@ -35,9 +35,14 @@ void fastent_print_help(void) {
   printf("           -j N --threads=N          Use N worker threads"
          " (default 1)\n");
   printf("                --no-mmap            Alias for --io=stream\n");
-  printf("                --io=MODE            mmap (default for regular files),\n");
-  printf("                                     stream, uring (Linux 5.1+), auto\n");
+  printf("                --io=MODE            auto (default), mmap, stream,\n");
+  printf("                                     uring (Linux io_uring / Win32 IOCP)\n");
   printf("                --json               Emit results as JSON\n");
+  printf("           -r,  --recursive          Treat the positional arg as a\n");
+  printf("                                     directory; emit one row per file\n");
+  printf("                --sort-by=COL[:dir]  Sort recursive output by COL:\n");
+  printf("                                     path, samples, entropy, chisq,\n");
+  printf("                                     mean, pi, scc.  dir = asc | desc\n");
   printf("           -V,  --version            Print version and exit\n");
   printf("           -h,  --help               Print this message\n");
 }
@@ -53,6 +58,39 @@ static int parse_int(const char * s, int * out) {
   if (end == s || (end && *end)) return -1;
   if (v < 0 || v > 1024) return -1;
   *out = (int) v;
+  return 0;
+}
+
+static int parse_sort_by_(const char * arg, fastent_options * o) {
+  char buf[64];
+  size_t n = strlen(arg);
+  if (n >= sizeof buf) return -1;
+  memcpy(buf, arg, n + 1);
+  char * colon = strchr(buf, ':');
+  if (colon) {
+    *colon = '\0';
+    const char * dir = colon + 1;
+    if      (!strcmp(dir, "asc"))  o->sort_desc = 0;
+    else if (!strcmp(dir, "desc")) o->sort_desc = 1;
+    else { fprintf(stderr, "--sort-by direction must be asc or desc\n"); return -1; }
+  } else {
+    o->sort_desc = -1;  /*  fill in column default below  */
+  }
+  fastent_sort_by col;
+  if      (!strcmp(buf, "path"))    col = FASTENT_SORT_PATH;
+  else if (!strcmp(buf, "samples")) col = FASTENT_SORT_SAMPLES;
+  else if (!strcmp(buf, "entropy")) col = FASTENT_SORT_ENTROPY;
+  else if (!strcmp(buf, "chisq"))   col = FASTENT_SORT_CHI_SQUARE;
+  else if (!strcmp(buf, "mean"))    col = FASTENT_SORT_MEAN;
+  else if (!strcmp(buf, "pi"))      col = FASTENT_SORT_MONTE_PI;
+  else if (!strcmp(buf, "scc"))     col = FASTENT_SORT_SCC;
+  else {
+    fprintf(stderr, "--sort-by column must be one of: "
+                    "path samples entropy chisq mean pi scc\n");
+    return -1;
+  }
+  o->sort_by = (int) col;
+  if (o->sort_desc == -1) o->sort_desc = (col == FASTENT_SORT_PATH) ? 0 : 1;
   return 0;
 }
 
@@ -88,6 +126,14 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
         else if (LONG_IS("no-mmap"))        o->no_mmap = 1;
         else if (LONG_IS("histogram"))      o->histogram = 1;
         else if (LONG_IS("log"))            o->histogram_log = 1;
+        else if (LONG_IS("recursive"))      o->recursive = 1;
+        else if (LONG_IS("sort-by")) {
+          if (!val) {
+            if (i + 1 >= argc) { fprintf(stderr, "--sort-by requires an argument\n"); return -1; }
+            val = argv[++i];
+          }
+          if (parse_sort_by_(val, o) != 0) return -1;
+        }
         else if (LONG_IS("color")) {
           if (!val) o->color = 2;
           else if (!strcmp(val, "auto"))   o->color = 1;
@@ -128,6 +174,7 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
             case 't': o->terse  = 1; break;
             case 'H': o->histogram = 1; break;
             case 'p': o->full_precision = 1; break;
+            case 'r': o->recursive = 1; break;
             case '?':
             case 'h': fastent_print_help();    exit(0);
             case 'V': fastent_print_version(); exit(0);

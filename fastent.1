@@ -8,7 +8,7 @@ fastent \- pseudorandom byte stream entropy and randomness tester
 .SH SYNOPSIS
 .B fastent
 .RI [ options ]
-.RI [ file ]
+.RI [ file | directory ]
 
 .SH DESCRIPTION
 .B fastent
@@ -17,12 +17,19 @@ results: Shannon entropy, chi-square statistic and tail probability,
 arithmetic mean, Monte Carlo value of \(*p, and serial correlation
 coefficient.  The byte stream is read from
 .I file
-or, if no filename is given, from standard input.
+or, if no filename is given, from standard input.  Pass
+.B \-r
+to recurse into a
+.IR directory ;
+fastent then emits one row per regular file rather than a single
+summary.
 .PP
 The inner loop is vectorised, uses a 4-way banked histogram, and
 dispatches at runtime to the best available SIMD variant on the host
-(scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512).  Regular-file inputs are
-memory-mapped and processed by an optional pthread worker pool with
+(scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512 (+BITALG) / AArch64 NEON /
+AArch64 SVE2 / ARMv7-A NEON / WebAssembly SIMD128).  Regular-file
+inputs are memory-mapped or read via io_uring (Linux 5.1+) / IOCP
+(Windows Vista+) and processed by an optional thread pool with
 deterministic output.
 
 .SH OPTIONS
@@ -77,12 +84,84 @@ serial-correlation sum.  Output is byte-for-byte identical to the
 single-threaded run because all arithmetic is integer and the merge
 order is deterministic.
 .TP
-.B \-\-no-mmap
-Read the input file via
+.B "\-\-io=" \fIMODE\fR
+Pick the input strategy.  \fIMODE\fR is one of:
+.RS
+.IP \fBauto\fR 8
+Default.  Memory-map regular files; fall back to streaming reads
+for stdin, pipes, and unmappable sources.
+.IP \fBmmap\fR 8
+Memory-mapped only; error out if the input cannot be mapped.
+.IP \fBstream\fR 8
+2 MiB
 .BR read (2)
-in 2 MiB chunks rather than mapping it.  Useful when the file lives
-on an unmappable filesystem (e.g.\&
-.IR /proc ).
+loop in all cases.
+.IP \fBuring\fR 8
+Asynchronous, four-way pipelined reads.  io_uring on Linux 5.1+
+(raw
+.BR io_uring_setup "(2) / " io_uring_enter (2),
+no liburing dependency); IOCP on Windows Vista+ (overlapped
+.BR ReadFile " + " GetQueuedCompletionStatus ).
+ENOSYS on other targets.
+.RE
+.TP
+.B \-\-no-mmap
+Alias for
+.BR \-\-io=stream .
+.TP
+.BR \-H ", " \-\-histogram
+Render a vertical block-plot of the byte (or bit) distribution
+before the textual results.  Uses Unicode 1/8-th block glyphs
+(U+2581..U+2588) on terminals that support UTF-8, single-byte CP 437
+glyphs on DOS / Win9x consoles, and ASCII '#' on stdout when
+redirected.  The histogram and other output formats compose: the
+histogram is rendered before the human-readable text but is also
+included alongside
+.BR \-t " and " \-\-json
+when those are set.
+.TP
+.B \-\-log
+Logarithmic Y axis for the histogram.  Useful when one bin dominates.
+.TP
+.B "\-\-color=" \fIMODE\fR
+Colour mode for the histogram.  \fIMODE\fR is
+.BR auto " (default; uses colour iff stdout is a terminal and " NO_COLOR " is unset), "
+.BR always ,
+or
+.BR never .
+Bytes in [0,32) and 127 render in dim grey (control chars), [32,128)
+in default foreground (ASCII printable), [128,256) in accent
+(high-bit / Latin-1).  Colour is emitted as ANSI escapes on POSIX,
+.BR SetConsoleTextAttribute (3)
+on Windows (works on Win95+ without ANSI.SYS), and DJGPP
+.IR <conio.h>
+.BR textcolor / cputs
+BIOS-attribute writes on MS-DOS.
+.TP
+.BR \-r ", " \-\-recursive
+Treat the positional argument as a directory; walk it recursively
+and emit one row per regular file.  Output format is CSV by default
+or JSON under
+.BR \-\-json ;
+the
+.B path
+column comes first, followed by the same six summary metrics as
+.BR \-t .
+Walks do not cross symlinks (except at the root).  Unreadable files
+or directories print a stderr warning and are skipped.
+.TP
+.B "\-\-sort-by=" \fICOL\fR [: \fIDIR\fR ]
+Sort the rows in recursive mode.
+.I COL
+is one of
+.BR path ", " samples ", " entropy ", " chisq ", " mean ", " pi ", " scc .
+.I DIR
+is
+.B asc
+or
+.BR desc ;
+default is descending for the numeric columns and ascending for
+.BR path .
 .TP
 .BR \-h ", " \-\-help
 Print a short usage message and exit.
@@ -147,6 +226,35 @@ field is
 when the input contains only a single distinct value (the
 human-readable output renders this case as
 \fIundefined (all values equal!)\fR).
+.PP
+Under
+.B \-r
+the CSV header becomes
+.RS
+.nf
+path,unit,samples,entropy,chi_square,p_exceed,mean,monte_carlo_pi,serial_correlation
+.fi
+.RE
+with one data line per file (paths are RFC 4180-quoted when they
+contain a comma, double quote, or newline).  JSON recursive output
+nests the file rows under
+.B files
+in a top-level object:
+.RS
+.nf
+{
+  "unit": "byte",
+  "files": [
+    { "path": "...", "samples": <int>, "entropy": <float>, ... },
+    ...
+  ]
+}
+.fi
+.RE
+Any numeric field whose value would be NaN (e.g.\&
+.B monte_carlo_pi
+on a sub-hexad-sized file) is written as JSON
+.BR null .
 
 .SH "EXIT STATUS"
 .B fastent
@@ -170,6 +278,19 @@ Machine-readable summary of a tarball:
 Full-precision terse output for a benchmark:
 .IP
 .B fastent -tp random.bin
+.PP
+Walk a directory and sort files by entropy, descending:
+.IP
+.B fastent -r --sort-by=entropy /var/log
+.PP
+Same as JSON, including the per-file path column, on cold-cache
+NVMe data:
+.IP
+.B fastent -r --json --io=uring /mnt/data > entropy.json
+.PP
+Visualise the byte distribution of a tarball with a log Y axis:
+.IP
+.B fastent -H --log archive.tar.gz
 
 .SH PERFORMANCE
 .B fastent
@@ -179,17 +300,27 @@ reads input via memory mapping with
 and
 .BR posix_fadvise (2)
 .B POSIX_FADV_SEQUENTIAL
-when the input is a regular file, falling back to a 2 MiB
+when the input is a regular file.  On Linux 5.1+ and Windows Vista+
+.B \-\-io=uring
+trades that for a four-deep async pipeline (io_uring on Linux, IOCP
+on Win32) which hides latency on cold-cache NVMe;  hot-cache
+throughput is unchanged.  Otherwise input goes through a 2 MiB
 .BR read (2)
-loop otherwise.  The histogram inner loop uses four banked
-sub-histograms to break the read-modify-write hazard chain; the
-serial-correlation cross-product is computed via signed widened
-multiply + horizontal add (the SSE/AVX2 path with a sign-correction
-term derived from the byte sum, the AVX-512 path with the same
-algorithm widened to 64-byte vectors).  Bit-mode population count
-uses
+loop.
+.PP
+The histogram inner loop uses four banked sub-histograms to break
+the read-modify-write hazard chain; the serial-correlation
+cross-product is computed via signed widened multiply + horizontal
+add (the SSE / AVX2 path with a sign-correction term derived from
+the byte sum, the AVX-512 path with the same algorithm widened to
+64-byte vectors).  Bit-mode population count uses
 .B VPOPCNTB
 on AVX-512 BITALG hosts and a PSHUFB nibble-LUT fallback otherwise.
+The AArch64 SVE2 path uses
+.B svdot_u32
+for the cross-product and runs at the host's native vector length
+(128 to 2048 bits per SVE2 spec).
+.PP
 On a recent x86_64 host with AVX-512 single-thread throughput sits
 around 2.5 GB/s (byte) / 4.7 GB/s (bit); a saturated
 .B \-j auto
@@ -225,9 +356,11 @@ launcher with NODERAWFS host-fs bridge); both run as
 The wasm64 launcher needs node 24 or later (memory64 stabilised in
 V8 13).
 .PP
-The SIMD fast paths are only present on x86 builds; on every other
-target the scalar loop is selected.  The scalar loop is still 4-way
-banked, so non-x86 hosts keep most of the per-byte throughput.
+SIMD fast paths cover x86 (SSSE3 / SSE4.1 / AVX2 / AVX-512 with
+optional BITALG), AArch64 + ARMv7-A (NEON), AArch64 (SVE2), and
+WebAssembly (SIMD128).  Every other target falls back to the scalar
+loop, which is still 4-way banked and keeps most of the per-byte
+throughput.
 
 .SH ENVIRONMENT
 .B fastent

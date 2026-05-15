@@ -15,26 +15,40 @@ Project homepage: https://github.com/iczelia/fastent
 Shannon entropy, chi-square statistic with tail probability, arithmetic
 mean, Monte Carlo value of pi, and serial correlation coefficient.
 Byte mode by default; bit mode under `-b`.  Output formats: human-readable,
-CSV (`-t`), JSON (`--json`); add a per-value occurrence table with `-c`.
+CSV (`-t`), JSON (`--json`); add a per-value occurrence table with `-c`
+or a terminal block-plot of the histogram with `-H`.
 
 ## Highlights
 
 - 4-way banked SIMD histogram in the inner loop, breaking the
   read-modify-write hazard chain on the increment-memory path
 - serial-correlation cross-product via `VPMADDUBSW` with an on-the-fly
-  sign-correction derived from `PSADBW`
+  sign-correction derived from `PSADBW`; AArch64 SVE2 builds use
+  `svdot_u32` at the host's native vector length
 - bit-mode population count via `VPOPCNTB` (AVX-512 BITALG), with a
-  PSHUFB nibble lookup fallback on AVX2 / SSE
-- regular-file inputs memory-mapped with `MADV_SEQUENTIAL` and
-  `POSIX_FADV_SEQUENTIAL`; stream sources go through a 2 MiB aligned
-  `read(2)` loop
+  PSHUFB nibble lookup fallback on AVX2 / SSE, `vcntq_u8` on NEON,
+  and `wasm_i8x16_popcnt` on WebAssembly SIMD128
 - runtime CPU dispatch across scalar / SSSE3 / SSE4.1 / AVX2 /
-  AVX-512 (F + BW + CD + DQ + VL + VPOPCNTDQ + BITALG) via a CPUID
-  query
-- optional pthread worker pool partitioning the mmap region into
-  6-aligned slabs so the Monte Carlo Pi state machine never crosses
-  a thread; merge order is fixed and the multi-threaded output is
-  byte-identical to `-j 1`
+  AVX-512 (F + BW + BITALG) / AArch64 NEON / AArch64 SVE2 / ARMv7-A
+  NEON / WebAssembly SIMD128
+- input strategy selectable via `--io={auto,mmap,stream,uring}`:
+  `mmap` with `MADV_SEQUENTIAL`/`POSIX_FADV_SEQUENTIAL` for regular
+  files; `uring` for a four-deep async pipeline (io_uring on Linux
+  5.1+, IOCP on Windows Vista+) to hide latency on cold-cache NVMe;
+  `stream` for a 2 MiB aligned `read(2)` loop everywhere
+- recursive mode (`-r DIR`) walks a directory and emits one CSV / JSON
+  row per file, with `--sort-by={path,samples,entropy,chisq,mean,pi,scc}`
+- terminal histogram visualisation (`-H`) with Unicode block glyphs,
+  optional log Y axis (`--log`), and platform-native colouring
+  (ANSI / `SetConsoleTextAttribute` / DJGPP `<conio.h>`)
+- optional worker pool (pthread on POSIX, CreateThread + SRWLOCK +
+  CONDITION_VARIABLE on Windows Vista+) partitioning the mmap region
+  into 6-aligned slabs so the Monte Carlo Pi state machine never
+  crosses a thread; merge order is fixed and the multi-threaded
+  output is byte-identical to `-j 1`
+- entropy is computed via a double-double Horner expansion over a
+  128-entry log-table with a split-domain Sterbenz branch at p=0.5;
+  faithfully rounded and bit-identical across libc / FPU
 - portable C99 sources: builds under gcc, clang, mingw-w64, DJGPP,
   and TinyCC; only the SIMD bodies need a vendor-extended compiler
 
@@ -84,9 +98,10 @@ sudo make install
 Verified to compile and pass `make check`:
 
 Primary platforms:
-- Linux: x86_64, i386, aarch64, armhf (gcc, clang, tcc)
-- Windows: x86_64, i686, aarch64 (mingw-w64, zig cc)
-- macOS: x86_64, aarch64 (clang)
+- Linux: x86_64, i386, aarch64 (NEON + SVE2), armhf (NEON) (gcc, clang, tcc)
+- Windows: x86_64, i686, aarch64 (mingw-w64, zig cc) - threads + IOCP on Vista+
+- macOS: x86_64, aarch64 (NEON + SVE2) (clang)
+- OpenBSD / FreeBSD: pledge(2) on OpenBSD; SVE2 hwcap query on FreeBSD/macOS
 
 Exotic Linux (musl, fully static; smoke-tested under qemu-user):
 - riscv64, ppc64le, ppc64, powerpc, s390x, loongarch64,

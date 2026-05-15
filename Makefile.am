@@ -8,17 +8,19 @@ noinst_HEADERS = analyze.h analyze-impl.h chisq.h \
                  common.h fastent-win32.h \
                  fastent-math.h log2_tables.h \
                  fastent-options.h output.h cli.h runner.h \
-                 port-cpu.h port-io.h port-term.h port-os.h port-thread.h
+                 port-cpu.h port-io.h port-term.h port-os.h \
+                 port-thread.h port-walk.h
 
 fastent_SOURCES = fastent.c cli.c runner.c \
                   analyze.c analyze-scalar.c chisq.c \
                   fastent-math.c \
                   output-default.c output-terse.c output-json.c \
-                  output-histogram.c \
+                  output-histogram.c output-recursive.c \
                   port-cpu-x86.c port-cpu-arm.c port-cpu-other.c \
                   port-io.c port-io-posix.c port-io-win32.c \
                   port-term-posix.c port-term-win32.c port-term-djgpp.c \
-                  port-os-posix.c port-os-win32.c
+                  port-os-posix.c port-os-win32.c \
+                  port-walk-posix.c port-walk-win32.c
 if FASTENT_THREADS
 fastent_SOURCES += port-thread-posix.c port-thread-win32.c
 endif
