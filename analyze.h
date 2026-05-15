@@ -70,7 +70,8 @@ typedef enum {
   FASTENT_VAR_AVX512_       = 4,
   FASTENT_VAR_AVX512_BITALG = 5,
   FASTENT_VAR_NEON_         = 6,
-  FASTENT_VAR_WASM128_      = 7
+  FASTENT_VAR_WASM128_      = 7,
+  FASTENT_VAR_SVE2_         = 8
 } fastent_variant;
 
 typedef void (* fastent_analyze_fn)(fastent_chunk_state *, const u8 *, sz);
@@ -99,6 +100,9 @@ void analyze_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, sz len);
 #ifdef HAVE_NEON
 void analyze_neon(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
+#ifdef HAVE_SVE2
+void analyze_sve2(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
 #ifdef HAVE_WASM128
 void analyze_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
@@ -125,6 +129,9 @@ void analyze_fold_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, sz len
 #endif
 #ifdef HAVE_NEON
 void analyze_fold_neon(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_SVE2
+void analyze_fold_sve2(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_WASM128
 void analyze_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -155,6 +162,9 @@ void analyze_bits_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, sz len
 #ifdef HAVE_NEON
 void analyze_bits_neon(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
+#ifdef HAVE_SVE2
+void analyze_bits_sve2(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
 #ifdef HAVE_WASM128
 void analyze_bits_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
@@ -178,6 +188,9 @@ void analyze_bits_fold_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, s
 #endif
 #ifdef HAVE_NEON
 void analyze_bits_fold_neon(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_SVE2
+void analyze_bits_fold_sve2(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_WASM128
 void analyze_bits_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -208,6 +221,9 @@ void fold_avx512_bitalg(u8 * buf, sz len);
 #endif
 #ifdef HAVE_NEON
 void fold_neon(u8 * buf, sz len);
+#endif
+#ifdef HAVE_SVE2
+void fold_sve2(u8 * buf, sz len);
 #endif
 #ifdef HAVE_WASM128
 void fold_wasm128(u8 * buf, sz len);

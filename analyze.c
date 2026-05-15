@@ -289,6 +289,45 @@ static inline int fastent_have_wasm128_runtime(void) { return 1; }
   #endif
 #endif
 
+/*  SVE2 runtime probe.  AArch64 only (build-time gate).  Linux exposes
+    SVE2 in AT_HWCAP2 (bit 1 per linux/arch/arm64/include/uapi/asm/hwcap.h),
+    FreeBSD via elf_aux_info(AT_HWCAP2), Darwin via
+    sysctlbyname("hw.optional.arm.FEAT_SVE2").  Anywhere else we return
+    0 so the dispatcher falls through to NEON.  */
+#ifdef HAVE_SVE2
+  #if defined(__linux__) && defined(HAVE_SYS_AUXV_H) && defined(HAVE_GETAUXVAL)
+    #include <sys/auxv.h>
+    #ifndef HWCAP2_SVE2
+      #define HWCAP2_SVE2 (1u << 1)
+    #endif
+    static int fastent_have_sve2_runtime(void) {
+      return (getauxval(AT_HWCAP2) & HWCAP2_SVE2) != 0;
+    }
+  #elif defined(__FreeBSD__)
+    #include <sys/auxv.h>
+    #ifndef HWCAP2_SVE2
+      #define HWCAP2_SVE2 (1u << 1)
+    #endif
+    static int fastent_have_sve2_runtime(void) {
+      unsigned long hwcap2 = 0;
+      if (elf_aux_info(AT_HWCAP2, &hwcap2, sizeof(hwcap2)) != 0) return 0;
+      return (hwcap2 & HWCAP2_SVE2) != 0;
+    }
+  #elif defined(__APPLE__)
+    #include <sys/sysctl.h>
+    #include <stddef.h>
+    static int fastent_have_sve2_runtime(void) {
+      int    v   = 0;
+      size_t len = sizeof(v);
+      if (sysctlbyname("hw.optional.arm.FEAT_SVE2", &v, &len, NULL, 0) != 0)
+        return 0;
+      return v != 0;
+    }
+  #else
+    static inline int fastent_have_sve2_runtime(void) { return 0; }
+  #endif
+#endif
+
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
   fastent_variant v = FASTENT_VAR_SCALAR;
   fastent_analyze_fn fn = analyze_scalar;
@@ -311,6 +350,9 @@ fastent_analyze_fn fastent_pick_variant(fastent_variant * which) {
   #ifdef HAVE_NEON
     if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = analyze_neon; }
   #endif
+  #ifdef HAVE_SVE2
+    if (fastent_have_sve2_runtime())           { v = FASTENT_VAR_SVE2_;         fn = analyze_sve2; }
+  #endif
   #ifdef HAVE_WASM128
     if (fastent_have_wasm128_runtime())        { v = FASTENT_VAR_WASM128_;      fn = analyze_wasm128; }
   #endif
@@ -326,6 +368,7 @@ const char * fastent_variant_name(fastent_variant v) {
     case FASTENT_VAR_AVX2_:         return "avx2";
     case FASTENT_VAR_SSE41_:        return "sse4.1";
     case FASTENT_VAR_SSSE3_:        return "ssse3";
+    case FASTENT_VAR_SVE2_:         return "sve2";
     case FASTENT_VAR_NEON_:         return "neon";
     case FASTENT_VAR_WASM128_:      return "wasm-simd128";
     case FASTENT_VAR_SCALAR:        return "scalar";
@@ -358,6 +401,9 @@ fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which) {
   #ifdef HAVE_NEON
     if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = analyze_bits_neon; }
   #endif
+  #ifdef HAVE_SVE2
+    if (fastent_have_sve2_runtime())           { v = FASTENT_VAR_SVE2_;         fn = analyze_bits_sve2; }
+  #endif
   #ifdef HAVE_WASM128
     if (fastent_have_wasm128_runtime())        { v = FASTENT_VAR_WASM128_;      fn = analyze_bits_wasm128; }
   #endif
@@ -388,6 +434,9 @@ fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which) {
   #endif
   #ifdef HAVE_NEON
     if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = analyze_fold_neon; }
+  #endif
+  #ifdef HAVE_SVE2
+    if (fastent_have_sve2_runtime())           { v = FASTENT_VAR_SVE2_;         fn = analyze_fold_sve2; }
   #endif
   #ifdef HAVE_WASM128
     if (fastent_have_wasm128_runtime())        { v = FASTENT_VAR_WASM128_;      fn = analyze_fold_wasm128; }
@@ -420,6 +469,9 @@ fastent_analyze_fn fastent_pick_fold_bits_variant(fastent_variant * which) {
   #ifdef HAVE_NEON
     if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = analyze_bits_fold_neon; }
   #endif
+  #ifdef HAVE_SVE2
+    if (fastent_have_sve2_runtime())           { v = FASTENT_VAR_SVE2_;         fn = analyze_bits_fold_sve2; }
+  #endif
   #ifdef HAVE_WASM128
     if (fastent_have_wasm128_runtime())        { v = FASTENT_VAR_WASM128_;      fn = analyze_bits_fold_wasm128; }
   #endif
@@ -450,6 +502,9 @@ fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which) {
   #endif
   #ifdef HAVE_NEON
     if (fastent_have_neon_runtime())           { v = FASTENT_VAR_NEON_;         fn = fold_neon; }
+  #endif
+  #ifdef HAVE_SVE2
+    if (fastent_have_sve2_runtime())           { v = FASTENT_VAR_SVE2_;         fn = fold_sve2; }
   #endif
   #ifdef HAVE_WASM128
     if (fastent_have_wasm128_runtime())        { v = FASTENT_VAR_WASM128_;      fn = fold_wasm128; }

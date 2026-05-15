@@ -61,6 +61,13 @@ libfastent_neon_a_CFLAGS    = $(AM_CFLAGS) $(NEON_CFLAGS)
 fastent_LDADD              += libfastent_neon.a
 endif
 
+if HAVE_SVE2
+noinst_LIBRARIES           += libfastent_sve2.a
+libfastent_sve2_a_SOURCES   = analyze-sve2.c
+libfastent_sve2_a_CFLAGS    = $(AM_CFLAGS) $(SVE2_CFLAGS)
+fastent_LDADD              += libfastent_sve2.a
+endif
+
 if HAVE_WASM128
 noinst_LIBRARIES               += libfastent_wasm128.a
 libfastent_wasm128_a_SOURCES    = analyze-wasm128simd.c

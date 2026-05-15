@@ -206,9 +206,9 @@ AC_MSG_CHECKING([for NEON intrinsics with $CC])
 AC_COMPILE_IFELSE(
   [AC_LANG_PROGRAM([[
     /*  Refuse big-endian NEON: lane numbering is reversed relative to
-        memory, so vget_low_*/vget_high_* return swapped halves and the
-        tbl1q emulation reads wrong table bytes.  Bailing out lets the
-        build fall back to the scalar variant.  */
+        memory, so vget_low_xxx / vget_high_xxx return swapped halves
+        and the tbl1q emulation reads wrong table bytes.  Bailing out
+        lets the build fall back to the scalar variant.  */
     #if defined(__ARM_BIG_ENDIAN) || \
         (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
     #error big-endian NEON unsupported
@@ -294,6 +294,58 @@ if test "x$fastent_have_neon" = "xno" && test "x$fastent_is_arm32" = "xyes"; the
      fastent_have_neon=yes],
     [AC_MSG_RESULT([no])])
 fi
+
+# SVE2.  AArch64-only; ARMv9-A or ARMv8-A+sve2 hardware.  SVE2 strictly
+# extends NEON (a CPU that has SVE2 always has NEON), so the SVE2 TU
+# only gets built when NEON is also available - the dispatcher prefers
+# SVE2 at runtime and falls back to NEON when HWCAP2_SVE2 is unset.
+# Big-endian is refused for the same lane-ordering reasons as NEON.
+# Probe order: try -march=armv8-a+sve2 (GCC/Clang baseline syntax),
+# then -march=armv9-a (some Apple/Linaro toolchains prefer this).
+SVE2_CFLAGS=""
+fastent_have_sve2=no
+if test "x$fastent_skip_simd" != "xyes" && test "x$fastent_have_neon" = "xyes"; then
+  CFLAGS="$save_CFLAGS"
+  AC_COMPILE_IFELSE(
+    [AC_LANG_SOURCE([[
+      #ifndef __aarch64__
+      #error not AArch64
+      #endif
+      int main(void) { return 0; }
+    ]])],
+    [fastent_is_aarch64=yes],
+    [fastent_is_aarch64=no])
+
+  if test "x$fastent_is_aarch64" = "xyes"; then
+    for fastent_sve2_try in "-march=armv8-a+sve2" "-march=armv9-a"; do
+      test "x$SVE2_CFLAGS" != "x" && break
+      CFLAGS="$save_CFLAGS $fastent_sve2_try"
+      AC_MSG_CHECKING([for SVE2 intrinsics with $CC $fastent_sve2_try])
+      AC_COMPILE_IFELSE(
+        [AC_LANG_PROGRAM([[
+          #if defined(__ARM_BIG_ENDIAN) || \
+              (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+          #error big-endian SVE2 unsupported
+          #endif
+          #include <arm_sve.h>
+        ]], [[
+          svbool_t pg = svptrue_b8();
+          svuint8_t a = svdup_n_u8(7);
+          svuint8_t b = svcnt_u8_x(pg, a);
+          /*  svtbl needs an SVE2 host; on SVE-only it'd still link but
+              -march=armv8-a+sve2 won't accept it.  */
+          svuint8_t c = svtbl_u8(b, svdup_n_u8(0));
+          return (int) svaddv_u8(pg, c);
+        ]])],
+        [AC_MSG_RESULT([yes])
+         AC_DEFINE([HAVE_SVE2], [1], [Define if SVE2 intrinsics are available])
+         SVE2_CFLAGS="$fastent_sve2_try"
+         fastent_have_sve2=yes],
+        [AC_MSG_RESULT([no])])
+    done
+  fi
+fi
+CFLAGS="$save_CFLAGS"
 
 CFLAGS="$save_CFLAGS -mssse3"
 AC_MSG_CHECKING([for SSSE3 intrinsics with $CC])
@@ -460,6 +512,7 @@ AC_SUBST([AVX2_CFLAGS])
 AC_SUBST([AVX512_CFLAGS])
 AC_SUBST([AVX512_BITALG_CFLAGS])
 AC_SUBST([NEON_CFLAGS])
+AC_SUBST([SVE2_CFLAGS])
 AC_SUBST([WASM128_CFLAGS])
 AM_CONDITIONAL([HAVE_SSSE3],         [test "x$SSSE3_CFLAGS"         != "x"])
 AM_CONDITIONAL([HAVE_SSE41],         [test "x$SSE41_CFLAGS"         != "x"])
@@ -467,6 +520,7 @@ AM_CONDITIONAL([HAVE_AVX2],          [test "x$AVX2_CFLAGS"          != "x"])
 AM_CONDITIONAL([HAVE_AVX512],        [test "x$AVX512_CFLAGS"        != "x"])
 AM_CONDITIONAL([HAVE_AVX512_BITALG], [test "x$AVX512_BITALG_CFLAGS" != "x"])
 AM_CONDITIONAL([HAVE_NEON],          [test "x$fastent_have_neon"    = "xyes"])
+AM_CONDITIONAL([HAVE_SVE2],          [test "x$fastent_have_sve2"    = "xyes"])
 AM_CONDITIONAL([HAVE_WASM128],       [test "x$fastent_have_wasm128" = "xyes"])
 
 # Optional optimisations.
