@@ -127,8 +127,8 @@ before DDR4 bandwidth caps it.
 
 The byte-histogram inner loop does 64 indexed read-modify-write
 stores per 64-byte stride into four banked u32 counters.  The
-AVX-512 path (activated when the host advertises AVX-512F + BW + CD
-+ VPOPCNTDQ + BITALG) doubles the stride to 128 bytes and runs SCC,
+AVX-512 path (activated when the host advertises AVX-512F + BW + CD +
+VPOPCNTDQ + BITALG) doubles the stride to 128 bytes and runs SCC,
 fold, and Monte Carlo Pi at 64-byte vector width.  The histogram
 itself stays banked-scalar: `VPSCATTERDD` is roughly 16 c reciprocal
 throughput for a 16-element zmm scatter on current x86 (Zen 3 / Zen
