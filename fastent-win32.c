@@ -344,6 +344,34 @@ void fastent_win32_set_console_fg(int cls) {
   SetConsoleTextAttribute(h, attr);
 }
 
+void fastent_win32_set_console_sev(int sev) {
+  HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+  if (h == NULL || h == INVALID_HANDLE_VALUE) return;
+  static WORD initial_attrs = 0;
+  static int  initial_saved = 0;
+  if (!initial_saved) {
+    CONSOLE_SCREEN_BUFFER_INFO info;
+    if (GetConsoleScreenBufferInfo(h, &info)) {
+      initial_attrs = info.wAttributes;
+      initial_saved = 1;
+    } else return;
+  }
+  WORD attr;
+  if (sev < 0) {
+    attr = initial_attrs;
+  } else {
+    static const WORD sv[4] = {
+      FOREGROUND_GREEN | FOREGROUND_INTENSITY,
+      FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY,
+      FOREGROUND_RED | FOREGROUND_INTENSITY,
+      FOREGROUND_INTENSITY
+    };
+    WORD bg_bits = initial_attrs & 0x00F0;
+    attr = (WORD)(sv[sev & 3] | bg_bits);
+  }
+  SetConsoleTextAttribute(h, attr);
+}
+
 void fastent_win32_mmap_prefetch(void * base, unsigned long long size) {
   /*  PrefetchVirtualMemory is Win 8+; resolve at runtime so this
       binary still loads on Vista/7.  */

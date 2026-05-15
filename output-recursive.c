@@ -31,7 +31,11 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
   const int fp = o->full_precision;
   const char * f = fp ? "%.17g" : "%g";
   fputs("path,unit,samples,entropy,chi_square,p_exceed,"
-        "mean,monte_carlo_pi,serial_correlation\n", stdout);
+        "mean,monte_carlo_pi,serial_correlation", stdout);
+  if (o->extended)
+    fputs(",min_entropy,collision_entropy,ic,poker,poker_p,variance,stddev,"
+          "redundancy,distinct,mode,mode_count,rarest,rarest_count", stdout);
+  putchar('\n');
   for (sz i = 0; i < n; i++) {
     const fastent_recursive_row * r = &rows[i];
     csv_escape_(r->path);
@@ -44,6 +48,21 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
     printf(f, r->result.monte_pi);    putchar(',');
     if (r->result.scc < -99999) fputs("nan", stdout);
     else                        printf(f, r->result.scc);
+    if (o->extended) {
+      putchar(','); printf(f, r->result.min_entropy);
+      putchar(','); printf(f, r->result.collision_entropy);
+      putchar(','); printf(f, r->result.ic);
+      putchar(','); printf(f, r->result.poker_chisq);
+      putchar(','); printf(f, r->result.poker_p);
+      putchar(','); printf(f, r->result.variance);
+      putchar(','); printf(f, r->result.stddev);
+      putchar(','); printf(f, r->result.redundancy);
+      printf(",%u,%d,%llu,%d,%llu",
+             r->result.distinct, r->result.mode_value,
+             (unsigned long long) r->result.mode_count,
+             r->result.rarest_value,
+             (unsigned long long) r->result.rarest_count);
+    }
     putchar('\n');
   }
 }
@@ -93,6 +112,36 @@ void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
     fputs(", \"serial_correlation\": ", stdout);
     if (r->result.scc < -99999) fputs("null", stdout);
     else                        json_num_(f, r->result.scc);
+    if (o->extended) {
+      fputs(", \"min_entropy\": ", stdout);
+      json_num_(f, r->result.min_entropy);
+      fputs(", \"collision_entropy\": ", stdout);
+      json_num_(f, r->result.collision_entropy);
+      fputs(", \"index_of_coincidence\": ", stdout);
+      json_num_(f, r->result.ic);
+      fputs(", \"poker\": ", stdout);
+      if (!(r->result.poker_chisq == r->result.poker_chisq)) {
+        fputs("null", stdout);
+      } else {
+        printf("{ \"statistic\": "); printf(f, r->result.poker_chisq);
+        printf(", \"df\": 15, \"p_exceed\": "); printf(f, r->result.poker_p);
+        printf(" }");
+      }
+      fputs(", \"variance\": ", stdout);   json_num_(f, r->result.variance);
+      fputs(", \"stddev\": ", stdout);     json_num_(f, r->result.stddev);
+      fputs(", \"redundancy\": ", stdout); json_num_(f, r->result.redundancy);
+      printf(", \"distinct_symbols\": %u", r->result.distinct);
+      fputs(", \"most_common\": ", stdout);
+      if (r->result.mode_value < 0) fputs("null", stdout);
+      else printf("{ \"value\": %d, \"count\": %llu }",
+                  r->result.mode_value,
+                  (unsigned long long) r->result.mode_count);
+      fputs(", \"rarest\": ", stdout);
+      if (r->result.rarest_value < 0) fputs("null", stdout);
+      else printf("{ \"value\": %d, \"count\": %llu }",
+                  r->result.rarest_value,
+                  (unsigned long long) r->result.rarest_count);
+    }
     fputs(" }", stdout);
     if (i + 1 < n) putchar(',');
     putchar('\n');

@@ -230,6 +230,13 @@ static double row_key_(const fastent_recursive_row * r) {
     case FASTENT_SORT_MEAN:       return r->result.mean;
     case FASTENT_SORT_MONTE_PI:   return r->result.monte_pi;
     case FASTENT_SORT_SCC:        return r->result.scc;
+    case FASTENT_SORT_MIN_ENTROPY:return r->result.min_entropy;
+    case FASTENT_SORT_COLLISION:  return r->result.collision_entropy;
+    case FASTENT_SORT_IC:         return r->result.ic;
+    case FASTENT_SORT_POKER:      return r->result.poker_chisq;
+    case FASTENT_SORT_VARIANCE:   return r->result.variance;
+    case FASTENT_SORT_REDUNDANCY: return r->result.redundancy;
+    case FASTENT_SORT_DISTINCT:   return (double) r->result.distinct;
     default:                      return 0.0;
   }
 }

@@ -65,34 +65,13 @@ static inline dd_t log2_1pr_poly(f64 r) {
   return dd_mul_d_(poly, r);
 }
 
-f64 fastent_entropy_term(f64 p) {
+/*  log2(x) in DD by the generic exponent / mantissa decomposition.
+    Correct for any finite x > 0 (handles denormals).  The only weak
+    spot is the e + log2(m) cancellation for x just below 1 (e = -1,
+    m near 2); callers that hit that regime use log2_near1_dd_.  */
+static dd_t log2_generic_dd_(f64 x) {
   u64 pb;
-  memcpy(&pb, &p, 8);
-  if (pb >> 63) {
-    if (pb == 0x8000000000000000ULL) return 0.0;  /*  -0  */
-    return fastent_qnan_();
-  }
-  if ((pb >> 52) == 0x7ff) return fastent_qnan_();
-  if (pb == 0)             return 0.0;
-  if (p >= 1.0)            return p == 1.0 ? 0.0 : fastent_qnan_();
-  if (p == 0.5)            return 0.5;
-
-  if (p > 0.5) {
-    /*  Split-domain.  q = 1 - p is Sterbenz-exact; log2(1-q) is then
-        computed without the e + log2(m) cancellation that hurts the
-        bare m-decomposition for p near 1.  */
-    f64 q  = 1.0 - p;
-    int i  = (int)(q * 256.0);
-    f64 ci = (f64) i / 256.0;
-    f64 s  = q - ci;
-    f64 u  = s * fastent_inv_one_minus_c[i];
-    dd_t log2_1mu = log2_1pr_poly(-u);
-    dd_t log2_p   = dd_add_(fastent_log2_T_minus_dd[i], log2_1mu);
-    dd_t neg_log2 = (dd_t){ -log2_p.hi, -log2_p.lo };
-    dd_t res_dd   = dd_mul_d_(neg_log2, p);
-    return res_dd.hi + res_dd.lo;
-  }
-
+  memcpy(&pb, &x, 8);
   i32 e_biased = (i32)((pb >> 52) & 0x7ff);
   u64 mant     = pb & 0x000fffffffffffffULL;
   i32 e;
@@ -116,9 +95,81 @@ f64 fastent_entropy_term(f64 p) {
 
   dd_t log2_1ps = log2_1pr_poly(r);
   dd_t log2_m   = dd_add_(fastent_log2_T_dd[i], log2_1ps);
-  dd_t log2_p   = dd_add_d_(log2_m, (f64) e);
+  return dd_add_d_(log2_m, (f64) e);
+}
 
+/*  log2(x) in DD for 0.5 < x < 1, via q = 1 - x (Sterbenz-exact), so
+    the result avoids the e + log2(m) cancellation near 1.  */
+static dd_t log2_near1_dd_(f64 x) {
+  f64 q  = 1.0 - x;
+  int i  = (int)(q * 256.0);
+  f64 ci = (f64) i / 256.0;
+  f64 s  = q - ci;
+  f64 u  = s * fastent_inv_one_minus_c[i];
+  dd_t log2_1mu = log2_1pr_poly(-u);
+  return dd_add_(fastent_log2_T_minus_dd[i], log2_1mu);
+}
+
+f64 fastent_entropy_term(f64 p) {
+  u64 pb;
+  memcpy(&pb, &p, 8);
+  if (pb >> 63) {
+    if (pb == 0x8000000000000000ULL) return 0.0;  /*  -0  */
+    return fastent_qnan_();
+  }
+  if ((pb >> 52) == 0x7ff) return fastent_qnan_();
+  if (pb == 0)             return 0.0;
+  if (p >= 1.0)            return p == 1.0 ? 0.0 : fastent_qnan_();
+  if (p == 0.5)            return 0.5;
+
+  /*  Same op sequence as before the split into helpers, so the
+      finalised entropy stays bit-identical.  */
+  dd_t log2_p   = (p > 0.5) ? log2_near1_dd_(p) : log2_generic_dd_(p);
   dd_t neg_log2 = (dd_t){ -log2_p.hi, -log2_p.lo };
   dd_t res_dd   = dd_mul_d_(neg_log2, p);
   return res_dd.hi + res_dd.lo;
+}
+
+f64 fastent_log2(f64 x) {
+  u64 b;
+  memcpy(&b, &x, 8);
+  if ((b >> 52 & 0x7ff) == 0x7ff)            /*  NaN or +-inf  */
+    return (b << 1) == 0xffe0000000000000ULL ? x : fastent_qnan_();
+  if (b >> 63 || b == 0) return fastent_qnan_();   /*  x <= 0  */
+  if (x == 1.0)          return 0.0;
+  dd_t lp = (x > 0.5 && x < 1.0) ? log2_near1_dd_(x) : log2_generic_dd_(x);
+  return lp.hi + lp.lo;
+}
+
+f64 fastent_log2_ge1(f64 x) {
+  u64 b;
+  memcpy(&b, &x, 8);
+  if ((b >> 52 & 0x7ff) == 0x7ff)
+    return (b << 1) == 0xffe0000000000000ULL ? x : fastent_qnan_();
+  if (b >> 63 || b == 0) return fastent_qnan_();
+  if (x == 1.0)          return 0.0;
+  dd_t lp = log2_generic_dd_(x);   /*  x >= 1: no split, no denormal  */
+  return lp.hi + lp.lo;
+}
+
+f64 fastent_log2_ratio(u64 a, u64 b) {
+  if (b == 0 || a == 0) return fastent_qnan_();
+  if (a == b)           return 0.0;
+  return fastent_log2_ge1((f64) a / (f64) b);
+}
+
+f64 fastent_log2_fast(f64 x) {
+  /*  Caller guarantees finite normal x > 0.  ~1e-9, plain double.  */
+  u64 b;
+  memcpy(&b, &x, 8);
+  i32 e    = (i32)((b >> 52) & 0x7ff) - 1023;
+  u64 mant = b & 0x000fffffffffffffULL;
+  u64 mb   = ((u64) 1023u << 52) | mant;
+  f64 m;
+  memcpy(&m, &mb, 8);
+  int i  = (int)((mant >> 45) & 0x7f);
+  f64 r  = fma(m, fastent_inv_c[i], -1.0);
+  /*  log2(1+r) ~ (r - r^2/2 + r^3/3) / ln2, |r| < 2^-7.  */
+  f64 poly = r * (1.0 + r * (-0.5 + r * (1.0 / 3.0)));
+  return (f64) e + fastent_log2_T_dd[i].hi + poly * 1.4426950408889634;
 }

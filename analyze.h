@@ -58,6 +58,22 @@ typedef struct {
   f64 mean;
   f64 monte_pi;
   f64 scc;
+
+  /*  Extended stats (always computed; surfaced only under -e).  */
+  f64 min_entropy;        /*  H_inf = -log2(max p_i), bits per sample  */
+  f64 collision_entropy;  /*  H_2   = -log2(sum p_i^2), bits per sample */
+  f64 ic;                 /*  index of coincidence                     */
+  f64 poker_chisq;        /*  16-bin nibble chi-square; NaN in bit mode */
+  f64 poker_p;            /*  upper tail, df=15;        NaN in bit mode */
+  f64 variance;           /*  of sample value                          */
+  f64 stddev;
+  f64 redundancy;         /*  1 - H/Hmax                               */
+  u32 distinct;           /*  distinct symbols observed                */
+  int mode_value;         /*  most frequent symbol (-1 if none)        */
+  u64 mode_count;
+  int rarest_value;       /*  least frequent observed symbol (-1 none) */
+  u64 rarest_count;
+
   u64 hist[256];     /*  For -c output. In bit mode, hist[0]/hist[1] are bit counts.  */
 } fastent_result;
 

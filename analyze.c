@@ -50,17 +50,76 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
   out->mean = (out->total_samples > 0) ? (sum_x / totalc) : NAN;
 
   const f64 cexp = totalc / (f64) bins;
-  f64 chisq = 0.0, entropy = 0.0;
+  f64 chisq = 0.0, entropy = 0.0, sum_c2 = 0.0;
+  u64 max_count = 0, min_count = (u64) -1;
+  int mode_value = -1, rarest_value = -1;
+  u32 distinct = 0;
   Fi(bins,
-     const f64 a = (f64) out->hist[i] - cexp;
+     const u64 c = out->hist[i];
+     const f64 a = (f64) c - cexp;
      chisq += (a * a) / cexp;
-     const f64 p = (f64) out->hist[i] / totalc;
-     entropy += fastent_entropy_term(p))
+     const f64 p = (f64) c / totalc;
+     entropy += fastent_entropy_term(p);
+     sum_c2 += (f64) c * (f64) c;
+     if (c) {
+       distinct++;
+       if (c > max_count) { max_count = c; mode_value   = i; }
+       if (c < min_count) { min_count = c; rarest_value = i; }
+     })
   out->chi_square = chisq;  out->entropy = entropy;
 
   out->chi_probability = fastent_chisq_tail(chisq, binary);
 
   out->monte_pi = 4.0 * ((f64) st->mc_inside / (f64) st->mc_count);
+
+  /*  Extended stats.  Pure functions of the merged histogram and the
+      sums above, so they keep the slab-merge determinism.
+
+      Min-entropy and collision entropy are log2 of an exact ratio that
+      is always >= 1 (max_count <= N, and sum_c2 in [N^2/bins, N^2]):
+        H_inf = log2(N / max_count)
+        H_2   = log2(N^2 / sum_c2)
+      so they use the faithful libm-free fastent_log2 family directly,
+      no probability detour, bit-identical across hosts.  */
+  const f64 hmax = binary ? 1.0 : 8.0;
+  out->distinct      = distinct;
+  out->mode_value    = mode_value;
+  out->mode_count    = max_count;
+  out->rarest_value  = rarest_value;
+  out->rarest_count  = (rarest_value < 0) ? 0 : min_count;
+
+  if (out->total_samples > 0) {
+    out->min_entropy       = fastent_log2_ratio(out->total_samples,
+                                                max_count);
+    out->collision_entropy =
+        fastent_log2_ge1(totalc * totalc / sum_c2);
+    out->redundancy        = 1.0 - entropy / hmax;
+    const f64 var = sum_x2 / totalc - out->mean * out->mean;
+    out->variance = var > 0.0 ? var : 0.0;
+    out->stddev   = sqrt(out->variance);
+  } else {
+    out->min_entropy = out->collision_entropy = NAN;
+    out->redundancy  = out->variance = out->stddev = NAN;
+  }
+
+  out->ic = (out->total_samples >= 2)
+            ? (sum_c2 - totalc) / (totalc * (totalc - 1.0)) : NAN;
+
+  if (binary || out->total_samples == 0) {
+    out->poker_chisq = out->poker_p = NAN;
+  } else {
+    u64 nib[16];
+    memset(nib, 0, sizeof(nib));
+    Fi(256,
+       const u64 c = out->hist[i];
+       nib[i & 15] += c;
+       nib[(i >> 4) & 15] += c)
+    const f64 ek = totalc / 8.0;  /*  2*N nibbles / 16 bins  */
+    f64 pk = 0.0;
+    Fi(16, const f64 d = (f64) nib[i] - ek; pk += (d * d) / ek)
+    out->poker_chisq = pk;
+    out->poker_p     = fastent_chisq_tail_df(pk, 15);
+  }
 }
 
 /*  Variant table.  Order matters: dispatcher picks the LAST entry whose

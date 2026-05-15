@@ -266,22 +266,27 @@ static dd_t Q_05_dd(f64 z) {
   return dd_mul(pref, h);
 }
 
-/*  Q(127.5, z): byte-mode tail via half-integer closed form.
+/*  Q(a, z) for half-integer a = m + 1/2, via the by-parts closed form.
 
-      Q(127.5, z) = Q(0.5, z) + 2 * e^-z * U(z)
-      U(z)        = sum_{k=0}^{126} T_k
+      Q(m+0.5, z) = Q(0.5, z) + 2 * e^-z * U(z)
+      U(z)        = sum_{k=0}^{m-1} T_k
       T_0         = sqrt(z/pi)
       T_{k+1}     = T_k * 2z/(2k+3)
 
-    The 127-step recurrence on T_k runs in normal range for all z
+    m = (df - 1) / 2 for odd df:  m = 127 (df = 255, byte mode),
+    m = 7 (df = 15, poker test), m = 0 (df = 1, bit mode: the sum
+    is empty and the result reduces to Q(0.5, z)).
+
+    The m-step recurrence on T_k runs in normal range for all z
     in [0, 750].  e^-z is computed scaled (mantissa + 2^k exponent)
     and applied via a single ldexp AFTER the product U * mantissa
     is formed, so the deep tail (z near 745, e^-z subnormal) does
     not destroy the recurrence's accumulated precision.  */
 
-static dd_t Q_1275_dd(f64 z) {
+static dd_t Q_halfint_dd(f64 z, int m) {
   if (z <= 0.0)   return dd_of(1.0);
   if (z >= 750.0) return dd_of(0.0);
+  if (m <= 0)     return Q_05_dd(z);
 
   /*  T_0 = sqrt(z/pi) in DD.  Sqrt-of-DD via one Newton step over
       the dd_sqrt_d seed.  */
@@ -292,9 +297,9 @@ static dd_t Q_1275_dd(f64 z) {
   dd_t two_s0 = dd_mul_d(s0, 2.0);
   dd_t T      = dd_add(s0, dd_div(resid, two_s0));
 
-  /*  U = sum_{k=0..126} T_k.  All values normal-range.  */
+  /*  U = sum_{k=0..m-1} T_k.  All values normal-range.  */
   dd_t U = T;
-  Fi0(126, 0,
+  Fi0(m - 1, 0,
       T = dd_mul_d(T, 2.0 * z);
       T = dd_div_d(T, (f64)(2 * i + 3));
       U = dd_add(U, T))
@@ -315,13 +320,23 @@ static dd_t Q_1275_dd(f64 z) {
 
 /*  Public entry point.  */
 
-double fastent_chisq_tail(double chisq, int binary) {
+static double chisq_tail_m_(double chisq, int m) {
   if (chisq <= 0.0)     return 1.0;
   if (!isfinite(chisq)) return 0.0;
   const f64 z = 0.5 * chisq;
-  dd_t q = binary ? Q_05_dd(z) : Q_1275_dd(z);
+  dd_t q = Q_halfint_dd(z, m);
   f64 qd = q.hi + q.lo;
   if (qd < 0.0) qd = 0.0;
   if (qd > 1.0) qd = 1.0;
   return qd;
+}
+
+double fastent_chisq_tail(double chisq, int binary) {
+  /*  binary -> df = 1 (m = 0); else df = 255 (m = 127).  */
+  return chisq_tail_m_(chisq, binary ? 0 : 127);
+}
+
+double fastent_chisq_tail_df(double chisq, int df) {
+  /*  Odd df only: m = (df - 1) / 2 gives the half-integer shape.  */
+  return chisq_tail_m_(chisq, (df - 1) / 2);
 }

@@ -33,6 +33,10 @@ void fastent_term_set_fg(int cls) {
   fastent_win32_set_console_fg(cls);
 }
 
+void fastent_term_set_sev(int sev) {
+  fastent_win32_set_console_sev(sev);
+}
+
 void fastent_term_write(const char * glyph) {
   fputs(glyph, stdout);
 }

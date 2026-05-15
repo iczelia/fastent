@@ -115,9 +115,10 @@ int main(int argc, char ** argv) {
   fastent_result result;
   fastent_finalize(&st, o.binary, &result);
 
-  if      (o.json)  fastent_print_json(&result, &o);
-  else if (o.terse) fastent_print_terse(&result, &o);
-  else              fastent_print_default(&result, &o);
+  if      (o.json)     fastent_print_json(&result, &o);
+  else if (o.terse)    fastent_print_terse(&result, &o);
+  else if (o.annotate) fastent_print_annotated(&result, &o);
+  else                 fastent_print_default(&result, &o);
 
   return 0;
 }

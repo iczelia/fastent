@@ -38,11 +38,19 @@ void fastent_print_help(void) {
   printf("                --io=MODE            auto (default), mmap, stream,\n");
   printf("                                     uring (Linux io_uring / Win32 IOCP)\n");
   printf("                --json               Emit results as JSON\n");
+  printf("           -e,  --extended           Also report min-entropy,\n");
+  printf("                                     collision entropy / IC, poker\n");
+  printf("                                     test, variance, distinct, etc.\n");
+  printf("                --annotate            Interpretive pass/fail report\n");
+  printf("                                     (implies --extended)\n");
   printf("           -r,  --recursive          Treat the positional arg as a\n");
   printf("                                     directory; emit one row per file\n");
   printf("                --sort-by=COL[:dir]  Sort recursive output by COL:\n");
   printf("                                     path, samples, entropy, chisq,\n");
-  printf("                                     mean, pi, scc.  dir = asc | desc\n");
+  printf("                                     mean, pi, scc, min-entropy,\n");
+  printf("                                     collision, ic, poker, variance,\n");
+  printf("                                     redundancy, distinct.\n");
+  printf("                                     dir = asc | desc\n");
   printf("           -V,  --version            Print version and exit\n");
   printf("           -h,  --help               Print this message\n");
 }
@@ -84,12 +92,22 @@ static int parse_sort_by_(const char * arg, fastent_options * o) {
   else if (!strcmp(buf, "mean"))    col = FASTENT_SORT_MEAN;
   else if (!strcmp(buf, "pi"))      col = FASTENT_SORT_MONTE_PI;
   else if (!strcmp(buf, "scc"))     col = FASTENT_SORT_SCC;
+  else if (!strcmp(buf, "min-entropy")) col = FASTENT_SORT_MIN_ENTROPY;
+  else if (!strcmp(buf, "collision"))   col = FASTENT_SORT_COLLISION;
+  else if (!strcmp(buf, "ic"))          col = FASTENT_SORT_IC;
+  else if (!strcmp(buf, "poker"))       col = FASTENT_SORT_POKER;
+  else if (!strcmp(buf, "variance"))    col = FASTENT_SORT_VARIANCE;
+  else if (!strcmp(buf, "redundancy"))  col = FASTENT_SORT_REDUNDANCY;
+  else if (!strcmp(buf, "distinct"))    col = FASTENT_SORT_DISTINCT;
   else {
-    fprintf(stderr, "--sort-by column must be one of: "
-                    "path samples entropy chisq mean pi scc\n");
+    fprintf(stderr, "--sort-by column must be one of: path samples entropy "
+                    "chisq mean pi scc min-entropy collision ic poker "
+                    "variance redundancy distinct\n");
     return -1;
   }
   o->sort_by = (int) col;
+  /*  Sorting by an extended column implies the columns are emitted.  */
+  if (col >= FASTENT_SORT_MIN_ENTROPY) o->extended = 1;
   if (o->sort_desc == -1) o->sort_desc = (col == FASTENT_SORT_PATH) ? 0 : 1;
   return 0;
 }
@@ -127,6 +145,8 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
         else if (LONG_IS("histogram"))      o->histogram = 1;
         else if (LONG_IS("log"))            o->histogram_log = 1;
         else if (LONG_IS("recursive"))      o->recursive = 1;
+        else if (LONG_IS("extended"))       o->extended = 1;
+        else if (LONG_IS("annotate"))     { o->annotate = 1; o->extended = 1; }
         else if (LONG_IS("sort-by")) {
           if (!val) {
             if (i + 1 >= argc) { fprintf(stderr, "--sort-by requires an argument\n"); return -1; }
@@ -175,6 +195,7 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
             case 'H': o->histogram = 1; break;
             case 'p': o->full_precision = 1; break;
             case 'r': o->recursive = 1; break;
+            case 'e': o->extended  = 1; break;
             case '?':
             case 'h': fastent_print_help();    exit(0);
             case 'V': fastent_print_version(); exit(0);
@@ -203,6 +224,11 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
       o->path = a;
       saw_path = 1;
     }
+  }
+  if (o->annotate && o->recursive) {
+    fprintf(stderr, "fastent: --annotate is not supported with -r "
+                    "(recursive output is CSV/JSON)\n");
+    return -1;
   }
   return 0;
 }

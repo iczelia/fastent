@@ -13,7 +13,14 @@ typedef enum {
   FASTENT_SORT_CHI_SQUARE,
   FASTENT_SORT_MEAN,
   FASTENT_SORT_MONTE_PI,
-  FASTENT_SORT_SCC
+  FASTENT_SORT_SCC,
+  FASTENT_SORT_MIN_ENTROPY,
+  FASTENT_SORT_COLLISION,
+  FASTENT_SORT_IC,
+  FASTENT_SORT_POKER,
+  FASTENT_SORT_VARIANCE,
+  FASTENT_SORT_REDUNDANCY,
+  FASTENT_SORT_DISTINCT
 } fastent_sort_by;
 
 typedef struct {
@@ -30,6 +37,8 @@ typedef struct {
   int color;          /*  --color={auto,always,never}, 0=never 1=auto 2=always  */
   int threads;        /*  -j / --threads  (0 = auto, 1 = default)  */
   int recursive;      /*  -r / --recursive  */
+  int extended;       /*  -e / --extended (emit the extended stats)  */
+  int annotate;       /*  --annotate (interpretive report; implies -e)  */
   int sort_by;        /*  --sort-by=COL, value from fastent_sort_by  */
   int sort_desc;      /*  1 = descending; 0 = ascending  */
   const char * path;  /*  positional (NULL = stdin)  */

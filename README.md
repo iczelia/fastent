@@ -14,9 +14,14 @@ Project homepage: https://github.com/iczelia/fastent
 
 Shannon entropy, chi-square statistic with tail probability, arithmetic
 mean, Monte Carlo value of pi, and serial correlation coefficient.
-Byte mode by default; bit mode under `-b`.  Output formats: human-readable,
-CSV (`-t`), JSON (`--json`); add a per-value occurrence table with `-c`
-or a terminal block-plot of the histogram with `-H`.
+With `-e` it additionally reports min-entropy, collision entropy and
+index of coincidence, a poker test (16-bin nibble chi-square, df=15),
+variance and standard deviation, redundancy, the distinct-symbol count,
+and the most/least common symbol.  Byte mode by default; bit mode under
+`-b`.  Output formats: human-readable, CSV (`-t`), JSON (`--json`), and
+an interpretive pass/fail report (`--annotate`); add a per-value
+occurrence table with `-c` or a terminal block-plot of the histogram
+with `-H`.
 
 ## Highlights
 
@@ -36,8 +41,15 @@ or a terminal block-plot of the histogram with `-H`.
   files; `uring` for a four-deep async pipeline (io_uring on Linux
   5.1+, IOCP on Windows Vista+) to hide latency on cold-cache NVMe;
   `stream` for a 2 MiB aligned `read(2)` loop everywhere
+- extended statistics (`-e`) derived at finalisation from the histogram
+  and running sums (min-entropy, collision entropy / IC, poker test,
+  variance, redundancy, distinct/mode/rarest); no per-byte cost and
+  bit-identical across hosts and thread counts.  `--annotate` turns
+  them into a per-metric PASS / WEAK / FAIL report with a headline
+  verdict
 - recursive mode (`-r DIR`) walks a directory and emits one CSV / JSON
-  row per file, with `--sort-by={path,samples,entropy,chisq,mean,pi,scc}`
+  row per file, with `--sort-by={path,samples,entropy,chisq,mean,pi,scc,`
+  `min-entropy,collision,ic,poker,variance,redundancy,distinct}`
 - terminal histogram visualisation (`-H`) with Unicode block glyphs,
   optional log Y axis (`--log`), and platform-native colouring
   (ANSI / `SetConsoleTextAttribute` / DJGPP `<conio.h>`)

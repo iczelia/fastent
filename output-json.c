@@ -12,6 +12,11 @@
   #define M_PI 3.14159265358979323846
 #endif
 
+static void jnum_(const char * fmt, double v) {
+  if (!(v == v)) { fputs("null", stdout); return; }  /*  NaN -> null  */
+  printf(fmt, v);
+}
+
 void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   const char * samp = o->binary ? "bit" : "byte";
   const int fp = o->full_precision;
@@ -38,6 +43,31 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   printf("  \"serial_correlation\": ");
   if (r->scc < -99999) printf("null");
   else                 printf(fmt_fp, r->scc);
+  if (o->extended) {
+    printf(",\n  \"min_entropy\": ");          jnum_(fmt_fp, r->min_entropy);
+    printf(",\n  \"collision_entropy\": ");    jnum_(fmt_fp, r->collision_entropy);
+    printf(",\n  \"index_of_coincidence\": "); jnum_(fmt_fp, r->ic);
+    printf(",\n  \"poker\": ");
+    if (!(r->poker_chisq == r->poker_chisq)) {
+      fputs("null", stdout);
+    } else {
+      printf("{ \"statistic\": "); printf(fmt_fp, r->poker_chisq);
+      printf(", \"df\": 15, \"p_exceed\": "); printf(fmt_fp, r->poker_p);
+      printf(" }");
+    }
+    printf(",\n  \"variance\": ");        jnum_(fmt_fp, r->variance);
+    printf(",\n  \"stddev\": ");          jnum_(fmt_fp, r->stddev);
+    printf(",\n  \"redundancy\": ");      jnum_(fmt_fp, r->redundancy);
+    printf(",\n  \"distinct_symbols\": %u", r->distinct);
+    printf(",\n  \"most_common\": ");
+    if (r->mode_value < 0) fputs("null", stdout);
+    else printf("{ \"value\": %d, \"count\": %llu }",
+                r->mode_value, (unsigned long long) r->mode_count);
+    printf(",\n  \"rarest\": ");
+    if (r->rarest_value < 0) fputs("null", stdout);
+    else printf("{ \"value\": %d, \"count\": %llu }",
+                r->rarest_value, (unsigned long long) r->rarest_count);
+  }
   if (o->counts) {
     printf(",\n  \"occurrences\": [\n");
     const int bins = o->binary ? 2 : 256;

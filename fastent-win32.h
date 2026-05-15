@@ -52,6 +52,10 @@ void fastent_win32_mmap_prefetch(void * base, unsigned long long size);
     preserved.  No-op when stdout isn't a console.  */
 void fastent_win32_set_console_fg(int cls);
 
+/*  Severity palette: sev in {0,1,2,3} = green, yellow, red, gray;
+    sev = -1 restores initial attrs.  Background preserved.  */
+void fastent_win32_set_console_sev(int sev);
+
 #endif
 
 #endif

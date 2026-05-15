@@ -5,6 +5,42 @@ This file contains user-visible changes for each release.  For a
 complete source-level history, see the ChangeLog.
 
 -------------------------------------------------------------------------------
+Unreleased
+
+  Extended statistics (-e / --extended)
+  -------------------------------------
+
+  A new -e / --extended flag adds min-entropy (H-infinity, the
+  NIST SP 800-90B measure), collision entropy (H2) and the index of
+  coincidence, a poker test (16-bin nibble chi-square with 15 degrees
+  of freedom), variance and standard deviation, redundancy, the
+  distinct-symbol count, and the most / least common symbol.  The new
+  values are appended to the default, terse CSV, JSON, and recursive
+  output, and --sort-by accepts the new columns (min-entropy,
+  collision, ic, poker, variance, redundancy, distinct).  Without -e
+  the output is byte-for-byte the classic format.  All extended
+  quantities are derived at finalisation from the histogram and the
+  running sums, so they add no per-byte cost and stay bit-identical
+  across hosts and thread counts.  -log2 is taken via the existing
+  faithfully-rounded entropy term, so no libm log enters.
+
+  Annotated report (--annotate)
+  -----------------------------
+
+  --annotate (which implies -e) renders an interpretive table: each
+  metric is shown with its value, a p-value or z-score where defined,
+  a PASS / WEAK / FAIL / N/A badge, and a one-line explanation,
+  closing with a headline verdict that names the weakest signal.
+  Badge colour follows --color.  Not supported with -r.
+
+  Internal
+  --------
+
+  The chi-square upper-tail closed form is generalised to any odd
+  degrees of freedom (fastent_chisq_tail_df); the df=1 and df=255
+  paths are unchanged and bit-identical.
+
+-------------------------------------------------------------------------------
 v1.1 (May 2026)
 
   New analyse variants

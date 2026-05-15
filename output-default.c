@@ -80,4 +80,59 @@ void fastent_print_default(const fastent_result * r, const fastent_options * o) 
   } else {
     printf("undefined (all values equal!).\n");
   }
+
+  if (!o->extended) return;
+
+  const int bins = o->binary ? 2 : 256;
+  printf("\n");
+  if (fp) {
+    printf("Min-entropy is %.17g bits per %s.\n", r->min_entropy, samp);
+    printf("Collision entropy is %.17g bits per %s.\n",
+           r->collision_entropy, samp);
+    printf("Index of coincidence is %.17g (%.17g = uniform).\n",
+           r->ic, 1.0 / (f64) bins);
+  } else {
+    printf("Min-entropy is %f bits per %s.\n", r->min_entropy, samp);
+    printf("Collision entropy is %f bits per %s.\n",
+           r->collision_entropy, samp);
+    printf("Index of coincidence is %f (%f = uniform).\n",
+           r->ic, 1.0 / (f64) bins);
+  }
+
+  if (o->binary) {
+    printf("Poker test is not applicable to bit streams.\n");
+  } else {
+    if (fp)
+      printf("Poker chi square (16 bins, df=15) is %.17g, and randomly\n",
+             r->poker_chisq);
+    else
+      printf("Poker chi square (16 bins, df=15) is %1.2f, and randomly\n",
+             r->poker_chisq);
+    if      (r->poker_p < 0.0001)
+      printf("would exceed this value less than 0.01 percent of the times.\n");
+    else if (r->poker_p > 0.9999)
+      printf("would exceed this value more than 99.99 percent of the times.\n");
+    else if (fp)
+      printf("would exceed this value %.17g percent of the times.\n",
+             r->poker_p * 100.0);
+    else
+      printf("would exceed this value %1.2f percent of the times.\n",
+             r->poker_p * 100.0);
+  }
+
+  if (fp) {
+    printf("Variance is %.17g (standard deviation %.17g).\n",
+           r->variance, r->stddev);
+    printf("Redundancy is %.17g percent.\n", r->redundancy * 100.0);
+  } else {
+    printf("Variance is %1.4f (standard deviation %1.4f).\n",
+           r->variance, r->stddev);
+    printf("Redundancy is %1.4f percent.\n", r->redundancy * 100.0);
+  }
+  printf("Distinct symbols: %u of %d.\n", r->distinct, bins);
+  if (r->mode_value >= 0)
+    printf("Most common symbol is %d (%llu times); "
+           "rarest is %d (%llu times).\n",
+           r->mode_value, (unsigned long long) r->mode_count,
+           r->rarest_value, (unsigned long long) r->rarest_count);
 }

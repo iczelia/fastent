@@ -163,6 +163,54 @@ if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
   '
 fi
 
+check "no -e: extended stats hidden" bash -c '
+  out=$('"${FASTENT}"' "'"${FIX}"'/lcg.bin")
+  ! grep -q "Min-entropy" <<< "$out"
+'
+
+check "uniform -e: min-entropy = 8.000000" bash -c '
+  out=$('"${FASTENT}"' -e "'"${FIX}"'/uniform.bin")
+  grep -qE "Min-entropy is 8\.000000 bits per byte\." <<< "$out" &&
+    grep -qE "Collision entropy is 8\.000000 bits per byte\." <<< "$out"
+'
+
+check "terse -e: 20 columns" bash -c '
+  out=$('"${FASTENT}"' -e -t "'"${FIX}"'/lcg.bin")
+  grep -q "Min-Entropy,Collision-Entropy,IC,Poker,Poker-p," <<< "$out" &&
+    [ "$(printf "%s\n" "$out" | sed -n 2p | tr , "\n" | wc -l)" -eq 20 ]
+'
+
+check "JSON -e: poker + min_entropy keys" bash -c '
+  out=$('"${FASTENT}"' --json -e "'"${FIX}"'/lcg.bin")
+  python3 -c "import json,sys; d=json.load(sys.stdin); assert \"min_entropy\" in d and d[\"poker\"][\"df\"]==15" <<< "$out"
+'
+
+check "JSON -e bit mode: poker null" bash -c '
+  out=$('"${FASTENT}"' --json -e -b "'"${FIX}"'/lcg.bin")
+  python3 -c "import json,sys; d=json.load(sys.stdin); assert d[\"poker\"] is None" <<< "$out"
+'
+
+check "annotate: verdict line present" bash -c '
+  out=$('"${FASTENT}"' --annotate --color=never "'"${FIX}"'/lcg.bin")
+  grep -qE "^  VERDICT: " <<< "$out"
+'
+
+check "annotate all-zeros: not random" bash -c '
+  out=$('"${FASTENT}"' --annotate --color=never "'"${FIX}"'/all-zeros.bin")
+  grep -qE "VERDICT: DOES NOT PASS AS RANDOM" <<< "$out"
+'
+
+check "annotate rejected with -r" bash -c '
+  '"${FASTENT}"' --annotate -r "'"${FIX}"'" 2>/dev/null && exit 1
+  exit 0
+'
+
+check "extended -j4 agrees with -j1" bash -c '
+  a=$('"${FASTENT}"' -e -t -j 1 "'"${FIX}"'/lcg.bin")
+  b=$('"${FASTENT}"' -e -t -j 4 "'"${FIX}"'/lcg.bin")
+  [ "$a" = "$b" ]
+'
+
 check "empty input: clean exit" bash -c '
   : > "'"${FIX}"'/empty.bin"
   '"${FASTENT}"' -t "'"${FIX}"'/empty.bin" > /dev/null

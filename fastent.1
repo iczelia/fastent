@@ -66,6 +66,35 @@ With
 .B \-c
 the occurrences table is included as a nested array.
 .TP
+.BR \-e ", " \-\-extended
+Also report the extended statistics: min-entropy
+.RB ( H \(if ),
+collision entropy
+.RB ( H 2)
+and index of coincidence, the poker test (a 16-bin nibble chi-square
+with 15 degrees of freedom), variance and standard deviation,
+redundancy, the distinct-symbol count, and the most/least common
+symbol.  These are appended to the default, terse, JSON, and
+recursive output.  Without
+.B \-e
+the output is byte-for-byte the classic format.  All extended
+quantities are derived at finalisation from the histogram and the
+running sums, so they add no per-byte cost and remain bit-identical
+across hosts and thread counts.
+.TP
+.B \-\-annotate
+Render an interpretive report instead of the plain text: every metric
+is shown with a
+.BR PASS / WEAK / FAIL
+verdict and a one-line explanation, followed by a headline naming the
+weakest signal.  Implies
+.BR \-e .
+Not supported with
+.BR \-r ;
+.BR \-\-json " and " \-t
+take precedence if combined.  Verdict colour follows
+.BR \-\-color .
+.TP
 .BR \-p ", " \-\-full-precision
 Render every floating-point value at \fB%.17g\fR (machine precision).
 .TP
@@ -146,7 +175,10 @@ or JSON under
 the
 .B path
 column comes first, followed by the same six summary metrics as
-.BR \-t .
+.BR \-t ,
+and the extended columns when
+.B \-e
+is in effect.
 Walks do not cross symlinks (except at the root).  Unreadable files
 or directories print a stderr warning and are skipped.
 .TP
@@ -154,7 +186,11 @@ or directories print a stderr warning and are skipped.
 Sort the rows in recursive mode.
 .I COL
 is one of
-.BR path ", " samples ", " entropy ", " chisq ", " mean ", " pi ", " scc .
+.BR path ", " samples ", " entropy ", " chisq ", " mean ", " pi ", " scc ", "
+.BR min-entropy ", " collision ", " ic ", " poker ", " variance ", "
+.BR redundancy ", " distinct .
+Selecting any of the extended columns implies
+.BR \-e .
 .I DIR
 is
 .B asc
@@ -255,6 +291,35 @@ Any numeric field whose value would be NaN (e.g.\&
 .B monte_carlo_pi
 on a sub-hexad-sized file) is written as JSON
 .BR null .
+.PP
+Under
+.B \-e
+the extended statistics are appended to every format.  The terse and
+recursive CSV rows gain, in order,
+.BR Min-Entropy ", " Collision-Entropy ", " IC ", " Poker ", " Poker-p ", "
+.BR Variance ", " Stddev ", " Redundancy ", " Distinct ", " Mode ", "
+.BR Mode-Count ", " Rarest ", " Rarest-Count .
+The JSON object gains
+.BR min_entropy ", " collision_entropy ", " index_of_coincidence ", "
+a
+.B poker
+sub-object
+.RB ( null
+in bit mode),
+.BR variance ", " stddev ", " redundancy ", " distinct_symbols ", "
+and the
+.BR most_common " and " rarest
+sub-objects.  In
+.BR \-\-annotate
+mode the plain text is replaced by an aligned table: one row per
+metric with its value, p-value where defined, a
+.BR PASS / WEAK / FAIL / "N/A"
+badge, and a short interpretation, closing with a
+.B VERDICT
+headline that names the weakest signal.  Entropy-ratio verdicts are
+advisory; the chi-square, poker, mean, and serial-correlation verdicts
+are derived from the p-value or a z-score against the uniform
+sampling distribution.
 
 .SH "EXIT STATUS"
 .B fastent

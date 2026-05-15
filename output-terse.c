@@ -17,16 +17,36 @@ static void print_counts_(const fastent_result * r, int binary) {
 }
 
 void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
-  printf("0,File-%ss,Entropy,Chi-square,Mean,Monte-Carlo-Pi,Serial-Correlation\n",
+  printf("0,File-%ss,Entropy,Chi-square,Mean,Monte-Carlo-Pi,Serial-Correlation",
          o->binary ? "bit" : "byte");
+  if (o->extended)
+    printf(",Min-Entropy,Collision-Entropy,IC,Poker,Poker-p,Variance,Stddev,"
+           "Redundancy,Distinct,Mode,Mode-Count,Rarest,Rarest-Count");
+  putchar('\n');
+
+  const char * f = o->full_precision ? "%.17g" : "%f";
   if (o->full_precision) {
-    printf("1,%llu,%.17g,%.17g,%.17g,%.17g,%.17g\n",
+    printf("1,%llu,%.17g,%.17g,%.17g,%.17g,%.17g",
            (unsigned long long) r->total_samples,
            r->entropy, r->chi_square, r->mean, r->monte_pi, r->scc);
   } else {
-    printf("1,%llu,%f,%f,%f,%f,%f\n",
+    printf("1,%llu,%f,%f,%f,%f,%f",
            (unsigned long long) r->total_samples,
            r->entropy, r->chi_square, r->mean, r->monte_pi, r->scc);
   }
+  if (o->extended) {
+    putchar(','); printf(f, r->min_entropy);
+    putchar(','); printf(f, r->collision_entropy);
+    putchar(','); printf(f, r->ic);
+    putchar(','); printf(f, r->poker_chisq);
+    putchar(','); printf(f, r->poker_p);
+    putchar(','); printf(f, r->variance);
+    putchar(','); printf(f, r->stddev);
+    putchar(','); printf(f, r->redundancy);
+    printf(",%u,%d,%llu,%d,%llu",
+           r->distinct, r->mode_value, (unsigned long long) r->mode_count,
+           r->rarest_value, (unsigned long long) r->rarest_count);
+  }
+  putchar('\n');
   if (o->counts) print_counts_(r, o->binary);
 }

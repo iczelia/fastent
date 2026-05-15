@@ -38,6 +38,18 @@ void fastent_term_set_fg(int cls) {
   }
 }
 
+void fastent_term_set_sev(int sev) {
+  static const int pal[4] = { LIGHTGREEN, YELLOW, LIGHTRED, DARKGRAY };
+  fflush(stdout);
+  if (sev < 0) {
+    textcolor(LIGHTGRAY);
+    color_active_ = 0;
+  } else {
+    textcolor(pal[sev & 3]);
+    color_active_ = 1;
+  }
+}
+
 void fastent_term_write(const char * glyph) {
   if (color_active_) cputs(glyph);
   else               fputs(glyph, stdout);

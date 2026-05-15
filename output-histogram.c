@@ -65,13 +65,25 @@ void fastent_print_histogram(const fastent_result * r,
 
   const int use_color = color_active_(o->color);
 
+  const double log_denom = o->histogram_log
+                           ? log((double) max + 1.0) : 0.0;
+
+  /*  Left gutter: the sample count at the top edge of each row,
+      right-justified to the width of the largest (the peak).  */
+  char gbuf[24];
+  int  gw = snprintf(gbuf, sizeof gbuf, "%llu", (unsigned long long) max);
+  if (gw < 1) gw = 1;
+
   int row;
   for (row = 0; row < height; row++) {
     const int row_bot = (height - 1 - row) * sub;
     const int row_top = row_bot + sub;
     int last_class = -1;
-    const double log_denom = o->histogram_log
-                             ? log((double) max + 1.0) : 0.0;
+    const double yf = (double)(height - row) / (double) height;
+    const u64 yval = o->histogram_log
+                     ? (u64)(exp(yf * log_denom) - 1.0 + 0.5)
+                     : (u64)(yf * (double) max + 0.5);
+    printf("%*llu |", gw, (unsigned long long) yval);
     for (c = 0; c < cols; c++) {
       double frac;
       if (o->histogram_log) {
@@ -101,25 +113,27 @@ void fastent_print_histogram(const fastent_result * r,
   if (bins == 256) {
     int tick_every = cols / 8;
     if (tick_every < 1) tick_every = 1;
+    for (c = 0; c < gw + 1; c++) putchar(' ');
+    putchar('+');
     for (c = 0; c < cols; c++) putchar((c % tick_every == 0) ? '|' : '-');
     putchar('\n');
-    for (c = 0; c < cols; c++) {
-      if (c % tick_every == 0) {
-        int label = c * group;
-        char buf[8];
-        int n = snprintf(buf, sizeof(buf), "%d", label);
-        if (n > tick_every) n = tick_every;
+    for (c = 0; c < gw + 2; c++) putchar(' ');
+    for (c = 0; c < cols; c += tick_every) {
+      char buf[8];
+      int n = snprintf(buf, sizeof(buf), "%d", c * group);
+      if (n > tick_every) n = tick_every;
+      if (c + tick_every >= cols) {
+        /*  Last tick: no trailing padding.  */
         printf("%.*s", n, buf);
-        int rest = tick_every - n;
-        while (rest-- > 0 && (c + 1) % tick_every != 0) {
-          putchar(' ');
-          break;
-        }
-        c += tick_every - 1;
+      } else {
+        /*  Left-justify in the tick_every-wide cell so the first
+            digit sits directly under the '|' tick mark.  */
+        printf("%-*.*s", tick_every, n, buf);
       }
     }
     putchar('\n');
   } else {
+    for (c = 0; c < gw + 2; c++) putchar(' ');
     printf("0 1\n");
   }
   u64 raw_peak = 0;

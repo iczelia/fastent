@@ -16,6 +16,7 @@ fastent_SOURCES = fastent.c cli.c runner.c \
                   fastent-math.c \
                   output-default.c output-terse.c output-json.c \
                   output-histogram.c output-recursive.c \
+                  output-annotated.c \
                   port-cpu-x86.c port-cpu-arm.c port-cpu-other.c \
                   port-io.c port-io-posix.c port-io-win32.c \
                   port-term-posix.c port-term-win32.c port-term-djgpp.c \
