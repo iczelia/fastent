@@ -1,24 +1,5 @@
-/*  fastent: AArch64 SVE2 analyse variants.
-
-    SVE2 has runtime-variable vector length (128 .. 2048 bits), which
-    doesn't slot into analyze-impl.h's compile-time-fixed-stride macro
-    template.  Rather than restructure the templated body, this TU is
-    a self-contained implementation that loops in svcntb()-byte chunks
-    and uses SVE2 intrinsics where they give clear wins.
-
-    SCC kernel: svdot_u32 (UDOT) accumulates four byte products per
-    u32 lane.  Loading v_next from buf+i+1 lets one chunk cover all
-    stride byte-pair products [i, i+stride); the across-chunk-boundary
-    pair (i+stride-1, i+stride) is correctly counted in iter k and
-    NOT recounted at iter k+1.  After the SVE2 loop we subtract the
-    final-pair contribution so the scalar tail can re-add it via the
-    usual (carry_byte, b) update.
-
-    Histogram + MC Pi stay scalar.  The 4-bank histogram already breaks
-    the increment chain into four parallel streams; scatter would be
-    slower on every uarch I know of.
-
-    Bit-mode and fold variants are also here.
+/*  fastent: AArch64 SVE2 analyse variants.  Self-contained because
+    analyze-impl.h assumes a compile-time fixed vector stride.
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
@@ -33,8 +14,6 @@
 #include <arm_sve.h>
 #include <string.h>
 
-/*  Scalar single-byte case-fold helper.  Matches analyze-impl.h's
-    fold_byte_inline.  */
 static inline u8 sve2_fold_byte(u8 b) {
   unsigned c = b;
   int is_ascii_upper = (c - 'A')   < 26u;
@@ -43,8 +22,6 @@ static inline u8 sve2_fold_byte(u8 b) {
   return b;
 }
 
-/*  Vector case-fold helper.  Predicated add of 0x20 over each lane
-    whose byte is ASCII A-Z or Latin-1 (C0-DE except D7).  */
 static inline svuint8_t sve2_fold_vec(svbool_t pg, svuint8_t v) {
   svuint8_t v_amin  = svdup_n_u8('A');
   svuint8_t v_zmax  = svdup_n_u8('Z');
@@ -64,9 +41,6 @@ static inline svuint8_t sve2_fold_vec(svbool_t pg, svuint8_t v) {
   return svadd_u8_m(m_fold, v, v_0x20);
 }
 
-/*  Byte-mode entry: SVE2 SCC + scalar hist/MC.  */
-
-/*  Commit a 6-byte Monte Carlo hexad.  */
 #define SVE2_MC_COMMIT(_st)                                                \
   do {                                                                     \
     u32 _x = ((u32) (_st)->mc_buf[0] << 16)                                \
@@ -91,8 +65,6 @@ static void analyze_sve2_byte_impl(fastent_chunk_state * st,
   sz i = 0;
 
   if (will_sve2) {
-    /*  Cross-call carry: pair entry carry_byte with buf[0] before the
-        SVE2 loop covers within-buffer pairs (0,1) onward.  */
     u8 b0 = fold ? sve2_fold_byte(buf[0]) : buf[0];
     if (st->have_carry) {
       st->cross_product += (i64) st->carry_byte * (i64) b0;
@@ -108,14 +80,12 @@ static void analyze_sve2_byte_impl(fastent_chunk_state * st,
         v      = sve2_fold_vec(pg8, v);
         v_next = sve2_fold_vec(pg8, v_next);
       }
-      /*  SCC: stride byte-pair products, summed by svdot_u32 into a
-          stride/4-lane u32 vector, then horizontal-summed.  Pair
-          range covered: [i, i+stride) (inclusive of the cross-chunk
-          pair (i+stride-1, i+stride)).  */
+      /*  svdot_u32 sums the stride byte-products into u32 lanes;
+          v_next loaded from buf+i+1 makes the across-chunk pair
+          (i+stride-1, i+stride) included here.  */
       svuint32_t prod = svdot_u32(svdup_n_u32(0), v, v_next);
       st->cross_product += (i64) svaddv_u32(pg32, prod);
 
-      /*  Scalar histogram + MC Pi over this chunk.  */
       for (u64 k = 0; k < stride; k++) {
         u8 b = fold ? sve2_fold_byte(buf[i + k]) : buf[i + k];
         st->bank[(unsigned)(i + k) & (FASTENT_BANKS - 1)][b]++;
@@ -131,8 +101,7 @@ static void analyze_sve2_byte_impl(fastent_chunk_state * st,
       i += stride;
     }
 
-    /*  Un-count the final cross-boundary pair so the scalar tail can
-        re-add it via its standard (carry_byte, b) path.  */
+    /*  Un-count the cross-boundary pair; the scalar tail re-adds it.  */
     if (i > 0 && i < (u64) len) {
       u8 prev = fold ? sve2_fold_byte(buf[i - 1]) : buf[i - 1];
       u8 cur  = fold ? sve2_fold_byte(buf[i])     : buf[i];
@@ -140,8 +109,6 @@ static void analyze_sve2_byte_impl(fastent_chunk_state * st,
     }
   }
 
-  /*  Scalar tail: identical to the analyze-scalar walker, processing
-      bytes [i, len).  Handles cross-call carry when SVE2 didn't run.  */
   for (; i < (u64) len; i++) {
     u8 b = fold ? sve2_fold_byte(buf[i]) : buf[i];
     if (st->have_carry) {
@@ -168,13 +135,6 @@ void analyze_fold_sve2(fastent_chunk_state * st, const u8 * buf, sz len) {
   analyze_sve2_byte_impl(st, buf, len, 1);
 }
 
-/*  Bit-mode entries.  */
-
-/*  Per-byte scalar consume for bit mode.  Updates the bit histogram,
-    cross_product over adjacent bit pairs (within-byte + cross-byte),
-    the MC Pi 6-byte ring (bit mode still feeds the same hexads as
-    byte mode), plus first/last/total tracking.  Mirrors the bit-mode
-    scalar walker in analyze-impl.h.  */
 static inline void sve2_consume_bit_byte(fastent_chunk_state * st, u8 b) {
   const unsigned ones_in_byte = (unsigned) __builtin_popcount((unsigned) b);
   st->bit_hist[1] += ones_in_byte;
@@ -207,17 +167,14 @@ static void analyze_bits_sve2_impl(fastent_chunk_state * st,
     svuint8_t v = svld1_u8(pg, buf + i);
     if (fold) v = sve2_fold_vec(pg, v);
 
-    /*  ones per byte and within-byte adjacent-1 pairs.  */
     svuint8_t pcnt     = svcnt_u8_x(pg, v);
     svuint8_t v_shr1   = svlsr_n_u8_x(pg, v, 1);
     svuint8_t and_adj  = svand_u8_x(pg, v, v_shr1);
     svuint8_t pcnt_adj = svcnt_u8_x(pg, and_adj);
 
-    /*  Cross-byte adjacency within the chunk: for byte k in [0,
-        stride-2], pair LSB(buf[i+k]) with MSB(buf[i+k+1]).  Shift
-        the vector "left by one byte" via svext, zero-fill the
-        trailing lane.  The lane-0 LSB pairs with the previous
-        chunk's last byte and is handled scalarly below.  */
+    /*  svext shifts the chunk left by one byte (zero-filling) so lane k
+        of v_next holds buf[i+k+1]; the lane-0 LSB then pairs with the
+        previous chunk's last byte, handled scalarly below.  */
     svuint8_t v_next     = svext_u8(v, svdup_n_u8(0), 1);
     svuint8_t cross      = svand_u8_x(pg,
                              svand_u8_x(pg, v, svdup_n_u8(1u)),
@@ -226,7 +183,6 @@ static void analyze_bits_sve2_impl(fastent_chunk_state * st,
     u64 adj_in   = (u64) svaddv_u8(pg, pcnt_adj);
     u64 cross_in = (u64) svaddv_u8(pg, cross);
 
-    /*  Cross-chunk join: previous-byte LSB vs this-chunk-first-byte MSB.  */
     if (st->have_carry) {
       u8 head = fold ? sve2_fold_byte(buf[i]) : buf[i];
       const unsigned prev_lsb = (unsigned)(st->carry_byte & 1u);
@@ -243,8 +199,6 @@ static void analyze_bits_sve2_impl(fastent_chunk_state * st,
     st->cross_product += (i64) adj_in + (i64) cross_in;
     st->total_bytes   += stride * 8u;
 
-    /*  MC Pi: bit-mode still consumes the underlying bytes for the
-        6-byte hexad ring.  Scalar update per chunk byte.  */
     for (u64 k = 0; k < stride; k++) {
       u8 mb = fold ? sve2_fold_byte(buf[i + k]) : buf[i + k];
       st->mc_buf[st->mc_pos++] = mb;
@@ -271,8 +225,6 @@ void analyze_bits_sve2(fastent_chunk_state * st, const u8 * buf, sz len) {
 void analyze_bits_fold_sve2(fastent_chunk_state * st, const u8 * buf, sz len) {
   analyze_bits_sve2_impl(st, buf, len, 1);
 }
-
-/*  Standalone fold.  */
 
 void fold_sve2(u8 * buf, sz len) {
   const u64 stride = svcntb();

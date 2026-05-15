@@ -23,6 +23,14 @@
 #include <string.h>
 #include <unistd.h>  /*  sysconf  */
 
+#if !defined(_WIN32) && !defined(__DJGPP__)
+  #include <sys/ioctl.h>  /*  TIOCGWINSZ  */
+#endif
+
+#ifdef __DJGPP__
+  #include <conio.h>     /*  textcolor / cputs for BIOS-attribute output  */
+#endif
+
 #ifdef _WIN32
   #include "fastent-win32.h"
 #endif
@@ -37,9 +45,7 @@
   #define M_PI 3.14159265358979323846
 #endif
 
-/*  Glyph-bearing characters in the C / Latin-1 supplement: printable
-    and not whitespace.  Used to decide which byte values get a
-    printed glyph in the -c histogram.  */
+/*  Printable, non-whitespace bytes in C0/Latin-1.  */
 static inline int fastent_is_displayable(unsigned c) {
   return (c >= 0x21u && c <= 0x7Eu) || c >= 0xA1u;
 }
@@ -55,6 +61,9 @@ typedef struct {
   int full_precision; /*  -p / --full-precision  */
   int no_mmap;        /*  --no-mmap (deprecated alias for --io=stream)  */
   int io_mode;        /*  --io={auto,mmap,stream,uring}  */
+  int histogram;      /*  -H / --histogram  */
+  int histogram_log;  /*  --log  (log-y for the histogram)  */
+  int color;          /*  --color={auto,always,never}, 0=never 1=auto 2=always  */
   int threads;        /*  -j / --threads  (0 = auto, 1 = default)  */
   const char * path;  /*  positional (NULL = stdin)  */
 } fastent_options;
@@ -78,6 +87,10 @@ static void print_help(void) {
   printf("           -c   Print occurrence counts\n");
   printf("           -f   Fold upper- to lower-case letters\n");
   printf("           -t   Terse output in CSV format\n");
+  printf("           -H,  --histogram          Render a block bar plot\n");
+  printf("                                     of the byte distribution\n");
+  printf("                --log                Logarithmic y-axis for --histogram\n");
+  printf("                --color=MODE         auto (default), always, never\n");
   printf("           -p,  --full-precision     Render every float at %%.17g\n");
   printf("           -j N --threads=N          Use N worker threads"
          " (default 1)\n");
@@ -110,6 +123,7 @@ static int parse_args(int argc, char ** argv, fastent_options * o) {
   int saw_path = 0;
   memset(o, 0, sizeof(*o));
   o->threads = 1;
+  o->color   = 1;   /*  --color=auto by default  */
 
   for (i = 1; i < argc; i++) {
     const char * a = argv[i];
@@ -135,6 +149,15 @@ static int parse_args(int argc, char ** argv, fastent_options * o) {
         else if (LONG_IS("json"))           o->json = 1;
         else if (LONG_IS("full-precision")) o->full_precision = 1;
         else if (LONG_IS("no-mmap"))        o->no_mmap = 1;
+        else if (LONG_IS("histogram"))      o->histogram = 1;
+        else if (LONG_IS("log"))            o->histogram_log = 1;
+        else if (LONG_IS("color")) {
+          if (!val) o->color = 2;            /*  --color (no arg) = always  */
+          else if (!strcmp(val, "auto"))   o->color = 1;
+          else if (!strcmp(val, "always")) o->color = 2;
+          else if (!strcmp(val, "never"))  o->color = 0;
+          else { fprintf(stderr, "unknown --color mode: %s\n", val); return -1; }
+        }
         else if (LONG_IS("io")) {
           if (!val) {
             if (i + 1 >= argc) { fprintf(stderr, "--io requires an argument\n"); return -1; }
@@ -167,6 +190,7 @@ static int parse_args(int argc, char ** argv, fastent_options * o) {
             case 'c': o->counts = 1; break;
             case 'f': o->fold   = 1; break;
             case 't': o->terse  = 1; break;
+            case 'H': o->histogram = 1; break;
             case 'p': o->full_precision = 1; break;
             case '?':
             case 'h': print_help();    exit(0);
@@ -201,18 +225,12 @@ static int parse_args(int argc, char ** argv, fastent_options * o) {
   return 0;
 }
 
-/*  Analysis drivers.  The fused fold + analyse entry points
-    (analyze_fold_<variant> / analyze_bits_fold_<variant>) case-fold
-    each loaded SIMD vector in-register, so the threaded mmap path no
-    longer needs a per-worker 32 KiB staging buffer or a separate
-    memcpy + fold pre-pass.  */
-
 #ifdef FASTENT_HAVE_PTHREAD
 typedef struct {
   const u8 *     data;
   const u64 *    bounds;     /*  N+1 entries, multiples of 6 except last  */
   fastent_chunk_state * states;
-  fastent_analyze_fn fn;     /*  Already specialised: fused or plain.  */
+  fastent_analyze_fn fn;
 } mt_ctx;
 
 static void mt_worker(sz k, void * vctx) {
@@ -229,9 +247,8 @@ static void run_mmap_mt(fastent_chunk_state * out, const fastent_options * o,
   int N = o->threads;
   fastent_set_num_threads(N);
 
-  /*  Partition into N slabs at 6-byte-aligned offsets so each slab's
-      MC Pi state machine starts at mc_pos == 0 and there are no
-      cross-slab hexads.  */
+  /*  6-byte-aligned slab boundaries so each thread's MC Pi state
+      starts at mc_pos == 0; no cross-slab hexads.  */
   u64 * bounds = (u64 *) malloc((sz)(N + 1) * sizeof(u64));
   if (!bounds) { fprintf(stderr, "out of memory\n"); exit(2); }
   bounds[0] = 0;
@@ -247,13 +264,11 @@ static void run_mmap_mt(fastent_chunk_state * out, const fastent_options * o,
   mt_ctx ctx = { data, bounds, states, fn };
   fastent_parallel_for((sz) N, mt_worker, &ctx);
 
-  /*  Merge per-thread states into `out`.  Slab 0 supplies first_byte;
-      adjacent slab boundaries contribute b[end-1] * b[start_next] to
-      the SCC cross-product.  The final wrap-around (last_byte *
-      first_byte) is added in fastent_finalize().  In bit mode, the
-      stored carry_byte / first_byte / last_byte are bit values (0 or
-      1), so the same merge expression gives the cross-slab bit-pair
-      contribution.  */
+  /*  Merge slabs: adjacent slab pairs contribute b[end-1] *
+      b[start_next] to the SCC; final wrap (last * first) is added in
+      fastent_finalize().  In bit mode the carry/first/last fields are
+      single bits, so the same expression covers the cross-slab bit
+      pair.  */
   Fk(N,
      const fastent_chunk_state * s = &states[k];
      if (s->total_bytes == 0) continue;
@@ -273,8 +288,8 @@ static void run_mmap_mt(fastent_chunk_state * out, const fastent_options * o,
      out->total_bytes  += s->total_bytes;
      out->mc_count     += s->mc_count;
      out->mc_inside    += s->mc_inside;
-     /*  Stash trailing MC ring bytes from the LAST slab (others have
-         none because they're 6-aligned).  */
+     /*  Only the last slab can carry trailing MC ring bytes; the
+         others end on a 6-aligned boundary.  */
      if (k == N - 1) {
        out->mc_pos = s->mc_pos;
        memcpy(out->mc_buf, s->mc_buf, sizeof(out->mc_buf));
@@ -323,7 +338,183 @@ static void run_stream(fastent_chunk_state * st, const fastent_options * o,
   }
 }
 
-/*  Output formatters.  */
+static int color_active(int color_opt) {
+  if (color_opt == 0) return 0;
+  if (color_opt == 2) return 1;
+  if (getenv("NO_COLOR")) return 0;
+#if defined(FASTENT_WIN_LEGACY)
+  return 0;
+#else
+  return isatty(1);
+#endif
+}
+
+typedef enum { GLYPHS_UNICODE = 0, GLYPHS_CP437 = 1, GLYPHS_ASCII = 2 } glyph_mode;
+
+static glyph_mode pick_glyphs(void) {
+#if defined(__DJGPP__) || defined(FASTENT_WIN_LEGACY)
+  return isatty(1) ? GLYPHS_CP437 : GLYPHS_ASCII;
+#else
+  return GLYPHS_UNICODE;
+#endif
+}
+
+static int term_width(void) {
+#if defined(__DJGPP__) || defined(FASTENT_WIN_LEGACY) || defined(_WIN32)
+  return 80;
+#elif defined(TIOCGWINSZ)
+  struct winsize w;
+  if (isatty(1) && ioctl(1, TIOCGWINSZ, &w) == 0 && w.ws_col > 0)
+    return (int) w.ws_col;
+  return 80;
+#else
+  return 80;
+#endif
+}
+
+static void print_histogram(const fastent_result * r, const fastent_options * o) {
+  const int bins = o->binary ? 2 : 256;
+  static const char * const glyphs_unicode[9] = {
+    " ", "\xe2\x96\x81", "\xe2\x96\x82", "\xe2\x96\x83",
+         "\xe2\x96\x84", "\xe2\x96\x85", "\xe2\x96\x86",
+         "\xe2\x96\x87", "\xe2\x96\x88"
+  };
+  static const char * const glyphs_cp437[3] = { " ", "\xdc", "\xdb" };
+  static const char * const glyphs_ascii[2] = { " ", "#" };
+  const glyph_mode gmode = pick_glyphs();
+  const char * const * blocks;
+  int sub;
+  switch (gmode) {
+    case GLYPHS_CP437:   blocks = glyphs_cp437;   sub = 2; break;
+    case GLYPHS_ASCII:   blocks = glyphs_ascii;   sub = 1; break;
+    case GLYPHS_UNICODE:
+    default:             blocks = glyphs_unicode; sub = 8; break;
+  }
+  const int height = 8;
+  const int levels = height * sub;
+
+  /*  Downsample 256 bins to the smallest power-of-2 group that fits.  */
+  int group = 1;
+  if (!o->binary) {
+    int w = term_width();
+    if (w < 1) w = 80;
+    while (bins / group > w && group < bins) group <<= 1;
+  }
+  const int cols = bins / group;
+
+  u64 grouped[256];
+  int c;
+  for (c = 0; c < cols; c++) {
+    u64 sum = 0;
+    int j;
+    for (j = 0; j < group; j++) sum += r->hist[c * group + j];
+    grouped[c] = sum;
+  }
+
+  u64 max = 0;
+  for (c = 0; c < cols; c++) if (grouped[c] > max) max = grouped[c];
+  if (max == 0) {
+    printf("(histogram: no samples)\n\n");
+    return;
+  }
+
+  const int use_color = color_active(o->color);
+
+  int row;
+  for (row = 0; row < height; row++) {
+    const int row_bot = (height - 1 - row) * sub;
+    const int row_top = row_bot + sub;
+    int last_class = -1;
+    const double log_denom = o->histogram_log
+                             ? log((double) max + 1.0) : 0.0;
+    for (c = 0; c < cols; c++) {
+      double frac;
+      if (o->histogram_log) {
+        frac = grouped[c] == 0 ? 0.0
+             : log((double) grouped[c] + 1.0) / log_denom;
+      } else {
+        frac = (double) grouped[c] / (double) max;
+      }
+      int hh = (int)(frac * (double) levels + 0.5);
+      if (hh > levels) hh = levels;
+      const char * glyph;
+      if (hh >= row_top)      glyph = blocks[sub];
+      else if (hh <= row_bot) glyph = blocks[0];
+      else                    glyph = blocks[hh - row_bot];
+      int first_byte = c * group;
+      int cls = (first_byte < 32 || first_byte == 127) ? 0
+              : (first_byte < 128 ? 1 : 2);
+      if (use_color && cls != last_class) {
+#if defined(__DJGPP__)
+        static const int dos_pal[3] = { DARKGRAY, LIGHTGRAY, LIGHTCYAN };
+        fflush(stdout);
+        textcolor(dos_pal[cls]);
+#elif defined(_WIN32)
+        fastent_win32_set_console_fg(cls);
+#else
+        static const char * const ansi[3] = {
+          "\x1b[2m", "\x1b[0m", "\x1b[36m"
+        };
+        fputs(ansi[cls], stdout);
+#endif
+        last_class = cls;
+      }
+#if defined(__DJGPP__)
+      if (use_color) cputs(glyph);
+      else           fputs(glyph, stdout);
+#else
+      fputs(glyph, stdout);
+#endif
+    }
+    if (use_color) {
+#if defined(__DJGPP__)
+      fflush(stdout);
+      textcolor(LIGHTGRAY);
+#elif defined(_WIN32)
+      fastent_win32_set_console_fg(-1);
+#else
+      fputs("\x1b[0m", stdout);
+#endif
+    }
+    putchar('\n');
+  }
+  if (bins == 256) {
+    int tick_every = cols / 8;
+    if (tick_every < 1) tick_every = 1;
+    for (c = 0; c < cols; c++) putchar((c % tick_every == 0) ? '|' : '-');
+    putchar('\n');
+    for (c = 0; c < cols; c++) {
+      if (c % tick_every == 0) {
+        int label = c * group;
+        char buf[8];
+        int n = snprintf(buf, sizeof(buf), "%d", label);
+        if (n > tick_every) n = tick_every;
+        printf("%.*s", n, buf);
+        int rest = tick_every - n;
+        while (rest-- > 0 && (c + 1) % tick_every != 0) {
+          putchar(' ');
+          break;
+        }
+        c += tick_every - 1;
+      }
+    }
+    putchar('\n');
+  } else {
+    printf("0 1\n");
+  }
+  u64 raw_peak = 0;
+  int peak_v   = 0;
+  Fi(bins, if (r->hist[i] > raw_peak) { raw_peak = r->hist[i]; peak_v = i; })
+  printf("(peak %llu sample%s at byte %d",
+         (unsigned long long) raw_peak,
+         raw_peak == 1 ? "" : "s",
+         peak_v);
+  if (!o->binary && fastent_is_displayable((unsigned) peak_v))
+    printf(" '%c'", (char) peak_v);
+  if (group > 1)         printf(", %d bytes/col", group);
+  if (o->histogram_log)  printf(", log y");
+  printf(")\n\n");
+}
 
 static void print_counts_default(const fastent_result * r, int binary) {
   const int bins = binary ? 2 : 256;
@@ -351,7 +542,8 @@ static void print_default(const fastent_result * r, const fastent_options * o) {
   const char * samp = o->binary ? "bit" : "byte";
   const int fp = o->full_precision;
 
-  if (o->counts) print_counts_default(r, o->binary);
+  if (o->counts)    print_counts_default(r, o->binary);
+  if (o->histogram) print_histogram(r, o);
 
   if (fp) printf("Entropy = %.17g bits per %s.\n", r->entropy, samp);
   else    printf("Entropy = %f bits per %s.\n",    r->entropy, samp);
@@ -465,11 +657,8 @@ static void print_json(const fastent_result * r, const fastent_options * o) {
 
 int main(int argc, char ** argv) {
 #ifdef _WIN32
-  /*  Before any argv use, replace MSVCRT's CP_ACP-narrowed argv with
-      a fresh UTF-8 argv reconstructed from GetCommandLineW(); also
-      set the console to CP_UTF8 so the bytes we write via printf and
-      fprintf render correctly on the console host.  See
-      fastent-win32.c for the motivation.  */
+  /*  Replace MSVCRT's CP_ACP-narrowed argv with UTF-8 from
+      GetCommandLineW() and set the console to CP_UTF8.  */
   fastent_win32_init_console();
   if (fastent_win32_argv_utf8(&argc, &argv) != 0) {
     fprintf(stderr, "fastent: failed to decode Windows command line\n");
@@ -486,11 +675,8 @@ int main(int argc, char ** argv) {
 #endif
 
 #ifdef HAVE_PLEDGE
-  /*  Drop to the minimal set of OpenBSD promises: rpath is needed
-      only to open the positional file argument; without one we read
-      from the already-open stdin and can pledge straight to stdio.
-      The second, tighter pledge after fastent_src_open() drops rpath
-      so the analysis and reporting phases run with stdio alone.  */
+  /*  rpath only needed to open the positional argument; the second
+      pledge after src_open() drops it.  */
   if (pledge(o.path ? "stdio rpath" : "stdio", NULL) == -1) {
     perror("pledge");
     return 2;
@@ -510,8 +696,6 @@ int main(int argc, char ** argv) {
 #endif
 
   fastent_source src;
-  /*  Resolve I/O mode: explicit --io= wins, then --no-mmap maps to
-      stream, otherwise AUTO.  */
   fastent_io_mode io_mode = (fastent_io_mode) o.io_mode;
   if (io_mode == FASTENT_IO_AUTO && o.no_mmap) io_mode = FASTENT_IO_STREAM;
   if (fastent_src_open(&src, o.path, io_mode) != 0) {
@@ -530,10 +714,6 @@ int main(int argc, char ** argv) {
   }
 #endif
 
-  /*  Pick best variant for each kernel: byte-mode analyse, bit-mode
-      analyse, and the fused fold + analyse pair used when -f is set.
-      Each picker confirms ISA support at runtime via
-      __builtin_cpu_supports.  */
   fastent_variant var = FASTENT_VAR_SCALAR;
   fastent_analyze_fn fn_byte      = fastent_pick_variant(&var);
   fastent_analyze_fn fn_bits      = fastent_pick_bits_variant(NULL);

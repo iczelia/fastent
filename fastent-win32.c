@@ -49,19 +49,14 @@ static char * wide_to_utf8(const wchar_t * w) {
   return s;
 }
 
-/*  Manual UTF-16 command-line splitter implementing the MSVCRT C
-    command-line parsing rules so the user sees the same argv they
-    would on a UTF-8 CRT:
+/*  MSVCRT C command-line parsing rules:
 
-      Outside quotes, runs of spaces/tabs separate args.
-      `"..."` quotes; whitespace inside is kept verbatim.
-      Backslashes before `"`: 2N backslashes resolve to N literal
-        backslashes and the `"` toggles quote state; 2N+1 backslashes
-        resolve to N literal backslashes and the `"` becomes a
-        literal `"`.
-      Inside a quoted string, `""` is a literal `"`.
+      whitespace separates args outside quotes;
+      backslashes before `"`: 2N becomes N literal '\\' and toggles
+        quote state; 2N+1 becomes N literal '\\' and one literal '"';
+      `""` inside quotes is a literal '"'.
 
-    Two-pass: first pass counts argc, second pass fills the array.  */
+    Two-pass: count argc, then fill.  */
 
 static int grow_buf_w(wchar_t ** pbuf, size_t * pbcap) {
   if (*pbcap > (size_t) -1 / (2 * sizeof(wchar_t))) return 0;
@@ -195,12 +190,7 @@ int fastent_win32_argv_utf8(int * argc_out, char *** argv_out) {
 }
 
 void fastent_win32_init_console(void) {
-  /*  Both succeed on Windows 2000+ when a console is attached; on
-      redirected stdout/stderr the calls are silent no-ops.  The
-      output CP affects how WriteFile bytes are rendered by the
-      console host; the input CP is set for symmetry but doesn't
-      matter to fastent (stdin is _setmode'd to _O_BINARY and bytes
-      pass through ReadFile, not ReadConsoleA).  */
+  /*  No-ops when stdout/stderr is redirected.  */
   SetConsoleOutputCP(CP_UTF8);
   SetConsoleCP(CP_UTF8);
 }
@@ -209,7 +199,6 @@ int fastent_win32_open_utf8(const char * path, int flags) {
   if (!path) { errno = EINVAL; return -1; }
   wchar_t * w = utf8_to_wide(path);
   if (!w) {
-    /*  MultiByteToWideChar already set GetLastError; map roughly.  */
     errno = EINVAL;
     return -1;
   }
@@ -222,14 +211,13 @@ int fastent_win32_open_utf8(const char * path, int flags) {
 
 #else  /* FASTENT_WIN_LEGACY: Win95 narrow-API path */
 
-/*  Legacy: keep the CRT's ACP argv as-is.  */
 int fastent_win32_argv_utf8(int * argc_out, char *** argv_out) {
   (void) argc_out; (void) argv_out;
   return 0;
 }
 
 void fastent_win32_init_console(void) {
-  /*  CP 65001 is unsafe pre-OSR2 + IE5.  No-op.  */
+  /*  CP 65001 is unsafe pre-OSR2 + IE5.  */
 }
 
 int fastent_win32_open_utf8(const char * path, int flags) {
@@ -238,8 +226,6 @@ int fastent_win32_open_utf8(const char * path, int flags) {
 }
 
 #endif  /* FASTENT_WIN_LEGACY */
-
-/*  Shared helpers: work on both modern and legacy.  */
 
 void fastent_win32_set_stdin_binary(void) {
   _setmode(_fileno(stdin), _O_BINARY);
@@ -250,10 +236,7 @@ int fastent_win32_close(int fd) {
 }
 
 long fastent_win32_read(int fd, void * buf, size_t n) {
-  /*  _read's count argument is unsigned int; cap to INT_MAX-ish so
-      we don't accidentally truncate to zero on very large n.  Callers
-      in fastent never request more than FASTENT_STREAM_BUF (2 MiB)
-      so this is safety, not a likely path.  */
+  /*  _read takes unsigned int; cap to avoid truncation on huge n.  */
   unsigned int cap = (n > 0x7FFFFFFFu) ? 0x7FFFFFFFu : (unsigned int) n;
   return (long) _read(fd, buf, cap);
 }
@@ -275,14 +258,10 @@ int fastent_win32_mmap(int fd, void ** out_base,
   raw = _get_osfhandle(fd);
   if (raw == -1) return -1;
   h = (HANDLE) raw;
-  /*  Only regular disk files: pipes, consoles, sockets can't be mapped.  */
   if (GetFileType(h) != FILE_TYPE_DISK) return -1;
   if (!GetFileSizeEx(h, &li)) return -1;
   if (li.QuadPart <= 0) return -1;
-  /*  Pass 0,0 for max size: kernel uses the file's current size.  Name
-      is NULL so the mapping object is anonymous and not visible to
-      other processes.  CreateFileMappingW exists on Win95+; the wide
-      vs narrow choice is irrelevant when name == NULL.  */
+  /*  0,0 = use the file's current size; NULL name = anonymous.  */
   hm = CreateFileMappingW(h, NULL, PAGE_READONLY, 0, 0, NULL);
   if (!hm) return -1;
   p = MapViewOfFile(hm, FILE_MAP_READ, 0, 0, 0);
@@ -301,9 +280,36 @@ void fastent_win32_munmap(void * base, void * handle) {
   if (handle) CloseHandle((HANDLE) handle);
 }
 
+void fastent_win32_set_console_fg(int cls) {
+  HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+  if (h == NULL || h == INVALID_HANDLE_VALUE) return;
+  static WORD initial_attrs = 0;
+  static int  initial_saved = 0;
+  if (!initial_saved) {
+    CONSOLE_SCREEN_BUFFER_INFO info;
+    if (GetConsoleScreenBufferInfo(h, &info)) {
+      initial_attrs = info.wAttributes;
+      initial_saved = 1;
+    } else return;
+  }
+  WORD attr;
+  if (cls < 0) {
+    attr = initial_attrs;
+  } else {
+    static const WORD fg[3] = {
+      FOREGROUND_INTENSITY,
+      FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE,
+      FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY
+    };
+    WORD bg_bits = initial_attrs & 0x00F0;
+    attr = (WORD)(fg[cls & 3] | bg_bits);
+  }
+  SetConsoleTextAttribute(h, attr);
+}
+
 void fastent_win32_mmap_prefetch(void * base, unsigned long long size) {
-  /*  PrefetchVirtualMemory is Win 8 / Server 2012+.  Resolve at
-      runtime so Vista and 7 hosts still load this binary.  */
+  /*  PrefetchVirtualMemory is Win 8+; resolve at runtime so this
+      binary still loads on Vista/7.  */
   typedef struct _FE_MEM_RANGE { PVOID VirtualAddress; SIZE_T NumberOfBytes; } FE_MEM_RANGE;
   typedef BOOL (WINAPI * PFN_PVM)(HANDLE, ULONG_PTR, FE_MEM_RANGE *, ULONG);
   static PFN_PVM pfn = NULL;
