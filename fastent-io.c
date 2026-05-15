@@ -101,6 +101,21 @@ int fastent_src_open(fastent_source * s, const char * path, int no_mmap) {
   s->opened_fd = 1;
   s->fd = fd;
 
+#ifdef _WIN32
+  if (!no_mmap) {
+    void *             base   = NULL;
+    void *             handle = NULL;
+    unsigned long long sz_out = 0;
+    if (fastent_win32_mmap(fd, &base, &sz_out, &handle) == 0) {
+      s->kind       = FASTENT_SRC_MMAP;
+      s->map        = base;
+      s->size       = (u64) sz_out;
+      s->map_handle = handle;
+      fastent_win32_mmap_prefetch(base, sz_out);
+      return 0;
+    }
+  }
+#else
 #ifdef HAVE_SYS_STAT_H
   struct stat st;
   if (!no_mmap && fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 0) {
@@ -133,6 +148,7 @@ int fastent_src_open(fastent_source * s, const char * path, int no_mmap) {
 #endif
   }
 #endif
+#endif
 
   s->kind = FASTENT_SRC_STREAM;
   if (alloc_stream_buf(s) < 0) {
@@ -158,8 +174,13 @@ sz fastent_src_read(fastent_source * s) {
 void fastent_src_close(fastent_source * s) {
   if (!s) return;
   if (s->kind == FASTENT_SRC_MMAP && s->map) {
+#ifdef _WIN32
+    fastent_win32_munmap(s->map, s->map_handle);
+    s->map_handle = NULL;
+#else
 #ifdef HAVE_MMAP
     munmap(s->map, (size_t) s->size);
+#endif
 #endif
     s->map = NULL;
   }

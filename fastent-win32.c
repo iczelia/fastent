@@ -264,4 +264,63 @@ long fastent_win32_num_cpus(void) {
   return (long) si.dwNumberOfProcessors;
 }
 
+int fastent_win32_mmap(int fd, void ** out_base,
+                       unsigned long long * out_size,
+                       void ** out_handle) {
+  HANDLE h, hm;
+  LARGE_INTEGER li;
+  void * p;
+  intptr_t raw;
+  if (fd < 0) return -1;
+  raw = _get_osfhandle(fd);
+  if (raw == -1) return -1;
+  h = (HANDLE) raw;
+  /*  Only regular disk files: pipes, consoles, sockets can't be mapped.  */
+  if (GetFileType(h) != FILE_TYPE_DISK) return -1;
+  if (!GetFileSizeEx(h, &li)) return -1;
+  if (li.QuadPart <= 0) return -1;
+  /*  Pass 0,0 for max size: kernel uses the file's current size.  Name
+      is NULL so the mapping object is anonymous and not visible to
+      other processes.  CreateFileMappingW exists on Win95+; the wide
+      vs narrow choice is irrelevant when name == NULL.  */
+  hm = CreateFileMappingW(h, NULL, PAGE_READONLY, 0, 0, NULL);
+  if (!hm) return -1;
+  p = MapViewOfFile(hm, FILE_MAP_READ, 0, 0, 0);
+  if (!p) {
+    CloseHandle(hm);
+    return -1;
+  }
+  *out_base   = p;
+  *out_size   = (unsigned long long) li.QuadPart;
+  *out_handle = hm;
+  return 0;
+}
+
+void fastent_win32_munmap(void * base, void * handle) {
+  if (base)   UnmapViewOfFile(base);
+  if (handle) CloseHandle((HANDLE) handle);
+}
+
+void fastent_win32_mmap_prefetch(void * base, unsigned long long size) {
+  /*  PrefetchVirtualMemory is Win 8 / Server 2012+.  Resolve at
+      runtime so Vista and 7 hosts still load this binary.  */
+  typedef struct _FE_MEM_RANGE { PVOID VirtualAddress; SIZE_T NumberOfBytes; } FE_MEM_RANGE;
+  typedef BOOL (WINAPI * PFN_PVM)(HANDLE, ULONG_PTR, FE_MEM_RANGE *, ULONG);
+  static PFN_PVM pfn = NULL;
+  static int     resolved = 0;
+  FE_MEM_RANGE   r;
+  if (!resolved) {
+    HMODULE k32 = GetModuleHandleW(L"kernel32.dll");
+    if (k32) {
+      void * raw = (void *) GetProcAddress(k32, "PrefetchVirtualMemory");
+      pfn = (PFN_PVM) raw;
+    }
+    resolved = 1;
+  }
+  if (!pfn || !base || size == 0) return;
+  r.VirtualAddress = base;
+  r.NumberOfBytes  = (SIZE_T) size;
+  pfn(GetCurrentProcess(), 1, &r, 0);
+}
+
 #endif

@@ -18,6 +18,9 @@ typedef struct {
   int          fd;
   void *       map;            /*  FASTENT_SRC_MMAP: base pointer  */
   u64          size;           /*  FASTENT_SRC_MMAP: file length    */
+  void *       map_handle;     /*  FASTENT_SRC_MMAP: Win32 HANDLE for the
+                                   CreateFileMapping object; NULL on POSIX
+                                   (munmap doesn't need a handle).  */
   u8 *         stream_buf;     /*  FASTENT_SRC_STREAM: aligned read buffer  */
   void *       stream_buf_raw; /*  FASTENT_SRC_STREAM: pointer to free  */
   sz           stream_buf_cap; /*  FASTENT_SRC_STREAM: buffer size  */

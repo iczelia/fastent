@@ -52,6 +52,24 @@ long fastent_win32_read(int fd, void * buf, size_t n);
 /*  GetSystemInfo-backed sysconf(_SC_NPROCESSORS_ONLN) replacement.  */
 long fastent_win32_num_cpus(void);
 
+/*  CreateFileMapping + MapViewOfFile backed read-only mmap.  `fd` is
+    a POSIX-style descriptor as returned by fastent_win32_open_utf8;
+    the underlying HANDLE is recovered via _get_osfhandle.  Returns 0
+    and fills *out_base / *out_size / *out_handle on success.  Returns
+    -1 if the fd isn't disk-backed, the file is empty, or the mapping
+    can't be created (eg. address space too tight for the file size on
+    32-bit Windows).  The caller passes *out_handle back to
+    fastent_win32_munmap to release the kernel mapping object.  */
+int  fastent_win32_mmap(int fd, void ** out_base,
+                        unsigned long long * out_size,
+                        void ** out_handle);
+void fastent_win32_munmap(void * base, void * handle);
+
+/*  Best-effort sequential read-ahead hint for a mapped region.  Calls
+    PrefetchVirtualMemory on Win 8+ (resolved at runtime so the binary
+    still loads on Vista/7); silent no-op on older hosts.  */
+void fastent_win32_mmap_prefetch(void * base, unsigned long long size);
+
 #endif
 
 #endif
