@@ -20,7 +20,8 @@ typedef enum {
   FASTENT_SORT_POKER,
   FASTENT_SORT_VARIANCE,
   FASTENT_SORT_REDUNDANCY,
-  FASTENT_SORT_DISTINCT
+  FASTENT_SORT_DISTINCT,
+  FASTENT_SORT_BIT_BIAS
 } fastent_sort_by;
 
 typedef struct {
@@ -30,7 +31,6 @@ typedef struct {
   int terse;          /*  -t  */
   int json;           /*  --json  */
   int full_precision; /*  -p / --full-precision  */
-  int no_mmap;        /*  --no-mmap (deprecated alias for --io=stream)  */
   int io_mode;        /*  --io={auto,mmap,stream,uring}  */
   int histogram;      /*  -H / --histogram  */
   int histogram_log;  /*  --log  (log-y for the histogram)  */

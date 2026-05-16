@@ -7,7 +7,7 @@ noinst_HEADERS = analyze.h analyze-impl.h chisq.h \
                  analyze-vec-x86.h analyze-vec-neon.h analyze-vec-wasm.h \
                  common.h fastent-win32.h \
                  fastent-math.h log2_tables.h \
-                 fastent-options.h output.h cli.h runner.h \
+                 fastent-options.h output.h cli.h runner.h yarg.h \
                  port-cpu.h port-io.h port-term.h port-os.h \
                  port-thread.h port-walk.h
 

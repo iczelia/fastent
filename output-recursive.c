@@ -34,7 +34,9 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
         "mean,monte_carlo_pi,serial_correlation", stdout);
   if (o->extended)
     fputs(",min_entropy,collision_entropy,ic,poker,poker_p,variance,stddev,"
-          "redundancy,distinct,mode,mode_count,rarest,rarest_count", stdout);
+          "redundancy,distinct,mode,mode_count,rarest,rarest_count,"
+          "bit0,bit1,bit2,bit3,bit4,bit5,bit6,bit7,"
+          "bit_bias_max,bit_bias_worst", stdout);
   putchar('\n');
   for (sz i = 0; i < n; i++) {
     const fastent_recursive_row * r = &rows[i];
@@ -62,6 +64,9 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
              (unsigned long long) r->result.mode_count,
              r->result.rarest_value,
              (unsigned long long) r->result.rarest_count);
+      Fi(8, putchar(','); printf(f, r->result.bit_freq[i]))
+      putchar(','); printf(f, r->result.bit_bias_max);
+      printf(",%d", r->result.bit_bias_worst);
     }
     putchar('\n');
   }
@@ -141,6 +146,22 @@ void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
       else printf("{ \"value\": %d, \"count\": %llu }",
                   r->result.rarest_value,
                   (unsigned long long) r->result.rarest_count);
+      fputs(", \"bit_frequencies\": ", stdout);
+      if (r->result.bit_bias_worst < 0) {
+        fputs("null", stdout);
+      } else {
+        putchar('[');
+        Fi(8, if (i) putchar(',');
+              putchar(' '); json_num_(f, r->result.bit_freq[i]))
+        fputs(" ]", stdout);
+      }
+      fputs(", \"bit_bias\": ", stdout);
+      if (r->result.bit_bias_worst < 0) {
+        fputs("null", stdout);
+      } else {
+        printf("{ \"max\": "); json_num_(f, r->result.bit_bias_max);
+        printf(", \"worst_bit\": %d }", r->result.bit_bias_worst);
+      }
     }
     fputs(" }", stdout);
     if (i + 1 < n) putchar(',');

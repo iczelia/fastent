@@ -17,9 +17,9 @@ mean, Monte Carlo value of pi, and serial correlation coefficient.
 With `-e` it additionally reports min-entropy, collision entropy and
 index of coincidence, a poker test (16-bin nibble chi-square, df=15),
 variance and standard deviation, redundancy, the distinct-symbol count,
-and the most/least common symbol.  Byte mode by default; bit mode under
-`-b`.  Output formats: human-readable, CSV (`-t`), JSON (`--json`), and
-an interpretive pass/fail report (`--annotate`); add a per-value
+the most/least common symbol, and the per-bit-position bias.  Byte mode by default; bit mode under
+`-b`.  Output formats: human-readable, CSV (`-t`), JSON (`-J`), and
+an interpretive pass/fail report (`-a`/`--annotate`); add a per-value
 occurrence table with `-c` or a terminal block-plot of the histogram
 with `-H`.
 
@@ -36,20 +36,22 @@ with `-H`.
 - runtime CPU dispatch across scalar / SSSE3 / SSE4.1 / AVX2 /
   AVX-512 (F + BW + BITALG) / AArch64 NEON / AArch64 SVE2 / ARMv7-A
   NEON / WebAssembly SIMD128
-- input strategy selectable via `--io={auto,mmap,stream,uring}`:
+- input strategy selectable via `-i`/`--io={auto,mmap,stream,uring}`:
   `mmap` with `MADV_SEQUENTIAL`/`POSIX_FADV_SEQUENTIAL` for regular
   files; `uring` for a four-deep async pipeline (io_uring on Linux
   5.1+, IOCP on Windows Vista+) to hide latency on cold-cache NVMe;
   `stream` for a 2 MiB aligned `read(2)` loop everywhere
 - extended statistics (`-e`) derived at finalisation from the histogram
   and running sums (min-entropy, collision entropy / IC, poker test,
-  variance, redundancy, distinct/mode/rarest); no per-byte cost and
-  bit-identical across hosts and thread counts.  `--annotate` turns
+  variance, redundancy, distinct/mode/rarest, per-bit-position bias);
+  no per-byte cost and bit-identical across hosts and thread counts.
+  Per-bit-position bias catches structured binary (dead high bits,
+  ASCII bit 7) that order-0 entropy and chi-square miss.  `--annotate` turns
   them into a per-metric PASS / WEAK / FAIL report with a headline
   verdict
 - recursive mode (`-r DIR`) walks a directory and emits one CSV / JSON
   row per file, with `--sort-by={path,samples,entropy,chisq,mean,pi,scc,`
-  `min-entropy,collision,ic,poker,variance,redundancy,distinct}`
+  `min-entropy,collision,ic,poker,variance,redundancy,distinct,bitbias}`
 - terminal histogram visualisation (`-H`) with Unicode block glyphs,
   optional log Y axis (`--log`), and platform-native colouring
   (ANSI / `SetConsoleTextAttribute` / DJGPP `<conio.h>`)

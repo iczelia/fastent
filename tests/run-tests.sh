@@ -149,9 +149,21 @@ check "fold flag: total preserved" bash -c '
   grep -q "^1,1048576," <<< "$out"
 '
 
-check "no-mmap path agrees" bash -c '
+check "io=stream path agrees" bash -c '
   a=$('"${FASTENT}"' -t "'"${FIX}"'/lcg.bin")
-  b=$('"${FASTENT}"' -t --no-mmap "'"${FIX}"'/lcg.bin")
+  b=$('"${FASTENT}"' -t --io=stream "'"${FIX}"'/lcg.bin")
+  c=$('"${FASTENT}"' -t -i stream "'"${FIX}"'/lcg.bin")
+  [ "$a" = "$b" ] && [ "$b" = "$c" ]
+'
+
+check "--no-mmap is rejected" bash -c '
+  '"${FASTENT}"' -t --no-mmap "'"${FIX}"'/lcg.bin" 2>/dev/null && exit 1
+  exit 0
+'
+
+check "short aliases match long forms" bash -c '
+  a=$('"${FASTENT}"' --json --extended "'"${FIX}"'/lcg.bin")
+  b=$('"${FASTENT}"' -J -e "'"${FIX}"'/lcg.bin")
   [ "$a" = "$b" ]
 '
 
@@ -174,10 +186,26 @@ check "uniform -e: min-entropy = 8.000000" bash -c '
     grep -qE "Collision entropy is 8\.000000 bits per byte\." <<< "$out"
 '
 
-check "terse -e: 20 columns" bash -c '
+check "terse -e: 30 columns" bash -c '
   out=$('"${FASTENT}"' -e -t "'"${FIX}"'/lcg.bin")
   grep -q "Min-Entropy,Collision-Entropy,IC,Poker,Poker-p," <<< "$out" &&
-    [ "$(printf "%s\n" "$out" | sed -n 2p | tr , "\n" | wc -l)" -eq 20 ]
+    grep -q "Bit0,Bit1,Bit2,Bit3,Bit4,Bit5,Bit6,Bit7,Bit-Bias-Max,Bit-Bias-Worst" <<< "$out" &&
+    [ "$(printf "%s\n" "$out" | sed -n 2p | tr , "\n" | wc -l)" -eq 30 ]
+'
+
+check "uniform -e: bit balance perfect" bash -c '
+  out=$('"${FASTENT}"' --json -e "'"${FIX}"'/uniform.bin")
+  python3 -c "import json,sys; d=json.load(sys.stdin); assert d[\"bit_bias\"][\"max\"]==0.0 and len(d[\"bit_frequencies\"])==8 and all(f==0.5 for f in d[\"bit_frequencies\"])" <<< "$out"
+'
+
+check "all-zeros -e: bit7=0, max bias 0.5" bash -c '
+  out=$('"${FASTENT}"' --json -e "'"${FIX}"'/all-zeros.bin")
+  python3 -c "import json,sys; d=json.load(sys.stdin); assert d[\"bit_bias\"][\"max\"]==0.5 and d[\"bit_frequencies\"]==[0.0]*8" <<< "$out"
+'
+
+check "bit mode: bit_frequencies null" bash -c '
+  out=$('"${FASTENT}"' --json -e -b "'"${FIX}"'/lcg.bin")
+  python3 -c "import json,sys; d=json.load(sys.stdin); assert d[\"bit_frequencies\"] is None and d[\"bit_bias\"] is None" <<< "$out"
 '
 
 check "JSON -e: poker + min_entropy keys" bash -c '

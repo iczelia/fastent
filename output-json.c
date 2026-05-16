@@ -67,6 +67,18 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
     if (r->rarest_value < 0) fputs("null", stdout);
     else printf("{ \"value\": %d, \"count\": %llu }",
                 r->rarest_value, (unsigned long long) r->rarest_count);
+    printf(",\n  \"bit_frequencies\": ");
+    if (r->bit_bias_worst < 0) {
+      fputs("null", stdout);
+    } else {
+      putchar('[');
+      Fi(8, if (i) putchar(','); putchar(' '); printf(fmt_fp, r->bit_freq[i]))
+      fputs(" ]", stdout);
+    }
+    printf(",\n  \"bit_bias\": ");
+    if (r->bit_bias_worst < 0) fputs("null", stdout);
+    else { printf("{ \"max\": "); jnum_(fmt_fp, r->bit_bias_max);
+           printf(", \"worst_bit\": %d }", r->bit_bias_worst); }
   }
   if (o->counts) {
     printf(",\n  \"occurrences\": [\n");

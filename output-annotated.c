@@ -74,7 +74,7 @@ typedef struct {
 static void row_(const fastent_options * o, int color, verdict_acc * v,
                  int core, const char * label, const char * aux,
                  int badge, const char * expl) {
-  printf("  %-20s%-34s ", label, aux);
+  printf("  %-19s%-25s ", label, aux);
   if (color) fastent_term_set_sev(badge);
   fastent_term_write(badge_txt_(badge));
   if (color) fastent_term_set_sev(-1);
@@ -117,7 +117,7 @@ void fastent_print_annotated(const fastent_result * r,
     row_(o, color, &v, 1, "Shannon entropy", aux, b,
          b == B_PASS ? "looks random"
        : b == B_WEAK ? "slightly compressible"
-       :               "structured / compressible");
+       :               "compressible");
   }
 
   /*  Min-entropy (worst-case, the crypto-relevant measure).  */
@@ -128,9 +128,9 @@ void fastent_print_annotated(const fastent_result * r,
              ? "%.17g/%g  %.2f%% max" : "%.6g/%g  %.2f%% max",
              r->min_entropy, hmax, 100.0 * ratio);
     row_(o, color, &v, 1, "Min-entropy", aux, b,
-         b == B_PASS ? "full worst-case strength"
+         b == B_PASS ? "full strength"
        : b == B_WEAK ? "some worst-case bias"
-       :               "weak worst-case strength");
+       :               "weak worst-case");
   }
 
   /*  Chi-square.  */
@@ -226,6 +226,23 @@ void fastent_print_annotated(const fastent_result * r,
        : b == B_WEAK ? "weak correlation"
        : b == B_NA   ? "all values equal"
        :               "correlated");
+  }
+
+  /*  Per-bit-position bias: worst bit vs the uniform Binomial(N,1/2),
+      z = 2*|f-0.5|*sqrt(N).  Byte mode only.  */
+  if (r->bit_bias_worst < 0) {
+    row_(o, color, &v, 0, "Bit balance", "not applicable to bits",
+         B_NA, "");
+  } else {
+    const f64 z = 2.0 * r->bit_bias_max * sqrt(totalc);
+    int b = z_badge_(z);
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "bit %d  P(1)=%.17g" : "bit %d  P(1)=%.4f",
+             r->bit_bias_worst, r->bit_freq[r->bit_bias_worst]);
+    row_(o, color, &v, 1, "Bit balance", aux, b,
+         b == B_PASS ? "bit lanes balanced"
+       : b == B_WEAK ? "mild bit-lane bias"
+       :               "structured bit lane");
   }
 
   /*  Informational footer (no verdict).  */

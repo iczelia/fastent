@@ -120,6 +120,34 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
     out->poker_chisq = pk;
     out->poker_p     = fastent_chisq_tail_df(pk, 15);
   }
+
+  /*  Per-bit-position bias.  ones[k] = sum of hist[v] over values v
+      with bit k set, derived from the byte histogram at zero per-byte
+      cost.  Catches structured binary (dead high bits, ASCII bit 7)
+      that order-0 byte entropy and chi-square both miss.  Byte mode
+      only; in bit mode the byte histogram does not exist.  */
+  if (binary || out->total_samples == 0) {
+    Fi(8, out->bit_freq[i] = NAN)
+    out->bit_bias_max   = NAN;
+    out->bit_bias_worst = -1;
+  } else {
+    u64 ones[8];
+    memset(ones, 0, sizeof(ones));
+    Fi(256,
+       const u64 c = out->hist[i];
+       int b;
+       for (b = 0; b < 8; b++)
+         if (i & (1 << b)) ones[b] += c)
+    f64 worst = -1.0;
+    int wk = 0;
+    Fi(8,
+       const f64 f = (f64) ones[i] / totalc;
+       out->bit_freq[i] = f;
+       const f64 d = f < 0.5 ? 0.5 - f : f - 0.5;
+       if (d > worst) { worst = d; wk = i; })
+    out->bit_bias_max   = worst;
+    out->bit_bias_worst = wk;
+  }
 }
 
 /*  Variant table.  Order matters: dispatcher picks the LAST entry whose

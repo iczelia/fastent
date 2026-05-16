@@ -146,7 +146,6 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
       open errors so we don't abort the whole walk.  */
   fastent_source src;
   fastent_io_mode io = (fastent_io_mode) c->o->io_mode;
-  if (io == FASTENT_IO_AUTO && c->o->no_mmap) io = FASTENT_IO_STREAM;
   if (fastent_src_open(&src, path, io) != 0) {
     fprintf(stderr, "skip %s: %s\n", path, strerror(errno));
     return 0;
@@ -237,6 +236,7 @@ static double row_key_(const fastent_recursive_row * r) {
     case FASTENT_SORT_VARIANCE:   return r->result.variance;
     case FASTENT_SORT_REDUNDANCY: return r->result.redundancy;
     case FASTENT_SORT_DISTINCT:   return (double) r->result.distinct;
+    case FASTENT_SORT_BIT_BIAS:   return r->result.bit_bias_max;
     default:                      return 0.0;
   }
 }

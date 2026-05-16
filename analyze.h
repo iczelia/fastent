@@ -73,6 +73,9 @@ typedef struct {
   u64 mode_count;
   int rarest_value;       /*  least frequent observed symbol (-1 none) */
   u64 rarest_count;
+  f64 bit_freq[8];        /*  P(bit k = 1), k=0 LSB..7 MSB; byte mode  */
+  f64 bit_bias_max;       /*  max_k |bit_freq[k]-0.5|; NaN in bit mode */
+  int bit_bias_worst;     /*  argmax k of that bias; -1 in bit mode    */
 
   u64 hist[256];     /*  For -c output. In bit mode, hist[0]/hist[1] are bit counts.  */
 } fastent_result;

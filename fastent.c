@@ -84,7 +84,6 @@ int main(int argc, char ** argv) {
 
   fastent_source src;
   fastent_io_mode io_mode = (fastent_io_mode) o.io_mode;
-  if (io_mode == FASTENT_IO_AUTO && o.no_mmap) io_mode = FASTENT_IO_STREAM;
   if (fastent_src_open(&src, o.path, io_mode) != 0) {
     if (o.path) {
       fprintf(stderr, "cannot open file %s: %s\n", o.path, strerror(errno));

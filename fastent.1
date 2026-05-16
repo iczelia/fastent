@@ -59,7 +59,7 @@ prepass.
 .BR \-t ", " \-\-terse
 Emit results in CSV format suitable for downstream parsers.
 .TP
-.B \-\-json
+.BR \-J ", " \-\-json
 Emit results as a JSON document.  Overrides
 .BR \-t .
 With
@@ -73,16 +73,21 @@ collision entropy
 .RB ( H 2)
 and index of coincidence, the poker test (a 16-bin nibble chi-square
 with 15 degrees of freedom), variance and standard deviation,
-redundancy, the distinct-symbol count, and the most/least common
-symbol.  These are appended to the default, terse, JSON, and
-recursive output.  Without
+redundancy, the distinct-symbol count, the most/least common
+symbol, and the per-bit-position bias (the probability that bit
+.IR k ,
+0 = LSB .. 7 = MSB, is set; byte mode only).  The bit-position bias
+is derived from the byte histogram at no per-byte cost and exposes
+structured binary that order-0 entropy and chi-square miss (dead
+high bits, ASCII pinning bit 7 to 0).  These are appended to the
+default, terse, JSON, and recursive output.  Without
 .B \-e
 the output is byte-for-byte the classic format.  All extended
 quantities are derived at finalisation from the histogram and the
 running sums, so they add no per-byte cost and remain bit-identical
 across hosts and thread counts.
 .TP
-.B \-\-annotate
+.BR \-a ", " \-\-annotate
 Render an interpretive report instead of the plain text: every metric
 is shown with a
 .BR PASS / WEAK / FAIL
@@ -112,8 +117,15 @@ threads, and adjacent slab boundary products are stitched into the
 serial-correlation sum.  Output is byte-for-byte identical to the
 single-threaded run because all arithmetic is integer and the merge
 order is deterministic.
+This option is present only when
+.B fastent
+was built with a thread backend; a single-threaded build omits both
+.B \-j
+and
+.B \-\-threads
+(and rejects them as unknown).
 .TP
-.B "\-\-io=" \fIMODE\fR
+.BR \-i ", " "\-\-io=" \fIMODE\fR
 Pick the input strategy.  \fIMODE\fR is one of:
 .RS
 .IP \fBauto\fR 8
@@ -134,10 +146,6 @@ no liburing dependency); IOCP on Windows Vista+ (overlapped
 ENOSYS on other targets.
 .RE
 .TP
-.B \-\-no-mmap
-Alias for
-.BR \-\-io=stream .
-.TP
 .BR \-H ", " \-\-histogram
 Render a vertical block-plot of the byte (or bit) distribution
 before the textual results.  Uses Unicode 1/8-th block glyphs
@@ -149,10 +157,10 @@ included alongside
 .BR \-t " and " \-\-json
 when those are set.
 .TP
-.B \-\-log
+.BR \-l ", " \-\-log
 Logarithmic Y axis for the histogram.  Useful when one bin dominates.
 .TP
-.B "\-\-color=" \fIMODE\fR
+.BR \-C ", " "\-\-color=" \fIMODE\fR
 Colour mode for the histogram.  \fIMODE\fR is
 .BR auto " (default; uses colour iff stdout is a terminal and " NO_COLOR " is unset), "
 .BR always ,
@@ -188,7 +196,7 @@ Sort the rows in recursive mode.
 is one of
 .BR path ", " samples ", " entropy ", " chisq ", " mean ", " pi ", " scc ", "
 .BR min-entropy ", " collision ", " ic ", " poker ", " variance ", "
-.BR redundancy ", " distinct .
+.BR redundancy ", " distinct ", " bitbias .
 Selecting any of the extended columns implies
 .BR \-e .
 .I DIR
@@ -298,7 +306,8 @@ the extended statistics are appended to every format.  The terse and
 recursive CSV rows gain, in order,
 .BR Min-Entropy ", " Collision-Entropy ", " IC ", " Poker ", " Poker-p ", "
 .BR Variance ", " Stddev ", " Redundancy ", " Distinct ", " Mode ", "
-.BR Mode-Count ", " Rarest ", " Rarest-Count .
+.BR Mode-Count ", " Rarest ", " Rarest-Count ", "
+.BR Bit0 .. Bit7 ", " Bit-Bias-Max ", " Bit-Bias-Worst .
 The JSON object gains
 .BR min_entropy ", " collision_entropy ", " index_of_coincidence ", "
 a
@@ -309,7 +318,15 @@ in bit mode),
 .BR variance ", " stddev ", " redundancy ", " distinct_symbols ", "
 and the
 .BR most_common " and " rarest
-sub-objects.  In
+sub-objects, the
+.B bit_frequencies
+array (8 values, or
+.B null
+in bit mode) and the
+.B bit_bias
+sub-object
+.RB ( max ", " worst_bit ).
+In
 .BR \-\-annotate
 mode the plain text is replaced by an aligned table: one row per
 metric with its value, p-value where defined, a
@@ -450,7 +467,7 @@ and
 Regular-file inputs are memory-mapped read-only: virtual address
 space proportional to the input, resident-set growth driven by the
 kernel's read-ahead.  Stream inputs (stdin, pipes, unmappable files,
-.BR \-\-no-mmap )
+.BR \-\-io=stream )
 use a single 2 MiB aligned read buffer regardless of input size.
 Each worker thread under
 .B \-j N

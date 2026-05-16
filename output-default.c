@@ -135,4 +135,15 @@ void fastent_print_default(const fastent_result * r, const fastent_options * o) 
            "rarest is %d (%llu times).\n",
            r->mode_value, (unsigned long long) r->mode_count,
            r->rarest_value, (unsigned long long) r->rarest_count);
+
+  if (o->binary) {
+    printf("Per-bit-position bias is not applicable to bit streams.\n");
+  } else {
+    printf("Per-bit-position P(1) [bit 0 = LSB]:\n");
+    Fi(8, printf(fp ? "  bit %d = %.17g\n" : "  bit %d = %.4f\n",
+                 i, r->bit_freq[i]))
+    printf(fp ? "Worst bit is %d (bias %.17g from 0.5).\n"
+              : "Worst bit is %d (bias %.4f from 0.5).\n",
+           r->bit_bias_worst, r->bit_bias_max);
+  }
 }

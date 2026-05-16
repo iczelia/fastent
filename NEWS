@@ -14,10 +14,13 @@ Unreleased
   NIST SP 800-90B measure), collision entropy (H2) and the index of
   coincidence, a poker test (16-bin nibble chi-square with 15 degrees
   of freedom), variance and standard deviation, redundancy, the
-  distinct-symbol count, and the most / least common symbol.  The new
-  values are appended to the default, terse CSV, JSON, and recursive
-  output, and --sort-by accepts the new columns (min-entropy,
-  collision, ic, poker, variance, redundancy, distinct).  Without -e
+  distinct-symbol count, the most / least common symbol, and the
+  per-bit-position bias (P(bit k = 1) for k = 0..7, byte mode), which
+  exposes structured binary that order-0 entropy and chi-square miss
+  (dead high bits, ASCII pinning bit 7).  The new values are appended
+  to the default, terse CSV, JSON, and recursive output, and
+  --sort-by accepts the new columns (min-entropy, collision, ic,
+  poker, variance, redundancy, distinct, bitbias).  Without -e
   the output is byte-for-byte the classic format.  All extended
   quantities are derived at finalisation from the histogram and the
   running sums, so they add no per-byte cost and stay bit-identical
@@ -32,6 +35,20 @@ Unreleased
   a PASS / WEAK / FAIL / N/A badge, and a one-line explanation,
   closing with a headline verdict that names the weakest signal.
   Badge colour follows --color.  Not supported with -r.
+
+  Command line
+  ------------
+
+  Argument parsing now uses the vendored single-header yarg library
+  (github.com/iczelia/yarg), kept verbatim in-tree so the
+  zero-dependency / exotic-target build is preserved.  New short
+  aliases: -J (--json), -a (--annotate), -i (--io), -l (--log),
+  -C (--color).  --color now requires an explicit mode
+  (auto|always|never); the previously undocumented bare --color is
+  gone.  --no-mmap is removed; use --io=stream (or -i stream).
+  -j / --threads are present only in builds with a thread backend
+  and are rejected as unknown otherwise.  All textual (non
+  --full-precision) output is kept within 80 columns.
 
   Internal
   --------
