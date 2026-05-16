@@ -19,24 +19,14 @@ typedef struct {
   const u64 *    bounds;     /*  N+1 entries, multiples of 6 except last  */
   fastent_chunk_state * states;
   fastent_analyze_fn fn;
-  int            want_bigram;  /*  byte -ee: allocate the 64K table  */
-  int            digram;       /*  -ee (byte or bit): run the pass    */
-  int            binary;
 } mt_ctx;
 
 static void mt_worker_(sz k, void * vctx) {
   mt_ctx * c = (mt_ctx *) vctx;
   u64 start = c->bounds[k];
   u64 end   = c->bounds[k + 1];
-  sz  n     = (sz)(end - start);
   fastent_chunk_state_init(&c->states[k]);
-  if (c->want_bigram) {
-    c->states[k].bigram = fastent_bigram_alloc();
-    if (!c->states[k].bigram) { fprintf(stderr, "out of memory\n"); exit(2); }
-  }
-  c->fn(&c->states[k], c->data + start, n);
-  if (c->digram)
-    fastent_digram_count(&c->states[k], c->data + start, n, c->binary);
+  c->fn(&c->states[k], c->data + start, (sz)(end - start));
 }
 
 static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
@@ -60,10 +50,7 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
     (fastent_chunk_state *) calloc((sz) N, sizeof(*states));
   if (!states) { fprintf(stderr, "out of memory\n"); exit(2); }
 
-  mt_ctx ctx = { data, bounds, states, fn,
-                 out->bigram != NULL,        /*  want_bigram  */
-                 o->extended >= 2,           /*  digram       */
-                 o->binary };
+  mt_ctx ctx = { data, bounds, states, fn };
   fastent_parallel_for((sz) N, mt_worker_, &ctx);
 
   /*  Merge slabs: adjacent slab pairs contribute b[end-1] *
@@ -77,22 +64,8 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
      Fi(FASTENT_BANKS, Fj(256, out->bank[i][j] += s->bank[i][j]))
      out->bit_hist[0] += s->bit_hist[0];
      out->bit_hist[1] += s->bit_hist[1];
-     if (out->bigram && s->bigram)
-       Fi(FASTENT_BG_CELLS, out->bigram[i] += s->bigram[i])
-     out->bit_bigram[0][0] += s->bit_bigram[0][0];
-     out->bit_bigram[0][1] += s->bit_bigram[0][1];
-     out->bit_bigram[1][0] += s->bit_bigram[1][0];
-     out->bit_bigram[1][1] += s->bit_bigram[1][1];
      if (out->have_carry) {
        out->cross_product += (i64) out->carry_byte * (i64) s->first_byte;
-       /*  Boundary pair (prev slab last, this slab first), once per
-           adjacency, no wrap.  Byte: table 0 of the 64K histogram;
-           bit: the 2x2 table (carry/first hold single bits here).  */
-       if (out->bigram)
-         out->bigram[((unsigned) out->carry_byte << 8)
-                      | (unsigned) s->first_byte]++;
-       if (o->binary)
-         out->bit_bigram[out->carry_byte & 1u][s->first_byte & 1u]++;
      } else {
        out->first_byte = s->first_byte;
        out->have_first = 1;
@@ -111,15 +84,14 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
        memcpy(out->mc_buf, s->mc_buf, sizeof(out->mc_buf));
      })
 
-  Fk(N, fastent_bigram_free(states[k].bigram))
   free(states);
   free(bounds);
 
-  /*  Runs / longest-run / cusum: one serial scan of the whole
-      resident buffer into the merged state (no cross-slab stitch in
-      this first cut; deterministic regardless of -j).  */
+  /*  The -ee extras (digram + longest run + runs + cusum) are one
+      fused serial scan of the whole resident buffer into the merged
+      state: no cross-slab stitch, bit-identical regardless of -j.  */
   if (o->extended >= 2)
-    fastent_runs_count(out, data, (sz) size, o->binary);
+    fastent_digram_count(out, data, (sz) size, o->binary);
 }
 #endif
 
@@ -141,10 +113,8 @@ void fastent_run_mmap(fastent_chunk_state * st, const fastent_options * o,
 #endif
 
   body(st, data, (sz) size);
-  if (o->extended >= 2) {
+  if (o->extended >= 2)
     fastent_digram_count(st, data, (sz) size, o->binary);
-    fastent_runs_count(st, data, (sz) size, o->binary);
-  }
 }
 
 void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
@@ -164,10 +134,8 @@ void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
     }
     if (n == 0) break;
     body(st, src->stream_buf, n);
-    if (o->extended >= 2) {
+    if (o->extended >= 2)
       fastent_digram_count(st, src->stream_buf, n, o->binary);
-      fastent_runs_count(st, src->stream_buf, n, o->binary);
-    }
   }
 }
 
@@ -210,17 +178,6 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   }
   fastent_result r;
   fastent_finalize(&st, c->o->binary, &r);
-
-  if (!c->o->binary && c->o->extended >= 2
-      && src.kind == FASTENT_SRC_MMAP && r.total_samples > 0) {
-    u64 acc = 0;
-    const u64 half = (r.total_samples + 1) / 2;
-    int m = 0;
-    Fi(256, acc += r.hist[i];
-            if (acc >= half) { m = i; break; })
-    r.runs = (f64) fastent_byte_runs_median((const u8 *) src.map,
-                                            (sz) src.size, m);
-  }
 
   fastent_src_close(&src);
   fastent_bigram_free(st.bigram);

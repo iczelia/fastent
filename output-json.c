@@ -12,15 +12,17 @@
   #define M_PI 3.14159265358979323846
 #endif
 
+/*  JSON has no NaN/Infinity literal, so any non-finite value becomes
+    null (the same convention the extended fields already use).  */
 static void jnum_(const char * fmt, double v) {
-  if (!(v == v)) { fputs("null", stdout); return; }  /*  NaN -> null  */
+  if (!isfinite(v)) { fputs("null", stdout); return; }
   printf(fmt, v);
 }
 
 /*  Integer-valued counts: exact, never %g.  */
 static void jint_(double v) {
-  if (!(v == v)) fputs("null", stdout);
-  else           printf("%.0f", v);
+  if (!isfinite(v)) fputs("null", stdout);
+  else              printf("%.0f", v);
 }
 
 void fastent_print_json(const fastent_result * r, const fastent_options * o) {
@@ -33,23 +35,23 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   printf("{\n");
   printf("  \"unit\": \"%s\",\n", samp);
   printf("  \"samples\": %llu,\n", (unsigned long long) r->total_samples);
-  printf("  \"entropy\": "); printf(fmt_fp, r->entropy); printf(",\n");
+  printf("  \"entropy\": "); jnum_(fmt_fp, r->entropy); printf(",\n");
   printf("  \"optimum_compression_percent\": %d,\n", comp_pct);
   printf("  \"chi_square\": {\n");
-  printf("    \"statistic\": "); printf(fmt_fp, r->chi_square); printf(",\n");
+  printf("    \"statistic\": "); jnum_(fmt_fp, r->chi_square); printf(",\n");
   printf("    \"df\": %d,\n", o->binary ? 1 : 255);
   printf("    \"p_exceed\": ");
-  printf(fmt_fp, r->chi_probability);  printf("\n");
+  jnum_(fmt_fp, r->chi_probability);  printf("\n");
   printf("  },\n");
-  printf("  \"arithmetic_mean\": "); printf(fmt_fp, r->mean); printf(",\n");
+  printf("  \"arithmetic_mean\": "); jnum_(fmt_fp, r->mean); printf(",\n");
   printf("  \"monte_carlo_pi\": {\n");
-  printf("    \"value\": "); printf(fmt_fp, r->monte_pi); printf(",\n");
+  printf("    \"value\": "); jnum_(fmt_fp, r->monte_pi); printf(",\n");
   printf("    \"error_percent\": ");
-  printf(fmt_fp, 100.0 * (fabs(M_PI - r->monte_pi) / M_PI));
+  jnum_(fmt_fp, 100.0 * (fabs(M_PI - r->monte_pi) / M_PI));
   printf("\n  },\n");
   printf("  \"serial_correlation\": ");
   if (r->scc < -99999) printf("null");
-  else                 printf(fmt_fp, r->scc);
+  else                 jnum_(fmt_fp, r->scc);
   if (o->extended) {
     printf(",\n  \"min_entropy\": ");          jnum_(fmt_fp, r->min_entropy);
     printf(",\n  \"collision_entropy\": ");
@@ -59,8 +61,8 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
     if (!(r->poker_chisq == r->poker_chisq)) {
       fputs("null", stdout);
     } else {
-      printf("{ \"statistic\": "); printf(fmt_fp, r->poker_chisq);
-      printf(", \"df\": 15, \"p_exceed\": "); printf(fmt_fp, r->poker_p);
+      printf("{ \"statistic\": "); jnum_(fmt_fp, r->poker_chisq);
+      printf(", \"df\": 15, \"p_exceed\": "); jnum_(fmt_fp, r->poker_p);
       printf(" }");
     }
     printf(",\n  \"variance\": ");        jnum_(fmt_fp, r->variance);
@@ -80,7 +82,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
       fputs("null", stdout);
     } else {
       putchar('[');
-      Fi(8, if (i) putchar(','); putchar(' '); printf(fmt_fp, r->bit_freq[i]))
+      Fi(8, if (i) putchar(','); putchar(' '); jnum_(fmt_fp, r->bit_freq[i]))
       fputs(" ]", stdout);
     }
     printf(",\n  \"bit_bias\": ");
@@ -105,7 +107,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
        first = 0;
        printf("    { \"value\": %d, \"count\": %llu, \"fraction\": ",
               i, (unsigned long long) r->hist[i]);
-       printf(fmt_fp, (f64) r->hist[i] / (f64) r->total_samples);
+       jnum_(fmt_fp, (f64) r->hist[i] / (f64) r->total_samples);
        printf(" }"))
     printf("\n  ]");
   }

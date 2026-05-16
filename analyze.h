@@ -70,8 +70,8 @@ typedef struct {
   u8    dg_have;
 
   /*  -ee level-2 sequential extras (runs / longest run / cusum),
-      filled by fastent_runs_count; zeroed at init.  Symbols are bits
-      in bit mode, byte values in byte mode.  Stream accumulates these
+      filled by fastent_digram_count; zeroed at init.  Symbols are
+      bits in bit mode, byte values in byte mode.  Stream accumulates
       across chunks in one state; mmap does a single serial scan of
       the whole buffer (no cross-slab stitch in this first cut).  */
   u64 lr_max;        /*  longest completed identical-symbol run  */
@@ -204,23 +204,16 @@ void analyze_fold_sve2(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
-/*  Order-1 digram counter (opt-in, -ee).  Runs as its own tight pass
-    over the same bytes the fast SIMD analyser just consumed, so the
-    order-0 stats keep full SIMD throughput.  Byte mode fills the
+/*  The -ee level-2 extra pass: one scalar scan over the same bytes
+    the fast SIMD analyser just consumed (order-0 keeps full SIMD
+    throughput).  Folds the digram histogram, longest run, 0/1 runs
+    and the +-1 cusum walk into a single pass.  Byte mode fills the
     NB-table 64K histogram (st->bigram); bit mode fills bit_bigram.
-    binary selects the mode; dg_prev/dg_have carry across calls.  */
+    dg_prev/dg_have carry across calls (a byte, or the last bit in
+    bit mode).  Byte runs-vs-median is derived in fastent_finalize
+    from the digram joint counts, so it needs no buffer rescan.  */
 void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
                           sz len, int binary);
-
-/*  -ee sequential extras, same per-chunk pass model as the digram
-    counter: longest identical-symbol run (both modes), 0/1 runs and
-    the +-1 cusum walk (bit mode).  Byte runs-vs-median needs the
-    median, a finalize quantity, so it is a separate post-finalize
-    rescan; fastent_byte_runs_median counts below/>=median runs over
-    a resident buffer (mmap only) and returns the run count.  */
-void fastent_runs_count(fastent_chunk_state * st, const u8 * buf,
-                        sz len, int binary);
-u64 fastent_byte_runs_median(const u8 * buf, sz len, int median);
 
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which);
 fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which);

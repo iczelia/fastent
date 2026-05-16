@@ -31,49 +31,32 @@ with `-H`.
 
 ## Highlights
 
-- 4-way banked SIMD histogram in the inner loop, breaking the
-  read-modify-write hazard chain on the increment-memory path
-- serial-correlation cross-product via `VPMADDUBSW` with an on-the-fly
-  sign-correction derived from `PSADBW`; AArch64 SVE2 builds use
-  `svdot_u32` at the host's native vector length
-- bit-mode population count via `VPOPCNTB` (AVX-512 BITALG), with a
-  PSHUFB nibble lookup fallback on AVX2 / SSE, `vcntq_u8` on NEON,
-  and `wasm_i8x16_popcnt` on WebAssembly SIMD128
-- runtime CPU dispatch across scalar / SSSE3 / SSE4.1 / AVX2 /
-  AVX-512 (F + BW + BITALG) / AArch64 NEON / AArch64 SVE2 / ARMv7-A
-  NEON / WebAssembly SIMD128
-- input strategy selectable via `-i`/`--io={auto,mmap,stream,uring}`:
-  `mmap` with `MADV_SEQUENTIAL`/`POSIX_FADV_SEQUENTIAL` for regular
-  files; `uring` for a four-deep async pipeline (io_uring on Linux
-  5.1+, IOCP on Windows Vista+) to hide latency on cold-cache NVMe;
-  `stream` for a 2 MiB aligned `read(2)` loop everywhere
-- extended statistics (`-e`) derived at finalisation from the histogram
-  and running sums (min-entropy, collision entropy / IC, poker test,
-  variance, redundancy, distinct/mode/rarest, per-bit-position bias);
-  no per-byte cost and bit-identical across hosts and thread counts.
-  Per-bit-position bias catches structured binary (dead high bits,
-  ASCII bit 7) that order-0 entropy and chi-square miss.  `--annotate` turns
-  them into a per-metric PASS / WEAK / FAIL report with a headline
-  verdict
-- order-1 bigram (`-ee`): conditional entropy `H(cur|prev)` and adjacent
-  mutual information `I(prev;cur)`, a real second-order statistic
-  (single scalar pass, deterministic, bit-identical across thread
-  counts; ~1 MiB/thread byte table, 2x2 in bit mode)
-- recursive mode (`-r DIR`) walks a directory and emits one CSV / JSON
-  row per file, with `--sort-by={path,samples,entropy,chisq,mean,pi,scc,`
-  `min-entropy,collision,ic,poker,variance,redundancy,distinct,bitbias,`
-  `cond-entropy,mutual-info}`
-- terminal histogram visualisation (`-H`) with Unicode block glyphs,
-  optional log Y axis (`--log`), and platform-native colouring
-  (ANSI / `SetConsoleTextAttribute` / DJGPP `<conio.h>`)
-- optional worker pool (pthread on POSIX, CreateThread + SRWLOCK +
-  CONDITION_VARIABLE on Windows Vista+) partitioning the mmap region
-  into 6-aligned slabs so the Monte Carlo Pi state machine never
-  crosses a thread; merge order is fixed and the multi-threaded
-  output is byte-identical to `-j 1`
-- entropy is computed via a double-double Horner expansion over a
-  128-entry log-table with a split-domain Sterbenz branch at p=0.5;
-  faithfully rounded and bit-identical across libc / FPU
+- 4-way banked SIMD histogram inner loop; serial-correlation
+  cross-product via `VPMADDUBSW`/`PSADBW` (SVE2: `svdot_u32` at the
+  native vector length); bit-mode popcount via `VPOPCNTB`, with
+  PSHUFB / `vcntq_u8` / `wasm_i8x16_popcnt` fallbacks
+- runtime CPU dispatch: scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512
+  (F + BW + BITALG) / NEON / SVE2 / ARMv7-A NEON / WebAssembly SIMD128
+- `-i`/`--io={auto,mmap,stream,uring}` input strategy: `mmap` with
+  sequential advice, `uring` async pipeline (io_uring / IOCP),
+  `stream` portable `read(2)` loop
+- extended statistics (`-e`): min-entropy, collision entropy / IC,
+  poker test, variance, redundancy, distinct/mode/rarest, per-bit
+  bias; derived at finalisation, no per-byte cost, bit-identical
+  across hosts and thread counts.  `--annotate` turns them into a
+  per-metric PASS / WEAK / FAIL report with a headline verdict
+- order-1 bigram (`-ee`): conditional entropy `H(cur|prev)`, adjacent
+  mutual information `I(prev;cur)`, runs / longest-run / cusum; one
+  scalar pass, deterministic and bit-identical across thread counts
+  (~2 MiB/thread byte table, 2x2 in bit mode)
+- recursive mode (`-r DIR`): one CSV / JSON row per file, sortable via
+  `--sort-by` (path, entropy, chisq, the extended columns, ...)
+- terminal histogram (`-H`) with Unicode block glyphs, optional log Y
+  axis (`--log`), platform-native colouring
+- optional worker pool (pthread / Win32) over 6-aligned mmap slabs;
+  multi-threaded output byte-identical to `-j 1`
+- faithfully-rounded, libm-free entropy (double-double Horner over a
+  128-entry log table); bit-identical across libc / FPU
 - portable C99 sources: builds under gcc, clang, mingw-w64, DJGPP,
   and TinyCC; only the SIMD bodies need a vendor-extended compiler
 

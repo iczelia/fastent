@@ -5,6 +5,7 @@
 #include "common.h"
 #include "output.h"
 
+#include <math.h>
 #include <stdio.h>
 
 static void csv_escape_(const char * s) {
@@ -107,15 +108,17 @@ static void json_escape_(const char * s) {
   putchar('"');
 }
 
+/*  JSON has no NaN/Infinity literal, so any non-finite value becomes
+    null (the same convention the extended fields already use).  */
 static void json_num_(const char * fmt, double v) {
-  if (!(v == v)) { fputs("null", stdout); return; }  /*  NaN -> null  */
+  if (!isfinite(v)) { fputs("null", stdout); return; }
   printf(fmt, v);
 }
 
 /*  Integer-valued counts: exact, never %g.  */
 static void json_int_(double v) {
-  if (!(v == v)) fputs("null", stdout);
-  else           printf("%.0f", v);
+  if (!isfinite(v)) fputs("null", stdout);
+  else              printf("%.0f", v);
 }
 
 void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
@@ -150,8 +153,9 @@ void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
       if (!(r->result.poker_chisq == r->result.poker_chisq)) {
         fputs("null", stdout);
       } else {
-        printf("{ \"statistic\": "); printf(f, r->result.poker_chisq);
-        printf(", \"df\": 15, \"p_exceed\": "); printf(f, r->result.poker_p);
+        printf("{ \"statistic\": "); json_num_(f, r->result.poker_chisq);
+        printf(", \"df\": 15, \"p_exceed\": ");
+        json_num_(f, r->result.poker_p);
         printf(" }");
       }
       fputs(", \"variance\": ", stdout);   json_num_(f, r->result.variance);

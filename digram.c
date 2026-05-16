@@ -1,15 +1,24 @@
-/*  fastent: order-1 digram counter (opt-in via -ee).
+/*  fastent: the -ee level-2 extra pass.
 
-    Runs as its own tight pass over the same bytes the fast SIMD
-    analyser already consumed, so the order-0 statistics keep full
-    SIMD throughput.  Byte mode is an order-0 histogram of the 16-bit
-    key (prev<<8)|cur over FASTENT_BG_NB round-robin shadow tables, so
-    FASTENT_BG_NB consecutive pairs land in independent tables and the
-    store-to-load-forward dependency does not serialise (the htscodecs
-    hist1_4 technique); the key is built explicitly rather than via an
-    endian-specific 16-bit load so big-endian hosts agree bit-for-bit.
-    Bit mode keeps the 2x2 bit_bigram.  Tables/counts are merged at
-    finalize.
+    One scalar pass over the same bytes the fast SIMD analyser already
+    consumed, so the order-0 statistics keep full SIMD throughput.  It
+    folds every per-symbol level-2 reduction into a single scan:
+
+      digram     : order-0 histogram of the 16-bit key (prev<<8)|cur
+                   over FASTENT_BG_NB round-robin shadow tables, so NB
+                   consecutive pairs land in independent tables and
+                   the store-to-load-forward dependency does not
+                   serialise (the htscodecs hist1_4 technique).  Bit
+                   mode uses the 2x2 bit_bigram.
+      longest run: longest identical-symbol run (bytes or bits).
+      runs       : number of 0/1 runs                (bit mode).
+      cusum_max  : extent of the +-1 bit walk         (bit mode).
+
+    Stream calls this per chunk on one persistent state; mmap calls it
+    once over the whole resident buffer (single or -j) post-merge, so
+    no cross-slab stitch is needed and the result is bit-identical
+    regardless of thread count.  Byte runs-vs-median is then derived
+    in fastent_finalize from the digram joint counts (no rescan).
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
@@ -19,8 +28,20 @@
 #error "fastent_digram_count unrolls 4 shadow tables; FASTENT_BG_NB >= 4"
 #endif
 
-static void digram_count_bytes_(fastent_chunk_state * st,
-                                const u8 * FASTENT_RESTRICT buf, sz len) {
+/*  Longest identical-symbol run; symbol is a byte or a bit.  */
+static void lr_one_(fastent_chunk_state * st, unsigned s) {
+  if (!st->lr_have) {
+    st->lr_have = 1;  st->lr_sym = (u8) s;  st->lr_cur = 1;
+  } else if (s == st->lr_sym) {
+    st->lr_cur++;
+  } else {
+    if (st->lr_cur > st->lr_max) st->lr_max = st->lr_cur;
+    st->lr_sym = (u8) s;  st->lr_cur = 1;
+  }
+}
+
+static void digram_bytes_(fastent_chunk_state * st,
+                          const u8 * FASTENT_RESTRICT buf, sz len) {
   u64 * FASTENT_RESTRICT t = st->bigram;
   unsigned prev;
   sz i = 0;
@@ -28,10 +49,10 @@ static void digram_count_bytes_(fastent_chunk_state * st,
   if (st->dg_have) {
     prev = st->dg_prev;
   } else {
-    /*  Very first byte of the stream: no left neighbour.  Its pair
-        with the previous slab's last byte (if any) is stitched once
-        at the multi-thread merge, never here.  */
+    /*  First byte of the stream: no left neighbour for a pair, but
+        it is still a symbol for the longest-run scan.  */
     prev = buf[0];
+    lr_one_(st, prev);
     i = 1;
     st->dg_have = 1;
   }
@@ -39,41 +60,50 @@ static void digram_count_bytes_(fastent_chunk_state * st,
   for (; i + 4 <= len; i += 4) {
     unsigned c0 = buf[i], c1 = buf[i + 1];
     unsigned c2 = buf[i + 2], c3 = buf[i + 3];
-    t[0u * FASTENT_BG_TABLE + ((prev << 8) | c0)]++;
-    t[1u * FASTENT_BG_TABLE + ((c0   << 8) | c1)]++;
-    t[2u * FASTENT_BG_TABLE + ((c1   << 8) | c2)]++;
-    t[3u * FASTENT_BG_TABLE + ((c2   << 8) | c3)]++;
+    t[0u * FASTENT_BG_TABLE + ((prev << 8) | c0)]++;  lr_one_(st, c0);
+    t[1u * FASTENT_BG_TABLE + ((c0   << 8) | c1)]++;  lr_one_(st, c1);
+    t[2u * FASTENT_BG_TABLE + ((c1   << 8) | c2)]++;  lr_one_(st, c2);
+    t[3u * FASTENT_BG_TABLE + ((c2   << 8) | c3)]++;  lr_one_(st, c3);
     prev = c3;
   }
   for (; i < len; i++) {
     unsigned c = buf[i];
-    t[(prev << 8) | c]++;
+    t[(prev << 8) | c]++;  lr_one_(st, c);
     prev = c;
   }
   st->dg_prev = (u8) prev;
 }
 
-static void digram_count_bits_(fastent_chunk_state * st,
-                               const u8 * FASTENT_RESTRICT buf, sz len) {
+/*  Bit mode: every adjacent bit pair (MSB->LSB, across byte and chunk
+    boundaries via the carried previous bit) feeds the 2x2 bigram,
+    longest run, 0/1 run count and the +-1 cusum walk.  dg_prev holds
+    the previous bit (0/1) here.  */
+static void digram_bits_(fastent_chunk_state * st,
+                         const u8 * FASTENT_RESTRICT buf, sz len) {
   u64 (* bb)[2] = st->bit_bigram;
-  int have = st->dg_have;
-  unsigned prev = st->dg_have ? st->dg_prev : 0u;
   sz i;
   for (i = 0; i < len; i++) {
     const unsigned byte = buf[i];
-    if (have)
-      bb[prev & 1u][(byte >> 7) & 1u]++;   /*  prev byte LSB, this MSB  */
-    Fi0(8, 1, bb[(byte >> i) & 1u][(byte >> (i - 1)) & 1u]++)
-    prev = byte;
-    have = 1;
+    int k;
+    for (k = 7; k >= 0; k--) {
+      const unsigned bit = (byte >> k) & 1u;
+      if (st->dg_have) bb[st->dg_prev & 1u][bit]++;
+      lr_one_(st, bit);
+      if (!st->rn_have) { st->rn_have = 1;  st->rn_count = 1; }
+      else if (bit != st->rn_last) st->rn_count++;
+      st->rn_last  = (u8) bit;
+      st->cs_sum  += bit ? 1 : -1;
+      if (st->cs_sum < st->cs_min) st->cs_min = st->cs_sum;
+      if (st->cs_sum > st->cs_max) st->cs_max = st->cs_sum;
+      st->dg_prev  = (u8) bit;
+      st->dg_have  = 1;
+    }
   }
-  st->dg_prev = (u8) prev;
-  st->dg_have = 1;
 }
 
 void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
                           sz len, int binary) {
   if (len == 0) return;
-  if (binary)            digram_count_bits_(st, buf, len);
-  else if (st->bigram)   digram_count_bytes_(st, buf, len);
+  if (binary)          digram_bits_(st, buf, len);
+  else if (st->bigram) digram_bytes_(st, buf, len);
 }

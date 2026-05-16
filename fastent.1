@@ -71,49 +71,30 @@ Also report the extended statistics: min-entropy
 .RB ( H \(if ),
 collision entropy
 .RB ( H 2)
-and index of coincidence, the poker test (a 16-bin nibble chi-square
-with 15 degrees of freedom), variance and standard deviation,
-redundancy, the distinct-symbol count, the most/least common
-symbol, and the per-bit-position bias (the probability that bit
+and index of coincidence, the poker test (16-bin nibble chi-square,
+15 degrees of freedom), variance and standard deviation, redundancy,
+the distinct-symbol count, the most/least common symbol, and the
+per-bit-position bias (the probability that bit
 .IR k ,
-0 = LSB .. 7 = MSB, is set; byte mode only).  The bit-position bias
-is derived from the byte histogram at no per-byte cost and exposes
-structured binary that order-0 entropy and chi-square miss (dead
-high bits, ASCII pinning bit 7 to 0).  These are appended to the
-default, terse, JSON, and recursive output.  Without
+0 = LSB .. 7 = MSB, is set; byte mode only).  These are appended to
+the default, terse, JSON, and recursive output; without
 .B \-e
 the output is byte-for-byte the classic format.  All extended
-quantities are derived at finalisation from the histogram and the
-running sums, so they add no per-byte cost and remain bit-identical
-across hosts and thread counts.
+quantities are derived at finalisation, so they add no per-byte cost
+and remain bit-identical across hosts and thread counts.
 .IP
 .B \-e
 is repeatable.  Passing it twice
 .RB ( \-ee ", " "or " \-e\~\-e ", or " \-\-extended\~\-\-extended )
-additionally computes the order-1 bigram statistics: the conditional
-entropy
-.RB H( cur | prev )
-and the adjacent mutual information
-.RB I( prev ; cur ).
-These expose order-1 structure (natural-language text, source code,
-many binary formats) that is invisible to the order-0 measures and to
-the linear serial-correlation coefficient.  Unlike the level-1 stats
-this is a real second statistic with a per-symbol cost.  The order-0
-statistics keep full SIMD throughput; the order-1 table is filled by
-a separate tight pass over the same bytes (a 16-bit-key histogram
-over four round-robin shadow tables, since the 64K-bin scatter does
-not profitably vectorise; bit mode uses a 2-by-2 table).
-Deterministic and bit-identical across thread counts.  Byte mode
-keeps four 64K u64 tables per worker thread (2 MiB); bit mode is
-free.
-.IP
-.B \-ee
-also reports a longest identical-symbol run, a runs test, and a
-bit-mode cusum max excursion.  These are a simple scalar serial scan
-for now.  The byte runs test counts below / at-or-above-median runs
-and so needs the histogram median; it is a post-finalize rescan of
-the mapped file and is reported as not-a-number for stream or pipe
-input, which cannot be rescanned.
+additionally computes the order-1 bigram conditional entropy
+.RB H( cur | prev ),
+the adjacent mutual information
+.RB I( prev ; cur ),
+a longest identical-symbol run, a runs test, and a bit-mode cusum
+max excursion.  The order-0 statistics keep full SIMD throughput; the
+level-2 reductions are one scalar pass, deterministic and
+bit-identical across thread counts.  Byte mode keeps four 64K u64
+tables per worker thread (2 MiB); bit mode is free.
 .TP
 .BR \-a ", " \-\-annotate
 Render an interpretive report instead of the plain text: every metric

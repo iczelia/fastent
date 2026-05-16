@@ -202,11 +202,13 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
     }
   }
 
-  /*  Runs / longest run / cusum, derived from the single (stream) or
-      whole-buffer (mmap) runs pass.  st->lr_have is set iff that pass
-      ran with >= 1 symbol, so it doubles as the -ee gate.  Byte
-      runs-vs-median is filled post-finalize (median needs the
-      histogram); it stays NaN here and for stream input.  */
+  /*  Runs / longest run / cusum from the fused -ee pass.  st->lr_have
+      is set iff that pass ran with >= 1 symbol, so it doubles as the
+      -ee gate.  Byte runs-vs-median is derived here from the order-1
+      digram joint counts: the number of median-class runs is 1 + the
+      count of adjacent byte pairs whose median class differs, and
+      that pair multiset is exactly the digram table, so no buffer
+      rescan is needed and it works for stream input too.  */
   out->runs = out->longest_run = out->cusum_max = NAN;
   if (st->lr_have) {
     const u64 lr = st->lr_cur > st->lr_max ? st->lr_cur : st->lr_max;
@@ -216,6 +218,23 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
       const i64 lo = st->cs_min < 0 ? -st->cs_min : st->cs_min;
       const i64 hi = st->cs_max < 0 ? -st->cs_max : st->cs_max;
       out->cusum_max = (f64) (lo > hi ? lo : hi);
+    }
+  }
+  if (!binary && st->bigram && out->total_samples >= 1) {
+    if (out->total_samples == 1) {
+      out->runs = 1.0;
+    } else {
+      const u64 * bg = st->bigram;
+      u64 acc = 0, chg = 0;
+      const u64 half = (out->total_samples + 1) / 2;
+      int m = 0;
+      Fi(256, acc += out->hist[i];  if (acc >= half) { m = i; break; })
+      Fi(FASTENT_BG_TABLE,
+         const u64 c = bg[i] + bg[FASTENT_BG_TABLE + i]
+                     + bg[2 * FASTENT_BG_TABLE + i]
+                     + bg[3 * FASTENT_BG_TABLE + i];
+         if (c && (((i >> 8) >= m) != ((i & 0xFF) >= m))) chg += c)
+      out->runs = (f64) (1 + chg);
     }
   }
 }

@@ -13,49 +13,31 @@ v1.2 (May 2026)
   -e / --extended is now repeatable.  Passing it twice (-ee, -e -e,
   or --extended --extended) additionally computes the order-1 bigram
   conditional entropy H(cur|prev) and adjacent mutual information
-  I(prev;cur), exposing order-1 structure (natural-language text,
-  source code, many binary formats) that the order-0 measures and the
-  linear serial-correlation coefficient miss.  Reported in the default,
-  terse, JSON, recursive and annotated output; sortable via
-  --sort-by=cond-entropy / mutual-info.  The order-0 statistics keep
-  full SIMD throughput; the order-1 table is filled by a separate
-  tight pass over the same bytes (a 16-bit-key histogram over four
-  round-robin shadow tables, the htscodecs hist1_4 technique, since
-  the 64K-bin scatter does not profitably vectorise).  Bit mode uses
-  a 2x2 table.  Deterministic and bit-identical across thread counts.
-  Byte mode uses four 64K u64 tables per worker thread (2 MiB); bit
-  mode is free.  All logarithms use the existing faithfully-rounded,
-  libm-free entropy term.
+  I(prev;cur), plus a runs test, a longest-run, and a bit-mode cusum
+  max excursion: longest_run is the longest identical-symbol run;
+  runs is the number of 0/1 runs (bit mode) or median-class runs
+  (byte mode); cusum_max is the largest absolute excursion of the
+  +-1 bit walk.  Reported in the default, terse, JSON, recursive and
+  annotated output; sortable via --sort-by=cond-entropy / mutual-info.
 
-  -ee also adds a runs test, a longest-run, and a bit-mode cusum
-  excursion.  longest_run is the longest identical-symbol run (bytes
-  or bits); runs is the number of 0/1 runs (bit mode) or
-  below/at-or-above-median runs (byte mode); cusum_max is the maximum
-  absolute excursion of the +-1 bit walk.  These are a simple scalar
-  pass for now (one serial scan; deterministic across thread counts).
-  Byte runs-vs-median needs the histogram median, so it is a
-  post-finalize rescan of the mapped file and is null for stream or
-  pipe input that cannot be rescanned.
+  The order-0 statistics keep full SIMD throughput; the level-2
+  reductions are one scalar pass, deterministic and bit-identical
+  across thread counts.  Byte mode uses four 64K u64 tables per
+  worker thread (2 MiB); bit mode is free.
 
   Extended statistics (-e / --extended)
   -------------------------------------
 
-  A new -e / --extended flag adds min-entropy (H-infinity, the
-  NIST SP 800-90B measure), collision entropy (H2) and the index of
-  coincidence, a poker test (16-bin nibble chi-square with 15 degrees
-  of freedom), variance and standard deviation, redundancy, the
-  distinct-symbol count, the most / least common symbol, and the
-  per-bit-position bias (P(bit k = 1) for k = 0..7, byte mode), which
-  exposes structured binary that order-0 entropy and chi-square miss
-  (dead high bits, ASCII pinning bit 7).  The new values are appended
-  to the default, terse CSV, JSON, and recursive output, and
-  --sort-by accepts the new columns (min-entropy, collision, ic,
-  poker, variance, redundancy, distinct, bitbias).  Without -e
-  the output is byte-for-byte the classic format.  All extended
-  quantities are derived at finalisation from the histogram and the
-  running sums, so they add no per-byte cost and stay bit-identical
-  across hosts and thread counts.  -log2 is taken via the existing
-  faithfully-rounded entropy term, so no libm log enters.
+  A new -e / --extended flag adds min-entropy (H-infinity), collision
+  entropy (H2) and the index of coincidence, a poker test (16-bin
+  nibble chi-square, 15 degrees of freedom), variance and standard
+  deviation, redundancy, the distinct-symbol count, the most / least
+  common symbol, and the per-bit-position bias (P(bit k = 1),
+  byte mode).  Appended to the default, terse CSV, JSON, and
+  recursive output; --sort-by accepts the new columns.  Without -e
+  the output is byte-for-byte the classic format.  Derived at
+  finalisation, so no per-byte cost and bit-identical across hosts
+  and thread counts.
 
   Annotated report (--annotate)
   -----------------------------
