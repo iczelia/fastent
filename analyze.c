@@ -141,9 +141,7 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
     memset(ones, 0, sizeof(ones));
     Fi(256,
        const u64 c = out->hist[i];
-       int b;
-       for (b = 0; b < 8; b++)
-         if (i & (1 << b)) ones[b] += c)
+       Fj(8, if (i & (1 << j)) ones[j] += c))
     f64 worst = -1.0;
     int wk = 0;
     Fi(8,
@@ -289,9 +287,8 @@ static const variant_entry variants_[] = {
 
 static const variant_entry * pick_(void) {
   const variant_entry * best = &variants_[0];
-  size_t i;
-  for (i = 1; i < VARIANTS_N; i++)
-    if (variants_[i].available()) best = &variants_[i];
+  Fi0((int) VARIANTS_N, 1,
+      if (variants_[i].available()) best = &variants_[i])
   return best;
 }
 
@@ -326,8 +323,7 @@ fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which) {
 }
 
 const char * fastent_variant_name(fastent_variant v) {
-  size_t i;
-  for (i = 0; i < VARIANTS_N; i++)
-    if (variants_[i].variant == v) return variants_[i].name;
+  Fi((int) VARIANTS_N,
+     if (variants_[i].variant == v) return variants_[i].name)
   return "scalar";
 }

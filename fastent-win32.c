@@ -164,7 +164,6 @@ int fastent_win32_argv_utf8(int * argc_out, char *** argv_out) {
   wchar_t ** wargv = NULL;
   int wargc = split_cmdline_w(GetCommandLineW(), &wargv);
   char ** argv;
-  int i;
   if (wargc < 0) return -1;
 
   argv = (char **) calloc((size_t) wargc + 1, sizeof(char *));
@@ -173,17 +172,16 @@ int fastent_win32_argv_utf8(int * argc_out, char *** argv_out) {
     free(wargv);
     return -1;
   }
-  for (i = 0; i < wargc; i++) {
-    argv[i] = wide_to_utf8(wargv[i]);
-    free(wargv[i]);
-    if (!argv[i]) {
-      Fj(i, free(argv[j]));
-      free(argv);
-      Fj0(wargc, i + 1, free(wargv[j]));
-      free(wargv);
-      return -1;
-    }
-  }
+  Fi(wargc,
+     argv[i] = wide_to_utf8(wargv[i]);
+     free(wargv[i]);
+     if (!argv[i]) {
+       Fj(i, free(argv[j]));
+       free(argv);
+       Fj0(wargc, i + 1, free(wargv[j]));
+       free(wargv);
+       return -1;
+     })
   free(wargv);
   *argc_out = wargc;
   *argv_out = argv;

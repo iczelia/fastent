@@ -68,9 +68,8 @@ static void iocp_destroy(iocp_state * u) {
     CloseHandle(u->file);
   }
   if (u->iocp) CloseHandle(u->iocp);
-  for (unsigned i = 0; i < FASTENT_IOCP_SLOTS; i++) {
-    if (u->slot[i].buf_raw) free(u->slot[i].buf_raw);
-  }
+  Fi((int) FASTENT_IOCP_SLOTS,
+     if (u->slot[i].buf_raw) free(u->slot[i].buf_raw))
   free(u);
 }
 
@@ -149,22 +148,21 @@ static iocp_state * iocp_setup(const char * path) {
   u->iocp = CreateIoCompletionPort(u->file, NULL, 0, 1);
   if (!u->iocp) { iocp_destroy(u); return NULL; }
 
-  for (unsigned i = 0; i < FASTENT_IOCP_SLOTS; i++) {
-    void * raw = NULL, * user = NULL;
-    if (fastent_io_alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) {
-      iocp_destroy(u); return NULL;
-    }
-    u->slot[i].buf     = (u8 *) user;
-    u->slot[i].buf_raw = raw;
-  }
+  Fi((int) FASTENT_IOCP_SLOTS,
+     void * raw = NULL;
+     void * user = NULL;
+     if (fastent_io_alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) {
+       iocp_destroy(u);  return NULL;
+     }
+     u->slot[i].buf     = (u8 *) user;
+     u->slot[i].buf_raw = raw)
 
   u->next_submit_offset = 0;
   u->next_consume       = 0;
   u->prev_returned      = -1;
 
-  for (unsigned i = 0; i < FASTENT_IOCP_SLOTS; i++) {
-    if (iocp_submit_(u, (int) i) < 0) { iocp_destroy(u); return NULL; }
-  }
+  Fi((int) FASTENT_IOCP_SLOTS,
+     if (iocp_submit_(u, (int) i) < 0) { iocp_destroy(u);  return NULL; })
   return u;
 }
 

@@ -145,9 +145,8 @@ static int uring_wait(uring_state * u, int target_slot) {
 
 static void uring_destroy(uring_state * u) {
   if (!u) return;
-  for (unsigned i = 0; i < FASTENT_URING_SLOTS; i++) {
-    if (u->slot_buf_raw[i]) free(u->slot_buf_raw[i]);
-  }
+  Fi((int) FASTENT_URING_SLOTS,
+     if (u->slot_buf_raw[i]) free(u->slot_buf_raw[i]))
   if (u->sqes && u->sqes != MAP_FAILED) munmap(u->sqes, u->sqes_size);
   if (u->cq_ring && u->cq_ring != u->sq_ring && u->cq_ring != MAP_FAILED)
     munmap(u->cq_ring, u->cq_ring_size);
@@ -204,14 +203,14 @@ static uring_state * uring_setup(int src_fd, u64 file_size) {
   u->cqes = (struct io_uring_cqe *)
             ((char *) u->cq_ring + p.cq_off.cqes);
 
-  for (unsigned i = 0; i < FASTENT_URING_SLOTS; i++) {
-    void * raw = NULL, * user = NULL;
-    if (fastent_io_alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) {
-      uring_destroy(u); return NULL;
-    }
-    u->slot_buf[i]     = (u8 *) user;
-    u->slot_buf_raw[i] = raw;
-  }
+  Fi((int) FASTENT_URING_SLOTS,
+     void * raw = NULL;
+     void * user = NULL;
+     if (fastent_io_alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) {
+       uring_destroy(u);  return NULL;
+     }
+     u->slot_buf[i]     = (u8 *) user;
+     u->slot_buf_raw[i] = raw)
 
   u->next_consume       = 0;
   u->prev_returned      = -1;
@@ -223,11 +222,10 @@ static uring_state * uring_setup(int src_fd, u64 file_size) {
     posix_fadvise(src_fd, 0, (off_t) file_size, POSIX_FADV_SEQUENTIAL);
 #endif
 
-  for (unsigned i = 0; i < FASTENT_URING_SLOTS; i++) {
-    if (uring_submit_read(u, src_fd, (int) i) < 0) {
-      uring_destroy(u);  return NULL;
-    }
-  }
+  Fi((int) FASTENT_URING_SLOTS,
+     if (uring_submit_read(u, src_fd, (int) i) < 0) {
+       uring_destroy(u);  return NULL;
+     })
   return u;
 }
 

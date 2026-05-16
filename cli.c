@@ -194,14 +194,13 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
   }
 
   /*  Help / version win over everything and exit immediately.  */
-  for (int k = 0; k < r->argc; k++) {
-    if (r->args[k].opt == 'h') {
-      fastent_print_help();  yarg_destroy(r);  exit(0);
-    }
-    if (r->args[k].opt == 'V') {
-      fastent_print_version();  yarg_destroy(r);  exit(0);
-    }
-  }
+  Fk(r->argc,
+     if (r->args[k].opt == 'h') {
+       fastent_print_help();  yarg_destroy(r);  exit(0);
+     }
+     if (r->args[k].opt == 'V') {
+       fastent_print_version();  yarg_destroy(r);  exit(0);
+     })
 
   int rc = 0;
   for (int k = 0; k < r->argc && rc == 0; k++) {

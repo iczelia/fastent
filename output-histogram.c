@@ -48,16 +48,13 @@ void fastent_print_histogram(const fastent_result * r,
   const int cols = bins / group;
 
   u64 grouped[256];
-  int c;
-  for (c = 0; c < cols; c++) {
-    u64 sum = 0;
-    int j;
-    for (j = 0; j < group; j++) sum += r->hist[c * group + j];
-    grouped[c] = sum;
-  }
+  Fi(cols,
+     u64 sum = 0;
+     Fj(group, sum += r->hist[i * group + j]);
+     grouped[i] = sum)
 
   u64 max = 0;
-  for (c = 0; c < cols; c++) if (grouped[c] > max) max = grouped[c];
+  Fi(cols, if (grouped[i] > max) max = grouped[i])
   if (max == 0) {
     printf("(histogram: no samples)\n\n");
     return;
@@ -74,50 +71,48 @@ void fastent_print_histogram(const fastent_result * r,
   int  gw = snprintf(gbuf, sizeof gbuf, "%llu", (unsigned long long) max);
   if (gw < 1) gw = 1;
 
-  int row;
-  for (row = 0; row < height; row++) {
-    const int row_bot = (height - 1 - row) * sub;
-    const int row_top = row_bot + sub;
-    int last_class = -1;
-    const double yf = (double)(height - row) / (double) height;
-    const u64 yval = o->histogram_log
-                     ? (u64)(exp(yf * log_denom) - 1.0 + 0.5)
-                     : (u64)(yf * (double) max + 0.5);
-    printf("%*llu |", gw, (unsigned long long) yval);
-    for (c = 0; c < cols; c++) {
-      double frac;
-      if (o->histogram_log) {
-        frac = grouped[c] == 0 ? 0.0
-             : log((double) grouped[c] + 1.0) / log_denom;
-      } else {
-        frac = (double) grouped[c] / (double) max;
-      }
-      int hh = (int)(frac * (double) levels + 0.5);
-      if (hh > levels) hh = levels;
-      const char * glyph;
-      if (hh >= row_top)      glyph = blocks[sub];
-      else if (hh <= row_bot) glyph = blocks[0];
-      else                    glyph = blocks[hh - row_bot];
-      int first_byte = c * group;
-      int cls = (first_byte < 32 || first_byte == 127) ? 0
-              : (first_byte < 128 ? 1 : 2);
-      if (use_color && cls != last_class) {
-        fastent_term_set_fg(cls);
-        last_class = cls;
-      }
-      fastent_term_write(glyph);
-    }
-    if (use_color) fastent_term_set_fg(-1);
-    putchar('\n');
-  }
+  Fi(height,
+     const int row_bot = (height - 1 - i) * sub;
+     const int row_top = row_bot + sub;
+     int last_class = -1;
+     const double yf = (double)(height - i) / (double) height;
+     const u64 yval = o->histogram_log
+                      ? (u64)(exp(yf * log_denom) - 1.0 + 0.5)
+                      : (u64)(yf * (double) max + 0.5);
+     printf("%*llu |", gw, (unsigned long long) yval);
+     Fj(cols,
+        double frac;
+        if (o->histogram_log) {
+          frac = grouped[j] == 0 ? 0.0
+               : log((double) grouped[j] + 1.0) / log_denom;
+        } else {
+          frac = (double) grouped[j] / (double) max;
+        }
+        int hh = (int)(frac * (double) levels + 0.5);
+        if (hh > levels) hh = levels;
+        const char * glyph;
+        if (hh >= row_top)      glyph = blocks[sub];
+        else if (hh <= row_bot) glyph = blocks[0];
+        else                    glyph = blocks[hh - row_bot];
+        int first_byte = j * group;
+        int cls = (first_byte < 32 || first_byte == 127) ? 0
+                : (first_byte < 128 ? 1 : 2);
+        if (use_color && cls != last_class) {
+          fastent_term_set_fg(cls);
+          last_class = cls;
+        }
+        fastent_term_write(glyph))
+     if (use_color) fastent_term_set_fg(-1);
+     putchar('\n'))
   if (bins == 256) {
     int tick_every = cols / 8;
     if (tick_every < 1) tick_every = 1;
-    for (c = 0; c < gw + 1; c++) putchar(' ');
+    Fi(gw + 1, putchar(' '))
     putchar('+');
-    for (c = 0; c < cols; c++) putchar((c % tick_every == 0) ? '|' : '-');
+    Fi(cols, putchar((i % tick_every == 0) ? '|' : '-'))
     putchar('\n');
-    for (c = 0; c < gw + 2; c++) putchar(' ');
+    Fi(gw + 2, putchar(' '))
+    int c;
     for (c = 0; c < cols; c += tick_every) {
       char buf[8];
       int n = snprintf(buf, sizeof(buf), "%d", c * group);
@@ -133,7 +128,7 @@ void fastent_print_histogram(const fastent_result * r,
     }
     putchar('\n');
   } else {
-    for (c = 0; c < gw + 2; c++) putchar(' ');
+    Fi(gw + 2, putchar(' '))
     printf("0 1\n");
   }
   u64 raw_peak = 0;

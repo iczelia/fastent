@@ -70,11 +70,8 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
      Fi(FASTENT_BANKS, Fj(256, out->bank[i][j] += s->bank[i][j]))
      out->bit_hist[0] += s->bit_hist[0];
      out->bit_hist[1] += s->bit_hist[1];
-     if (out->bigram && s->bigram) {
-       sz t;
-       for (t = 0; t < (sz) FASTENT_BG_CELLS; t++)
-         out->bigram[t] += s->bigram[t];
-     }
+     if (out->bigram && s->bigram)
+       Fi(FASTENT_BG_CELLS, out->bigram[i] += s->bigram[i])
      out->bit_bigram[0][0] += s->bit_bigram[0][0];
      out->bit_bigram[0][1] += s->bit_bigram[0][1];
      out->bit_bigram[1][0] += s->bit_bigram[1][0];
