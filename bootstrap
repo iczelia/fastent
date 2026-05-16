@@ -51,11 +51,11 @@ fetch_dep() {
 
 #  --- pinned dependencies ---------------------------------------------
 #  yarg: single-header command-line argument parser, by the same
-#  author.  Used by cli.c; lives at the source-tree root.
+#  author.  Used by src/cli.c.
 fetch_dep iczelia/yarg \
   adc3050ecdeef3118c75bd81a0b5294b20b3d88f \
   yarg.h \
-  yarg.h \
+  src/yarg.h \
   4e82adf605225d129b284b1c0cf39042ca9628dc35571146f2b0617da769bffc
 #  ---------------------------------------------------------------------
 

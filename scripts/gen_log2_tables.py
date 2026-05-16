@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate log2_tables.h.  Requires mpmath."""
+"""Regenerate src/kernel/log2_tables.h.  Requires mpmath."""
 import mpmath as mp
 mp.mp.prec = 300
 

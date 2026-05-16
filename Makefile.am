@@ -2,33 +2,52 @@ ACLOCAL_AMFLAGS = -I m4
 
 AM_CFLAGS = -std=c99 -Wall -Wextra
 
-bin_PROGRAMS  = fastent
-noinst_HEADERS = analyze.h analyze-impl.h chisq.h \
-                 analyze-vec-x86.h analyze-vec-neon.h analyze-vec-wasm.h \
-                 common.h fastent-win32.h \
-                 fastent-math.h log2_tables.h fips1402.h \
-                 fastent-options.h output.h cli.h runner.h yarg.h \
-                 port-cpu.h port-io.h port-term.h port-os.h \
-                 port-thread.h port-walk.h
+# config.h lives in the build root; the sources include each other
+# across src/, src/kernel/ and src/platform/ with quoted includes.
+AM_CPPFLAGS = -I$(top_builddir) \
+              -I$(top_srcdir)/src \
+              -I$(top_srcdir)/src/kernel \
+              -I$(top_srcdir)/src/platform
 
-fastent_SOURCES = fastent.c cli.c runner.c \
-                  analyze.c analyze-scalar.c digram.c chisq.c fips1402.c \
-                  fastent-math.c \
-                  output-default.c output-terse.c output-json.c \
-                  output-histogram.c output-recursive.c \
-                  output-annotated.c \
-                  port-cpu-x86.c port-cpu-arm.c port-cpu-other.c \
-                  port-io.c port-io-posix.c port-io-win32.c \
-                  port-term-posix.c port-term-win32.c port-term-djgpp.c \
-                  port-os-posix.c port-os-win32.c \
-                  port-walk-posix.c port-walk-win32.c
+bin_PROGRAMS  = fastent
+noinst_HEADERS = src/kernel/analyze.h src/kernel/analyze-impl.h \
+                 src/kernel/chisq.h \
+                 src/kernel/analyze-vec-x86.h src/kernel/analyze-vec-neon.h \
+                 src/kernel/analyze-vec-wasm.h \
+                 src/kernel/fastent-math.h src/kernel/log2_tables.h \
+                 src/kernel/fips1402.h \
+                 src/common.h src/fastent-options.h src/output.h \
+                 src/cli.h src/runner.h src/yarg.h \
+                 src/platform/fastent-win32.h \
+                 src/platform/port-cpu.h src/platform/port-io.h \
+                 src/platform/port-term.h src/platform/port-os.h \
+                 src/platform/port-thread.h src/platform/port-walk.h
+
+fastent_SOURCES = src/fastent.c src/cli.c src/runner.c \
+                  src/kernel/analyze.c src/kernel/analyze-scalar.c \
+                  src/kernel/digram.c src/kernel/chisq.c \
+                  src/kernel/fips1402.c src/kernel/fastent-math.c \
+                  src/output-default.c src/output-terse.c src/output-json.c \
+                  src/output-histogram.c src/output-recursive.c \
+                  src/output-annotated.c \
+                  src/platform/port-cpu-x86.c src/platform/port-cpu-arm.c \
+                  src/platform/port-cpu-other.c \
+                  src/platform/port-io.c src/platform/port-io-posix.c \
+                  src/platform/port-io-win32.c \
+                  src/platform/port-term-posix.c \
+                  src/platform/port-term-win32.c \
+                  src/platform/port-term-djgpp.c \
+                  src/platform/port-os-posix.c src/platform/port-os-win32.c \
+                  src/platform/port-walk-posix.c \
+                  src/platform/port-walk-win32.c
 if FASTENT_THREADS
-fastent_SOURCES += port-thread-posix.c port-thread-win32.c
+fastent_SOURCES += src/platform/port-thread-posix.c \
+                   src/platform/port-thread-win32.c
 endif
 if FASTENT_IS_WINDOWS
-fastent_SOURCES += fastent-win32.c
+fastent_SOURCES += src/platform/fastent-win32.c
 endif
-fastent_CPPFLAGS = $(FASTENT_WIN_CPPFLAGS)
+fastent_CPPFLAGS = $(AM_CPPFLAGS) $(FASTENT_WIN_CPPFLAGS)
 fastent_LDFLAGS  = $(FASTENT_WIN_LDFLAGS)
 fastent_LDADD =
 
@@ -36,56 +55,56 @@ noinst_LIBRARIES =
 
 if HAVE_SSSE3
 noinst_LIBRARIES           += libfastent_ssse3.a
-libfastent_ssse3_a_SOURCES  = analyze-ssse3.c
+libfastent_ssse3_a_SOURCES  = src/kernel/analyze-ssse3.c
 libfastent_ssse3_a_CFLAGS   = $(AM_CFLAGS) $(SSSE3_CFLAGS)
 fastent_LDADD              += libfastent_ssse3.a
 endif
 
 if HAVE_SSE41
 noinst_LIBRARIES           += libfastent_sse41.a
-libfastent_sse41_a_SOURCES  = analyze-sse41.c
+libfastent_sse41_a_SOURCES  = src/kernel/analyze-sse41.c
 libfastent_sse41_a_CFLAGS   = $(AM_CFLAGS) $(SSE41_CFLAGS)
 fastent_LDADD              += libfastent_sse41.a
 endif
 
 if HAVE_AVX2
 noinst_LIBRARIES           += libfastent_avx2.a
-libfastent_avx2_a_SOURCES   = analyze-avx2.c
+libfastent_avx2_a_SOURCES   = src/kernel/analyze-avx2.c
 libfastent_avx2_a_CFLAGS    = $(AM_CFLAGS) $(AVX2_CFLAGS)
 fastent_LDADD              += libfastent_avx2.a
 endif
 
 if HAVE_AVX512
 noinst_LIBRARIES            += libfastent_avx512.a
-libfastent_avx512_a_SOURCES  = analyze-avx512.c
+libfastent_avx512_a_SOURCES  = src/kernel/analyze-avx512.c
 libfastent_avx512_a_CFLAGS   = $(AM_CFLAGS) $(AVX512_CFLAGS)
 fastent_LDADD               += libfastent_avx512.a
 endif
 
 if HAVE_AVX512_BITALG
 noinst_LIBRARIES                   += libfastent_avx512_bitalg.a
-libfastent_avx512_bitalg_a_SOURCES  = analyze-avx512-bitalg.c
+libfastent_avx512_bitalg_a_SOURCES  = src/kernel/analyze-avx512-bitalg.c
 libfastent_avx512_bitalg_a_CFLAGS   = $(AM_CFLAGS) $(AVX512_BITALG_CFLAGS)
 fastent_LDADD                      += libfastent_avx512_bitalg.a
 endif
 
 if HAVE_NEON
 noinst_LIBRARIES           += libfastent_neon.a
-libfastent_neon_a_SOURCES   = analyze-neon.c
+libfastent_neon_a_SOURCES   = src/kernel/analyze-neon.c
 libfastent_neon_a_CFLAGS    = $(AM_CFLAGS) $(NEON_CFLAGS)
 fastent_LDADD              += libfastent_neon.a
 endif
 
 if HAVE_SVE2
 noinst_LIBRARIES           += libfastent_sve2.a
-libfastent_sve2_a_SOURCES   = analyze-sve2.c
+libfastent_sve2_a_SOURCES   = src/kernel/analyze-sve2.c
 libfastent_sve2_a_CFLAGS    = $(AM_CFLAGS) $(SVE2_CFLAGS)
 fastent_LDADD              += libfastent_sve2.a
 endif
 
 if HAVE_WASM128
 noinst_LIBRARIES               += libfastent_wasm128.a
-libfastent_wasm128_a_SOURCES    = analyze-wasm128simd.c
+libfastent_wasm128_a_SOURCES    = src/kernel/analyze-wasm128simd.c
 libfastent_wasm128_a_CFLAGS     = $(AM_CFLAGS) $(WASM128_CFLAGS)
 fastent_LDADD                  += libfastent_wasm128.a
 endif

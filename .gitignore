@@ -22,6 +22,7 @@ Makefile.in
 stamp-h1
 *.o
 *.a
+.dirstamp
 fastent-*.tar.*
 fastent-*.zip
 fastent
@@ -31,6 +32,6 @@ tests/tmp/
 tests/bench-gen
 
 #  Fetched + SHA-256-verified by ./bootstrap (pinned dependencies).
-yarg.h
-yarg.h.tmp.*
+src/yarg.h
+src/yarg.h.tmp.*
 
