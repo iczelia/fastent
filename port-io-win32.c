@@ -6,7 +6,7 @@
               flag spelled --io=uring on the CLI for cross-platform
               symmetry).
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "port-io.h"

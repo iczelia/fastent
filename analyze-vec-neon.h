@@ -2,7 +2,7 @@
     AArch64-only intrinsics (vqtbl1q_u8, vaddvq_u64/s64) are emulated
     on ARMv7-A via vtbl2_u8 + lane-extract.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_ANALYZE_VEC_NEON_H
 #define FASTENT_ANALYZE_VEC_NEON_H

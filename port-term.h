@@ -1,6 +1,6 @@
 /*  fastent: terminal output abstractions.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_PORT_TERM_H
 #define FASTENT_PORT_TERM_H

@@ -1,6 +1,6 @@
 /*  fastent: shared option struct.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_OPTIONS_H
 #define FASTENT_OPTIONS_H

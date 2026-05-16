@@ -1,6 +1,6 @@
 #!/bin/sh
 # fastent benchmark harness.
-# Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).
+# Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).
 #
 # Knobs (override via environment):
 #   FASTENT     path to the fastent binary  (default: $BUILDDIR/fastent)

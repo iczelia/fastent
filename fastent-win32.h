@@ -1,7 +1,7 @@
 /*  fastent: Win32 helpers.  MSVCRT's narrow open() re-narrows path
     arguments through CP_ACP, so we route paths via _wopen.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_WIN32_H
 #define FASTENT_WIN32_H

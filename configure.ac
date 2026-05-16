@@ -5,7 +5,7 @@ m4_define([fastent_version], [fastent_version_major.fastent_version_minor])
 AC_PREREQ([2.69])
 AC_INIT([fastent],[fastent_version],[https://github.com/iczelia/fastent])
 AC_CONFIG_HEADERS([config.h])
-AC_COPYRIGHT([Copyright (C) 2026 Kamila Szewczyk])
+AC_COPYRIGHT([Copyright (C) 2023-2026 Kamila Szewczyk])
 AC_LANG([C])
 AC_CONFIG_MACRO_DIR([m4])
 

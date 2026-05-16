@@ -1,7 +1,7 @@
 /*  fastent: DOS / DJGPP terminal port.  Uses <conio.h> textcolor +
     cputs so BIOS attribute writes work without ANSI.SYS.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "port-term.h"

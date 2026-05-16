@@ -1,7 +1,7 @@
 /*  fastent: pthread-backed thread pool.  Static partition; workers wait
     on a condition variable for a generation counter to advance.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "port-thread.h"

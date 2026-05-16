@@ -1,6 +1,6 @@
 /*  fastent: output renderers.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_OUTPUT_H
 #define FASTENT_OUTPUT_H

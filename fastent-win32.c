@@ -1,7 +1,7 @@
 /*  fastent: Win32 Unicode-path helpers.  Built only on Windows hosts.
     FASTENT_WIN_LEGACY selects the narrow-API Win95 path.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "fastent-win32.h"

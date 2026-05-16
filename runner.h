@@ -1,6 +1,6 @@
 /*  fastent: analysis driver.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_RUNNER_H
 #define FASTENT_RUNNER_H

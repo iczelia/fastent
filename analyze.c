@@ -1,6 +1,6 @@
 /*  fastent: variant dispatcher, reduction, and bit-mode analyser.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "analyze.h"  /*  Pulls common.h with feature macros.  */
 #include "chisq.h"

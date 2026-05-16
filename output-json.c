@@ -1,6 +1,6 @@
 /*  fastent: JSON output.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "output.h"
@@ -30,7 +30,13 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   const int fp = o->full_precision;
   const char * fmt_fp = fp ? "%.17g" : "%g";
   const f64 per = o->binary ? 1.0 : 8.0;
-  const int comp_pct = (int)(short)(100.0 * (per - r->entropy) / per);
+  /*  Clamped to [0, 100]; non-finite entropy (e.g. empty input) -> 0,
+      never an out-of-range or NaN cast (undefined behaviour).  */
+  const f64 comp_raw = 100.0 * (per - r->entropy) / per;
+  const int comp_pct = !isfinite(comp_raw) ? 0
+                     : comp_raw < 0.0      ? 0
+                     : comp_raw > 100.0    ? 100
+                                           : (int) comp_raw;
 
   printf("{\n");
   printf("  \"unit\": \"%s\",\n", samp);

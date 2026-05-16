@@ -2,7 +2,7 @@
     WebAssembly hosts also land here; SIMD128 is module-load-gated, so
     a build that linked -msimd128 has the feature unconditionally.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "port-cpu.h"

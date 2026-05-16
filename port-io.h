@@ -1,6 +1,6 @@
 /*  fastent: portable I/O source abstraction.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_PORT_IO_H
 #define FASTENT_PORT_IO_H

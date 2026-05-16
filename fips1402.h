@@ -1,6 +1,6 @@
 /*  fastent: FIPS 140-2 RNG power-up self-tests.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_FIPS1402_H
 #define FASTENT_FIPS1402_H

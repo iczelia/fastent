@@ -1,6 +1,6 @@
 /*  fastent: default human-readable output.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "output.h"
@@ -38,7 +38,14 @@ void fastent_print_default(const fastent_result * r,
 
   printf("\nOptimum compression would reduce the size\n");
   const f64 per = o->binary ? 1.0 : 8.0;
-  const int comp_pct = (int)(short)(100.0 * (per - r->entropy) / per);
+  /*  Percent the size could shrink by; clamped to [0, 100].  A non-
+      finite entropy (e.g. empty input) yields 0, never an out-of-range
+      or NaN cast (which would be undefined behaviour).  */
+  const f64 comp_raw = 100.0 * (per - r->entropy) / per;
+  const int comp_pct = !isfinite(comp_raw) ? 0
+                     : comp_raw < 0.0      ? 0
+                     : comp_raw > 100.0    ? 100
+                                           : (int) comp_raw;
   printf("of this %llu %s file by %d percent.\n\n",
          (unsigned long long) r->total_samples, samp, comp_pct);
 

@@ -2,7 +2,7 @@
     Operates on UTF-8 paths by transcoding to UTF-16 for the
     underlying API and back for the callback.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "port-walk.h"

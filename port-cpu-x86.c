@@ -1,6 +1,6 @@
 /*  fastent: x86/x86_64 CPU feature probe.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "port-cpu.h"

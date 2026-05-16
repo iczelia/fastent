@@ -1,6 +1,6 @@
 /*  fastent: analysis state and per-variant entry points.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_ANALYZE_H
 #define FASTENT_ANALYZE_H
@@ -23,6 +23,19 @@
 #define FASTENT_BG_NB    4
 #define FASTENT_BG_TABLE 65536
 #define FASTENT_BG_CELLS (FASTENT_BG_NB * FASTENT_BG_TABLE)
+
+/*  Canonical scalar case fold: ASCII A-Z and Latin-1 0xC0-0xDE
+    (excluding 0xD7) mapped to lower-case, every other byte unchanged.
+    Same rule as the per-variant SIMD/scalar fold helpers in
+    analyze-impl.h; shared here so the -ee digram pass folds with
+    identical semantics to the order-0 analyser under -f.  */
+static inline u8 fastent_fold_byte(u8 b) {
+  unsigned c = b;
+  if (((unsigned)(c - 'A') < 26u) ||
+      ((unsigned)(c - 0xC0u) < 31u && c != 0xD7u))
+    return (u8)(c + 0x20u);
+  return b;
+}
 
 /*  Per-thread chunk state. Accumulates histogram, SCC cross-product,
     Monte Carlo hits, and the first/last/carry bytes needed to stitch
@@ -218,9 +231,11 @@ void analyze_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
     NB-table 64K histogram (st->bigram); bit mode fills bit_bigram.
     dg_prev/dg_have carry across calls (a byte, or the last bit in
     bit mode).  Byte runs-vs-median is derived in fastent_finalize
-    from the digram joint counts, so it needs no buffer rescan.  */
+    from the digram joint counts, so it needs no buffer rescan.
+    When fold is set each input byte is case-folded before use, so
+    the order-1 stats match the order-0 analyser under -f.  */
 void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
-                          sz len, int binary);
+                          sz len, int binary, int fold);
 
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which);
 fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which);

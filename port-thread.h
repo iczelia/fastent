@@ -2,7 +2,7 @@
     Windows Vista+.  FASTENT_HAVE_THREADS is set by configure when a
     backend is available.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_PORT_THREAD_H
 #define FASTENT_PORT_THREAD_H

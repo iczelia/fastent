@@ -9,7 +9,7 @@
 
     and (optionally) FASTENT_HAVE_SIMD if the SIMD body should be used.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).
 
     Algorithm notes.
 

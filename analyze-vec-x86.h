@@ -2,7 +2,7 @@
     AVX-512 F+BW, AVX-512 F+BW+BITALG).  Selected by analyze-impl.h
     when FASTENT_VARIANT_{SSSE3,SSE41,AVX2,AVX512} is defined.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_ANALYZE_VEC_X86_H
 #define FASTENT_ANALYZE_VEC_X86_H

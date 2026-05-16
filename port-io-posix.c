@@ -1,6 +1,6 @@
 /*  fastent: POSIX I/O backend (mmap, stream read, optional io_uring).
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "port-io.h"

@@ -1,6 +1,6 @@
 /*  fastent: analysis drivers.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "runner.h"
@@ -23,6 +23,7 @@ typedef struct {
   fastent_analyze_fn fn;
   int            extended;
   int            binary;
+  int            fold;
 } mt_ctx;
 
 static void mt_worker_(sz k, void * vctx) {
@@ -34,7 +35,7 @@ static void mt_worker_(sz k, void * vctx) {
   c->fn(&c->states[k], c->data + start, (sz)(end - start));
   if (c->extended >= 2)
     fastent_digram_count(&c->states[k], c->data + start,
-                         (sz)(end - start), c->binary);
+                         (sz)(end - start), c->binary, c->fold);
 }
 
 static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
@@ -73,6 +74,7 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
   ctx.data = data;  ctx.bounds = bounds;  ctx.states = states;
   ctx.bigrams = bgs;  ctx.fn = fn;
   ctx.extended = o->extended;  ctx.binary = o->binary;
+  ctx.fold = o->fold;
   fastent_parallel_for((sz) N, mt_worker_, &ctx);
 
   /*  Merge slabs: adjacent slab pairs contribute b[end-1] *
@@ -130,14 +132,19 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
          out->bit_bigram[1][1] += s->bit_bigram[1][1];
        }
        if (seen && start > 0) {     /*  pair straddling this boundary  */
+         /*  Fold the boundary bytes to match the (folded) per-slab
+             digram pass under -f.  */
+         const unsigned bp = o->fold ? fastent_fold_byte(data[start - 1])
+                                      : data[start - 1];
+         const unsigned bc = o->fold ? fastent_fold_byte(data[start])
+                                      : data[start];
          if (o->binary) {
-           const unsigned pb = data[start - 1] & 1u;
-           const unsigned cb = (data[start] >> 7) & 1u;
+           const unsigned pb = bp & 1u;
+           const unsigned cb = (bc >> 7) & 1u;
            out->bit_bigram[pb][cb]++;
            if (pb == cb) out->rn_count--;       /*  two runs join  */
          } else if (out->bigram) {
-           out->bigram[((unsigned) data[start - 1] << 8)
-                       | data[start]]++;
+           out->bigram[(bp << 8) | bc]++;
          }
        }
        {
@@ -204,7 +211,7 @@ typedef struct {
   fastent_source *   src;
   fastent_mutex *    mtx;
   fastent_analyze_fn fn;
-  int                extended, binary;
+  int                extended, binary, fold;
   sz                 blocksz;
   u64                next_seq;          /*  guarded by mtx  */
   int                eof, err;          /*  guarded by mtx  */
@@ -262,7 +269,7 @@ static void stream_consumer_(sz k, void * vctx) {
     blk.bigram = acc->bigram;           /*  byte -ee: accumulate here  */
     c->fn(&blk, buf, got);
     if (c->extended >= 2)
-      fastent_digram_count(&blk, buf, got, c->binary);
+      fastent_digram_count(&blk, buf, got, c->binary, c->fold);
 
     Fi(FASTENT_BANKS, Fj(256, acc->bank[i][j] += blk.bank[i][j]))
     acc->bit_hist[0] += blk.bit_hist[0];
@@ -278,7 +285,10 @@ static void stream_consumer_(sz k, void * vctx) {
 
     stream_edge e;
     e.seq = myseq;  e.n = got;
-    e.raw_first = buf[0];  e.raw_last = buf[got - 1];
+    /*  Boundary bytes for the digram / bit stitch; folded under -f so
+        they match the (folded) per-block digram pass.  */
+    e.raw_first = c->fold ? fastent_fold_byte(buf[0]) : buf[0];
+    e.raw_last  = c->fold ? fastent_fold_byte(buf[got - 1]) : buf[got - 1];
     e.o0_first = blk.first_byte;  e.o0_last = blk.last_byte;
     e.lr_internal = blk.lr_cur > blk.lr_max ? blk.lr_cur : blk.lr_max;
     e.lr_head_sym = blk.lr_head_sym;  e.lr_head_len = blk.lr_head_len;
@@ -323,7 +333,7 @@ static void run_stream_mt_(fastent_chunk_state * out,
       if (n == 0) break;
       fn(out, src->stream_buf, n);
       if (o->extended >= 2)
-        fastent_digram_count(out, src->stream_buf, n, o->binary);
+        fastent_digram_count(out, src->stream_buf, n, o->binary, o->fold);
     }
     return;
   }
@@ -331,7 +341,7 @@ static void run_stream_mt_(fastent_chunk_state * out,
   stream_ctx c;
   memset(&c, 0, sizeof c);
   c.src = src;  c.fn = fn;
-  c.extended = o->extended;  c.binary = o->binary;
+  c.extended = o->extended;  c.binary = o->binary;  c.fold = o->fold;
   c.blocksz = (FASTENT_STREAM_BUF / 6u) * 6u;
   c.mtx = fastent_mutex_create();
   if (!c.mtx) { fprintf(stderr, "out of memory\n"); exit(2); }
@@ -471,7 +481,7 @@ void fastent_run_mmap(fastent_chunk_state * st, const fastent_options * o,
 
   body(st, data, (sz) size);
   if (o->extended >= 2)
-    fastent_digram_count(st, data, (sz) size, o->binary);
+    fastent_digram_count(st, data, (sz) size, o->binary, o->fold);
 }
 
 void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
@@ -500,7 +510,7 @@ void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
     if (n == 0) break;
     body(st, src->stream_buf, n);
     if (o->extended >= 2)
-      fastent_digram_count(st, src->stream_buf, n, o->binary);
+      fastent_digram_count(st, src->stream_buf, n, o->binary, o->fold);
   }
 }
 

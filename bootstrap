@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-#  Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only.
+#  Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only.
 #
 #  Fetch pinned single-header dependencies, then regenerate the
 #  autotools build.  Each dependency is pinned to an upstream commit

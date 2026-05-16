@@ -1,6 +1,6 @@
 /*  fastent: recursive directory walker port.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_PORT_WALK_H
 #define FASTENT_PORT_WALK_H

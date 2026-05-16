@@ -1,7 +1,7 @@
 /*  fastent: AArch64 SVE2 analyse variants.  Self-contained because
     analyze-impl.h assumes a compile-time fixed vector stride.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "analyze.h"

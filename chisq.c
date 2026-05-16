@@ -1,6 +1,6 @@
 /*  fastent: chi-square upper tail probability.
 
-    Copyright (C) 2026 Kamila Szewczyk.
+    Copyright (C) 2023-2026 Kamila Szewczyk.
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by

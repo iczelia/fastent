@@ -1,6 +1,6 @@
 /*  fastent: recursive-mode output (CSV + JSON).
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "output.h"

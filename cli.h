@@ -1,6 +1,6 @@
 /*  fastent: command-line interface.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_CLI_H
 #define FASTENT_CLI_H

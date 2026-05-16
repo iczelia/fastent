@@ -1,6 +1,6 @@
 /*  fastent: POSIX recursive directory walker (opendir + readdir).
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "port-walk.h"

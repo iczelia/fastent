@@ -1,6 +1,6 @@
 /*  fastent: command-line parsing + help/version.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "cli.h"
@@ -25,7 +25,7 @@
 void fastent_print_version(void) {
   printf("fastent %s\n", FASTENT_VERSION_STRING);
   fputs(
-    "Copyright (C) 2026 Kamila Szewczyk.\n"
+    "Copyright (C) 2023-2026 Kamila Szewczyk.\n"
     "License GPLv3: GNU GPL version 3 only"
     " <https://gnu.org/licenses/gpl-3.0.html>.\n"
     "This is free software: you are free to change and redistribute it.\n"

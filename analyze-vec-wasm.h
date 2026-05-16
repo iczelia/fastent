@@ -1,6 +1,6 @@
 /*  fastent: V_* macros for the WebAssembly SIMD128 variant.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #ifndef FASTENT_ANALYZE_VEC_WASM_H
 #define FASTENT_ANALYZE_VEC_WASM_H

@@ -8,7 +8,7 @@
     utility historically uses 26).  Blocks are independent, so the
     work parallelises with no boundary stitch.
 
-    Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "fips1402.h"

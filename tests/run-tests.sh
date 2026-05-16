@@ -10,7 +10,7 @@
 #  The fixture dir lives in builddir, NOT srcdir, so the source tree
 #  stays read-only-clean across out-of-tree builds and dist tarballs.
 #
-#  Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only.
+#  Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only.
 
 set -eu
 export LC_ALL=C
