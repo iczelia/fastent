@@ -246,11 +246,32 @@ long fastent_win32_num_cpus(void) {
   return (long) si.dwNumberOfProcessors;
 }
 
+/*  GetFileSizeEx is Win2000+; the Win95/98 (FASTENT_WIN_LEGACY) target
+    has only GetFileSize.  Returns 0 and sets *out on success, -1 on
+    error or an empty file.  */
+static int fastent_win32_filesize_(HANDLE h, unsigned long long * out) {
+#ifdef FASTENT_WIN_LEGACY
+  DWORD hi = 0;
+  DWORD lo = GetFileSize(h, &hi);
+  if (lo == INVALID_FILE_SIZE && GetLastError() != NO_ERROR) return -1;
+  unsigned long long sz = ((unsigned long long) hi << 32)
+                        | (unsigned long long) lo;
+  if (sz == 0) return -1;
+  *out = sz;
+  return 0;
+#else
+  LARGE_INTEGER li;
+  if (!GetFileSizeEx(h, &li) || li.QuadPart <= 0) return -1;
+  *out = (unsigned long long) li.QuadPart;
+  return 0;
+#endif
+}
+
 int fastent_win32_mmap(int fd, void ** out_base,
                        unsigned long long * out_size,
                        void ** out_handle) {
   HANDLE h, hm;
-  LARGE_INTEGER li;
+  unsigned long long fsz;
   void * p;
   intptr_t raw;
   if (fd < 0) return -1;
@@ -258,8 +279,7 @@ int fastent_win32_mmap(int fd, void ** out_base,
   if (raw == -1) return -1;
   h = (HANDLE) raw;
   if (GetFileType(h) != FILE_TYPE_DISK) return -1;
-  if (!GetFileSizeEx(h, &li)) return -1;
-  if (li.QuadPart <= 0) return -1;
+  if (fastent_win32_filesize_(h, &fsz) != 0) return -1;
   /*  0,0 = use the file's current size; NULL name = anonymous.  */
   hm = CreateFileMappingW(h, NULL, PAGE_READONLY, 0, 0, NULL);
   if (!hm) return -1;
@@ -269,7 +289,7 @@ int fastent_win32_mmap(int fd, void ** out_base,
     return -1;
   }
   *out_base   = p;
-  *out_size   = (unsigned long long) li.QuadPart;
+  *out_size   = fsz;
   *out_handle = hm;
   return 0;
 }
@@ -282,7 +302,7 @@ void fastent_win32_munmap(void * base, void * handle) {
 void * fastent_win32_open_overlapped(const char * utf8_path,
                                      unsigned long long * out_size) {
   HANDLE h = INVALID_HANDLE_VALUE;
-  LARGE_INTEGER li;
+  unsigned long long fsz;
   if (!utf8_path || !out_size) return NULL;
 #ifndef FASTENT_WIN_LEGACY
   {
@@ -307,11 +327,11 @@ void * fastent_win32_open_overlapped(const char * utf8_path,
 #endif
   if (h == INVALID_HANDLE_VALUE) return NULL;
   if (GetFileType(h) != FILE_TYPE_DISK
-      || !GetFileSizeEx(h, &li) || li.QuadPart <= 0) {
+      || fastent_win32_filesize_(h, &fsz) != 0) {
     CloseHandle(h);
     return NULL;
   }
-  *out_size = (unsigned long long) li.QuadPart;
+  *out_size = fsz;
   return h;
 }
 

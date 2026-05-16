@@ -7,6 +7,14 @@
 
 #include <stdio.h>
 
+/*  Emit a literal "nan" for NaN regardless of its sign bit: glibc
+    prints "-nan" for a sign-set qNaN and some libcs (TCC headers
+    define NAN that way) would otherwise vary the CSV.  */
+static void tnum_(const char * fmt, f64 x) {
+  if (x != x) fputs("nan", stdout);
+  else        printf(fmt, x);
+}
+
 static void print_counts_(const fastent_result * r, int binary) {
   const int bins = binary ? 2 : 256;
   printf("2,Value,Occurrences,Fraction\n");
@@ -38,22 +46,22 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
            r->entropy, r->chi_square, r->mean, r->monte_pi, r->scc);
   }
   if (o->extended) {
-    putchar(','); printf(f, r->min_entropy);
-    putchar(','); printf(f, r->collision_entropy);
-    putchar(','); printf(f, r->ic);
-    putchar(','); printf(f, r->poker_chisq);
-    putchar(','); printf(f, r->poker_p);
-    putchar(','); printf(f, r->variance);
-    putchar(','); printf(f, r->stddev);
-    putchar(','); printf(f, r->redundancy);
+    putchar(','); tnum_(f, r->min_entropy);
+    putchar(','); tnum_(f, r->collision_entropy);
+    putchar(','); tnum_(f, r->ic);
+    putchar(','); tnum_(f, r->poker_chisq);
+    putchar(','); tnum_(f, r->poker_p);
+    putchar(','); tnum_(f, r->variance);
+    putchar(','); tnum_(f, r->stddev);
+    putchar(','); tnum_(f, r->redundancy);
     printf(",%u,%d,%llu,%d,%llu",
            r->distinct, r->mode_value, (unsigned long long) r->mode_count,
            r->rarest_value, (unsigned long long) r->rarest_count);
-    Fi(8, putchar(','); printf(f, r->bit_freq[i]))
-    putchar(','); printf(f, r->bit_bias_max);
+    Fi(8, putchar(','); tnum_(f, r->bit_freq[i]))
+    putchar(','); tnum_(f, r->bit_bias_max);
     printf(",%d", r->bit_bias_worst);
-    putchar(','); printf(f, r->conditional_entropy);
-    putchar(','); printf(f, r->mutual_information);
+    putchar(','); tnum_(f, r->conditional_entropy);
+    putchar(','); tnum_(f, r->mutual_information);
   }
   putchar('\n');
   if (o->counts) print_counts_(r, o->binary);

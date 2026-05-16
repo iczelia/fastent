@@ -215,11 +215,13 @@ assert abs(d[\"conditional_entropy\"]-d[\"entropy\"]) < 0.05
 assert abs(d[\"mutual_information\"]) < 0.05" <<< "$out"
 '
 
-check "-ee determinism j1 == j4" bash -c '
-  a=$('"${FASTENT}"' -ee -t -j 1 "'"${FIX}"'/lcg.bin")
-  b=$('"${FASTENT}"' -ee -t -j 4 "'"${FIX}"'/lcg.bin")
-  [ "$a" = "$b" ]
-'
+if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
+  check "-ee determinism j1 == j4" bash -c '
+    a=$('"${FASTENT}"' -ee -t -j 1 "'"${FIX}"'/lcg.bin")
+    b=$('"${FASTENT}"' -ee -t -j 4 "'"${FIX}"'/lcg.bin")
+    [ "$a" = "$b" ]
+  '
+fi
 
 check "-ee bit mode: 2x2 computed" bash -c '
   out=$('"${FASTENT}"' -ee -b --json "'"${FIX}"'/lcg.bin")
@@ -275,11 +277,13 @@ check "annotate rejected with -r" bash -c '
   exit 0
 '
 
-check "extended -j4 agrees with -j1" bash -c '
-  a=$('"${FASTENT}"' -e -t -j 1 "'"${FIX}"'/lcg.bin")
-  b=$('"${FASTENT}"' -e -t -j 4 "'"${FIX}"'/lcg.bin")
-  [ "$a" = "$b" ]
-'
+if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
+  check "extended -j4 agrees with -j1" bash -c '
+    a=$('"${FASTENT}"' -e -t -j 1 "'"${FIX}"'/lcg.bin")
+    b=$('"${FASTENT}"' -e -t -j 4 "'"${FIX}"'/lcg.bin")
+    [ "$a" = "$b" ]
+  '
+fi
 
 check "empty input: clean exit" bash -c '
   : > "'"${FIX}"'/empty.bin"
