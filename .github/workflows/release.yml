@@ -126,21 +126,11 @@ jobs:
             CFLAGS="-O2"
           make -j"$(nproc)"
 
-      - name: package
+      - name: package (all formats)
         env:
           BIN: ${{ matrix.target.bin }}
           ID: ${{ matrix.target.id }}
-        run: |
-          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
-          name="fastent-${ver}-${ID}"
-          mkdir -p "dist/$name"
-          cp "build/$BIN" "dist/$name/"
-          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
-             fastent-src/fastent.1 "dist/$name/"
-          case "$ID" in
-            windows-*) (cd dist && zip -9 -r "${name}.zip" "$name") ;;
-            *)         (cd dist && tar -czf "${name}.tar.gz" "$name") ;;
-          esac
+        run: bash fastent-src/build/ci/package.sh "build/$BIN" "$ID"
 
       - name: publish binary
         uses: softprops/action-gh-release@v2
@@ -148,7 +138,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: |
+            dist/fastent-*-${{ matrix.target.id }}.tar
             dist/fastent-*-${{ matrix.target.id }}.tar.gz
+            dist/fastent-*-${{ matrix.target.id }}.tar.bz2
+            dist/fastent-*-${{ matrix.target.id }}.tar.bz3
+            dist/fastent-*-${{ matrix.target.id }}.tar.xz
+            dist/fastent-*-${{ matrix.target.id }}.tar.zst
             dist/fastent-*-${{ matrix.target.id }}.zip
 
   binaries-gcc:
@@ -201,24 +196,24 @@ jobs:
             CFLAGS="-O2"
           make -j"$(nproc)"
 
-      - name: package
+      - name: package (all formats)
         env:
           ID: ${{ matrix.target.id }}
-        run: |
-          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
-          name="fastent-${ver}-${ID}"
-          mkdir -p "dist/$name"
-          cp "build/fastent" "dist/$name/"
-          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
-             fastent-src/fastent.1 "dist/$name/"
-          (cd dist && tar -czf "${name}.tar.gz" "$name")
+        run: bash fastent-src/build/ci/package.sh build/fastent "$ID"
 
       - name: publish binary
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: dist/fastent-*-${{ matrix.target.id }}.tar.gz
+          files: |
+            dist/fastent-*-${{ matrix.target.id }}.tar
+            dist/fastent-*-${{ matrix.target.id }}.tar.gz
+            dist/fastent-*-${{ matrix.target.id }}.tar.bz2
+            dist/fastent-*-${{ matrix.target.id }}.tar.bz3
+            dist/fastent-*-${{ matrix.target.id }}.tar.xz
+            dist/fastent-*-${{ matrix.target.id }}.tar.zst
+            dist/fastent-*-${{ matrix.target.id }}.zip
 
   binary-win95:
     name: gcc-mingw / windows-i686-win95
@@ -253,22 +248,22 @@ jobs:
             CFLAGS="-O2"
           make -j"$(nproc)"
 
-      - name: package
-        run: |
-          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
-          name="fastent-${ver}-windows-i686-win95"
-          mkdir -p "dist/$name"
-          cp build/fastent.exe "dist/$name/"
-          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
-             fastent-src/fastent.1 "dist/$name/"
-          (cd dist && zip -9 -r "${name}.zip" "$name")
+      - name: package (all formats)
+        run: bash fastent-src/build/ci/package.sh build/fastent.exe windows-i686-win95
 
       - name: publish binary
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: dist/fastent-*-windows-i686-win95.zip
+          files: |
+            dist/fastent-*-windows-i686-win95.tar
+            dist/fastent-*-windows-i686-win95.tar.gz
+            dist/fastent-*-windows-i686-win95.tar.bz2
+            dist/fastent-*-windows-i686-win95.tar.bz3
+            dist/fastent-*-windows-i686-win95.tar.xz
+            dist/fastent-*-windows-i686-win95.tar.zst
+            dist/fastent-*-windows-i686-win95.zip
 
   binaries-wasm:
     name: emscripten / ${{ matrix.target.id }}
@@ -309,24 +304,24 @@ jobs:
             LDFLAGS="$fl"
           emmake make -j"$(nproc)"
 
-      - name: package
+      - name: package (all formats)
         env:
           ID: ${{ matrix.target.id }}
-        run: |
-          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
-          name="fastent-${ver}-wasi-${ID}"
-          mkdir -p "dist/$name"
-          cp build/fastent "dist/$name/fastent.js"
-          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
-             fastent-src/fastent.1 "dist/$name/"
-          (cd dist && tar -czf "${name}.tar.gz" "$name")
+        run: bash fastent-src/build/ci/package.sh build/fastent "wasi-$ID"
 
       - name: publish binary
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: dist/fastent-*-wasi-${{ matrix.target.id }}.tar.gz
+          files: |
+            dist/fastent-*-wasi-${{ matrix.target.id }}.tar
+            dist/fastent-*-wasi-${{ matrix.target.id }}.tar.gz
+            dist/fastent-*-wasi-${{ matrix.target.id }}.tar.bz2
+            dist/fastent-*-wasi-${{ matrix.target.id }}.tar.bz3
+            dist/fastent-*-wasi-${{ matrix.target.id }}.tar.xz
+            dist/fastent-*-wasi-${{ matrix.target.id }}.tar.zst
+            dist/fastent-*-wasi-${{ matrix.target.id }}.zip
 
   binary-dos:
     name: djgpp / dos-i386
@@ -373,19 +368,19 @@ jobs:
             CFLAGS="-O2" LDFLAGS="-s"
           make -j"$(nproc)"
 
-      - name: package
-        run: |
-          ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
-          name="fastent-${ver}-dos-i386"
-          mkdir -p "dist/$name"
-          cp build/fastent.exe "dist/$name/"
-          cp fastent-src/README.md fastent-src/COPYING fastent-src/NEWS \
-             fastent-src/fastent.1 "dist/$name/"
-          (cd dist && zip -9 -r "${name}.zip" "$name")
+      - name: package (all formats)
+        run: bash fastent-src/build/ci/package.sh build/fastent.exe dos-i386
 
       - name: publish binary
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: dist/fastent-*-dos-i386.zip
+          files: |
+            dist/fastent-*-dos-i386.tar
+            dist/fastent-*-dos-i386.tar.gz
+            dist/fastent-*-dos-i386.tar.bz2
+            dist/fastent-*-dos-i386.tar.bz3
+            dist/fastent-*-dos-i386.tar.xz
+            dist/fastent-*-dos-i386.tar.zst
+            dist/fastent-*-dos-i386.zip

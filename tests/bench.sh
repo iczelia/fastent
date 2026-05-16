@@ -4,7 +4,7 @@
 #
 # Knobs (override via environment):
 #   FASTENT     path to the fastent binary  (default: $BUILDDIR/fastent)
-#   SIZE_MB     per-dataset file size in MiB (default: 512)
+#   SIZE_MB     per-dataset file size in MiB (default: 1024)
 #   RUNS        timed runs per cell          (default: 5)
 #   WARMUP      untimed warmup runs / cell   (default: 1)
 #   JOBS        space-separated -j sweep     (default: 1 2 4 8 ... nproc, capped)
@@ -13,6 +13,10 @@
 #                                                      lcg walk stripes)
 #   MODES      'byte' / 'bit' / 'byte-fold' / 'bit-fold' subset
 #                                            (default: byte bit byte-fold)
+#   LEVELS     analysis depth: 'plain' '-e' '-ee' subset
+#                                            (default: plain e ee)
+#   BENCH_FIPS if non-empty/non-0: also time --fips-140-2 once per
+#              dataset across the jobs sweep      (default: 1)
 #   CACHE_DIR   where generated files live   (default: /tmp/fastent-bench)
 #   BENCH_QUICK if non-empty: SIZE_MB=64 RUNS=3 WARMUP=0, small JOBS sweep
 #
@@ -62,11 +66,13 @@ gen_default_jobs() {
   printf '%s\n' "$out"
 }
 
-SIZE_MB="${SIZE_MB:-512}"
+SIZE_MB="${SIZE_MB:-1024}"
 RUNS="${RUNS:-5}"
 WARMUP="${WARMUP:-1}"
 DATASETS="${DATASETS:-random zeros counter dna ascii biased sparse-bits lcg walk stripes}"
 MODES="${MODES:-byte bit byte-fold}"
+LEVELS="${LEVELS:-plain e ee}"
+BENCH_FIPS="${BENCH_FIPS:-1}"
 JOBS_DEFAULT=$(gen_default_jobs)
 JOBS="${JOBS:-$JOBS_DEFAULT}"
 
@@ -96,7 +102,11 @@ fi
 printf '  size/run  : %d MiB\n' "$SIZE_MB"
 printf '  runs/cell : %d (after %d warmup)\n' "$RUNS" "$WARMUP"
 printf '  jobs      :%s\n' "$JOBS"
+case "$BENCH_FIPS" in ''|0|no|off) FIPS_ON=0 ;; *) FIPS_ON=1 ;; esac
+
 printf '  modes     : %s\n' "$MODES"
+printf '  levels    : %s\n' "$LEVELS"
+printf '  fips      : %s\n' "$( [ "$FIPS_ON" -eq 1 ] && echo on || echo off )"
 printf '  datasets  : %s\n' "$DATASETS"
 printf '  cache     : %s\n' "$CACHE_DIR"
 printf '\n'
@@ -125,6 +135,16 @@ modeflags_for() {
   esac
 }
 
+# Extended-analysis depth: plain (default), -e (level 1), -ee (level 2).
+levelflags_for() {
+  case "$1" in
+    plain)  printf '%s' ''     ;;
+    e)      printf '%s' '-e'   ;;
+    ee)     printf '%s' '-ee'  ;;
+    *)      printf '%s' ''     ;;
+  esac
+}
+
 # Bash/zsh have $EPOCHREALTIME, but POSIX sh doesn't. `date +%s.%N` works on
 # Linux/glibc (which the rest of this project already assumes via
 # /usr/bin/time -f). Fall back to whole-second `date +%s` if %N isn't a digit.
@@ -137,20 +157,22 @@ now() {
 }
 
 run_cell() {
-  ds=$1; modeflag=$2; jobs=$3
+  ds=$1; modeflag=$2; levelflag=$3; jobs=$4
   path="$CACHE_DIR/${ds}-${SIZE_MB}M.bin"
 
   # shellcheck disable=SC2086
+  # --fips-140-2 exits 1 when a block fails (expected on most data);
+  # this is a timing harness, so tolerate any non-zero exit.
   i=0
   while [ "$i" -lt "$WARMUP" ]; do
-    "$FASTENT" -j "$jobs" $modeflag "$path" >/dev/null
+    "$FASTENT" -j "$jobs" $modeflag $levelflag "$path" >/dev/null || :
     i=$(( i + 1 ))
   done
 
   i=0
   while [ "$i" -lt "$RUNS" ]; do
     t0=$(now)
-    "$FASTENT" -j "$jobs" $modeflag "$path" >/dev/null
+    "$FASTENT" -j "$jobs" $modeflag $levelflag "$path" >/dev/null || :
     t1=$(now)
     awk -v a="$t0" -v b="$t1" 'BEGIN { printf "%.6f\n", b - a }'
     i=$(( i + 1 ))
@@ -203,26 +225,42 @@ reduce() {
 
 # Header: The jobs column is right-aligned text so it can hold
 # both an integer (fastent) and the literal "ent" (reference run).
-printf '  %-12s %-9s %4s   %9s   %9s   %9s   %9s   %9s\n' \
-  dataset mode jobs mean stddev min max 'MiB/s'
-printf '  %-12s %-9s %4s   %9s   %9s   %9s   %9s   %9s\n' \
-  ------------ --------- ---- --------- --------- --------- --------- ---------
+printf '  %-12s %-9s %-5s %4s   %9s   %9s   %9s   %9s   %9s\n' \
+  dataset mode level jobs mean stddev min max 'MiB/s'
+printf '  %-12s %-9s %-5s %4s   %9s   %9s   %9s   %9s   %9s\n' \
+  ------------ --------- ----- ---- --------- --------- --------- --------- ---------
 
 for ds in $DATASETS; do
   for mode in $MODES; do
     mf=$(modeflags_for "$mode")
-    if [ -n "$ENT" ] && [ -x "$ENT" ]; then
-      stats=$(run_cell_ent "$ds" "$mf" | reduce)
-      set -- $stats
-      printf '  %-12s %-9s %4s   %8ss   %8ss   %8ss   %8ss   %9s\n' \
-        "$ds" "$mode" ent "$1" "$2" "$3" "$4" "$5"
-    fi
-    for j in $JOBS; do
-      stats=$(run_cell "$ds" "$mf" "$j" | reduce)
-      # stats = "mean stddev min max mibs"
-      set -- $stats
-      printf '  %-12s %-9s %4d   %8ss   %8ss   %8ss   %8ss   %9s\n' \
-        "$ds" "$mode" "$j" "$1" "$2" "$3" "$4" "$5"
+    for level in $LEVELS; do
+      lf=$(levelflags_for "$level")
+      # ent(1) has no -e/-ee equivalent; compare only at the plain level.
+      if [ "$level" = plain ] && [ -n "$ENT" ] && [ -x "$ENT" ]; then
+        stats=$(run_cell_ent "$ds" "$mf" | reduce)
+        set -- $stats
+        printf '  %-12s %-9s %-5s %4s   %8ss   %8ss   %8ss   %8ss   %9s\n' \
+          "$ds" "$mode" "$level" ent "$1" "$2" "$3" "$4" "$5"
+      fi
+      for j in $JOBS; do
+        stats=$(run_cell "$ds" "$mf" "$lf" "$j" | reduce)
+        # stats = "mean stddev min max mibs"
+        set -- $stats
+        printf '  %-12s %-9s %-5s %4d   %8ss   %8ss   %8ss   %8ss   %9s\n' \
+          "$ds" "$mode" "$level" "$j" "$1" "$2" "$3" "$4" "$5"
+      done
     done
   done
+
+  # FIPS 140-2 self-tests: byte-stream only, ignores mode/level, so
+  # it is one extra pass per dataset over the jobs sweep (not
+  # multiplied by modes or levels).
+  if [ "$FIPS_ON" -eq 1 ]; then
+    for j in $JOBS; do
+      stats=$(run_cell "$ds" "--fips-140-2" "" "$j" | reduce)
+      set -- $stats
+      printf '  %-12s %-9s %-5s %4d   %8ss   %8ss   %8ss   %8ss   %9s\n' \
+        "$ds" fips - "$j" "$1" "$2" "$3" "$4" "$5"
+    done
+  fi
 done
