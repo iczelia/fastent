@@ -280,8 +280,10 @@ int fastent_win32_mmap(int fd, void ** out_base,
   h = (HANDLE) raw;
   if (GetFileType(h) != FILE_TYPE_DISK) return -1;
   if (fastent_win32_filesize_(h, &fsz) != 0) return -1;
-  /*  0,0 = use the file's current size; NULL name = anonymous.  */
-  hm = CreateFileMappingW(h, NULL, PAGE_READONLY, 0, 0, NULL);
+  /*  0,0 = the file's current size; NULL name = anonymous.  The A
+      entry works on every Win32 (the W variant is an unimplemented
+      stub on Win9x); with a NULL name A and W are equivalent.  */
+  hm = CreateFileMappingA(h, NULL, PAGE_READONLY, 0, 0, NULL);
   if (!hm) return -1;
   p = MapViewOfFile(hm, FILE_MAP_READ, 0, 0, 0);
   if (!p) {
@@ -401,7 +403,7 @@ void fastent_win32_mmap_prefetch(void * base, unsigned long long size) {
   static int     resolved = 0;
   FE_MEM_RANGE   r;
   if (!resolved) {
-    HMODULE k32 = GetModuleHandleW(L"kernel32.dll");
+    HMODULE k32 = GetModuleHandleA("kernel32.dll");
     if (k32) {
       void * raw = (void *) GetProcAddress(k32, "PrefetchVirtualMemory");
       pfn = (PFN_PVM) raw;
