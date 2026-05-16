@@ -12,8 +12,8 @@
   #define M_PI 3.14159265358979323846
 #endif
 
-/*  JSON has no NaN/Infinity literal, so any non-finite value becomes
-    null (the same convention the extended fields already use).  */
+/*  JSON has no NaN/Infinity literal, so non-finite values render
+    as null.  */
 static void jnum_(const char * fmt, double v) {
   if (!isfinite(v)) { fputs("null", stdout); return; }
   printf(fmt, v);
@@ -30,8 +30,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   const int fp = o->full_precision;
   const char * fmt_fp = fp ? "%.17g" : "%g";
   const f64 per = o->binary ? 1.0 : 8.0;
-  /*  Clamp to [0, 100]; non-finite -> 0 (cast of NaN/out-of-range
-      to int is UB).  */
+  /*  Clamp to [0, 100]; non-finite -> 0 (int cast of NaN is UB).  */
   const f64 comp_raw = 100.0 * (per - r->entropy) / per;
   const int comp_pct = !isfinite(comp_raw) ? 0
                      : comp_raw < 0.0      ? 0

@@ -51,7 +51,7 @@ with `-H`.
 - order-1 bigram (`-ee`): conditional entropy `H(cur|prev)`, adjacent
   mutual information `I(prev;cur)`, runs / longest-run / cusum; split
   across the `-j` workers and merged with a boundary stitch,
-  deterministic and bit-identical across thread counts (~2 MiB/thread
+  deterministic and bit-identical across thread counts (~1 MiB/thread
   byte table, 2x2 in bit mode)
 - recursive mode (`-r DIR`): one CSV / JSON row per file, sortable via
   `--sort-by` (path, entropy, chisq, the extended columns, ...)

@@ -7,16 +7,15 @@
 
 #include <stdio.h>
 
-/*  Emit a literal "nan" for NaN regardless of its sign bit: glibc
-    prints "-nan" for a sign-set qNaN and some libcs (TCC headers
-    define NAN that way) would otherwise vary the CSV.  */
+/*  Emit literal "nan" regardless of sign bit: glibc prints "-nan"
+    for a sign-set qNaN, which would otherwise vary the CSV.  */
 static void tnum_(const char * fmt, f64 x) {
   if (x != x) fputs("nan", stdout);
   else        printf(fmt, x);
 }
 
-/*  Integer-valued counts (runs / longest run / cusum): exact, never
-    %g (which would render 1048576 as 1.04858e+06).  */
+/*  Integer-valued counts (runs / longest run / cusum): exact %.0f,
+    never %g (which would render 1048576 as 1.04858e+06).  */
 static void tint_(f64 x) {
   if (x != x) fputs("nan", stdout);
   else        printf("%.0f", x);

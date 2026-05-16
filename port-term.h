@@ -27,13 +27,13 @@ fastent_glyph_mode fastent_term_glyphs(void);
 void fastent_term_set_fg(int cls);
 
 /*  Set a severity color: 0=ok (green), 1=warn (yellow), 2=bad (red),
-    3=muted (dim); sev=-1 restores initial attributes.  Used by the
-    annotated report's pass/warn/fail badges.  No-op off-console.  */
+    3=muted (dim); sev=-1 restores initial attributes.  No-op
+    off-console.  */
 void fastent_term_set_sev(int sev);
 
-/*  Write `glyph` to stdout honoring any platform-specific color
-    write path (e.g. DJGPP cputs to the BIOS attribute slot).  Caller
-    chose color via fastent_term_set_fg() beforehand.  */
+/*  Write `glyph` to stdout via the platform color write path (e.g.
+    DJGPP cputs to the BIOS attribute slot).  Color set beforehand
+    via fastent_term_set_fg().  */
 void fastent_term_write(const char * glyph);
 
 #endif

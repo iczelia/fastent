@@ -65,8 +65,8 @@ void fastent_print_histogram(const fastent_result * r,
   const double log_denom = o->histogram_log
                            ? log((double) max + 1.0) : 0.0;
 
-  /*  Left gutter: the sample count at the top edge of each row,
-      right-justified to the width of the largest (the peak).  */
+  /*  Left gutter: sample count at each row's top edge,
+      right-justified to the peak's width.  */
   char gbuf[24];
   int  gw = snprintf(gbuf, sizeof gbuf, "%llu", (unsigned long long) max);
   if (gw < 1) gw = 1;
@@ -121,8 +121,8 @@ void fastent_print_histogram(const fastent_result * r,
         /*  Last tick: no trailing padding.  */
         printf("%.*s", n, buf);
       } else {
-        /*  Left-justify in the tick_every-wide cell so the first
-            digit sits directly under the '|' tick mark.  */
+        /*  Left-justify in the cell so the first digit sits under
+            the '|' tick mark.  */
         printf("%-*.*s", tick_every, n, buf);
       }
     }

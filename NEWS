@@ -26,7 +26,7 @@ v1.2 (May 2026)
   counts.  All three input modes scale: mmap slices the resident
   buffer per thread, while stream and io_uring use an SPMC pipeline
   (one serialized read at a time, analysis in parallel).  Byte mode
-  uses four 64K u64 tables per worker thread (2 MiB); bit mode is
+  uses two 64K u64 tables per worker thread (1 MiB); bit mode is
   free.
 
   Extended statistics (-e / --extended)

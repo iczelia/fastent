@@ -1,26 +1,21 @@
 /*  fastent: the -ee level-2 extra pass.
 
-    One scalar pass over the same bytes the fast SIMD analyser already
-    consumed, so the order-0 statistics keep full SIMD throughput.  It
-    folds every per-symbol level-2 reduction into a single scan:
+    One scalar pass over the same bytes the SIMD analyser already
+    consumed (order-0 keeps full SIMD throughput), folding every
+    per-symbol level-2 reduction into a single scan:
 
       digram     : order-0 histogram of the 16-bit key (prev<<8)|cur
-                   over FASTENT_BG_NB round-robin shadow tables, so NB
-                   consecutive pairs land in independent tables and
+                   over FASTENT_BG_NB round-robin shadow tables, so
                    the store-to-load-forward dependency does not
-                   serialise (the htscodecs hist1_4 technique).  Bit
+                   serialise; the planes are summed at finalize.  Bit
                    mode uses the 2x2 bit_bigram.
       longest run: longest identical-symbol run (bytes or bits).
       runs       : number of 0/1 runs                (bit mode).
       cusum_max  : extent of the +-1 bit walk         (bit mode).
 
-    Stream calls this per chunk on one persistent state.  Single-
-    thread mmap calls it once over the whole resident buffer.  With
-    -j each worker calls it on its own slab and run_mmap_mt_ merges
-    the per-slab reductions with a boundary stitch, so the result is
-    bit-identical regardless of thread count.  Byte runs-vs-median is
-    then derived in fastent_finalize from the digram joint counts (no
-    rescan).
+    Streams call it per chunk; with -j each worker scans its slab and
+    run_mmap_mt_ merges the per-slab reductions with a boundary
+    stitch, so the result is bit-identical for any thread count.
 
     Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
@@ -28,14 +23,14 @@
 
 #include <string.h>
 
-#if FASTENT_BG_NB < 4
-#error "fastent_digram_count unrolls 4 shadow tables; FASTENT_BG_NB >= 4"
+#if FASTENT_BG_NB < 2
+#error "fastent_digram_count unrolls 2 shadow tables; FASTENT_BG_NB >= 2"
 #endif
 
 /*  -f scratch chunk; sized to stay L1/L2-resident across fold+scan.  */
 #define FASTENT_DG_FOLD_CHUNK 32768
 
-/*  Cached vectorised fold variant. Pick is process-stable, so the
+/*  Cached vectorised fold variant.  Pick is process-stable, so the
     lazy-init race stores the same pointer.  */
 static fastent_fold_fn dg_fold_fn_(void) {
   static fastent_fold_fn ff = NULL;
@@ -76,14 +71,11 @@ static void digram_bytes_(fastent_chunk_state * st,
     st->dg_have = 1;
   }
 
-  for (; i + 4 <= len; i += 4) {
-    unsigned c0 = buf[i],     c1 = buf[i + 1];
-    unsigned c2 = buf[i + 2], c3 = buf[i + 3];
+  for (; i + 2 <= len; i += 2) {
+    unsigned c0 = buf[i], c1 = buf[i + 1];
     t[0u * FASTENT_BG_TABLE + ((prev << 8) | c0)]++;  lr_one_(st, c0);
     t[1u * FASTENT_BG_TABLE + ((c0   << 8) | c1)]++;  lr_one_(st, c1);
-    t[2u * FASTENT_BG_TABLE + ((c1   << 8) | c2)]++;  lr_one_(st, c2);
-    t[3u * FASTENT_BG_TABLE + ((c2   << 8) | c3)]++;  lr_one_(st, c3);
-    prev = c3;
+    prev = c1;
   }
   for (; i < len; i++) {
     unsigned c = buf[i];
@@ -131,8 +123,8 @@ void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
     return;
   }
 
-  /*  -f: prefold per chunk (mmap is read-only and shared, so no
-      in-place fold), then fold-free scan. st->dg_* and the lr/rn/cs
+  /*  -f: prefold per chunk (mmap is read-only/shared, no in-place
+      fold), then fold-free scan.  st->dg_* and the lr/rn/cs
       accumulators carry across chunks, so boundaries do not matter.  */
   fastent_fold_fn ff = dg_fold_fn_();
   u8 scratch[FASTENT_DG_FOLD_CHUNK];

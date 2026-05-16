@@ -245,9 +245,8 @@ void fastent_print_annotated(const fastent_result * r,
        :               "structured bit lane");
   }
 
-  /*  Informational only (core=0, never moves the verdict).  redux =
-      fraction of order-0 entropy the previous byte explains; NaN
-      unless -ee ran.  */
+  /*  Informational only (core=0).  redux = fraction of order-0
+      entropy the previous byte explains; NaN unless -ee ran.  */
   if (r->conditional_entropy != r->conditional_entropy) {
     row_(o, color, &v, 0, "Cond. entropy", "pass -ee (byte only)",
          B_NA, "");
@@ -285,8 +284,8 @@ void fastent_print_annotated(const fastent_result * r,
   snprintf(d3, sizeof d3, nf, r->stddev);
   printf("\n  %s   %s   Stddev %s\n", d1, d2, d3);
 
-  /*  Runs / longest run / cusum: descriptive, no verdict (a proper
-      NIST p-value is left for later).  Shown only when -ee ran.  */
+  /*  Runs / longest run / cusum: descriptive, no verdict.  Shown
+      only when -ee ran.  */
   if (r->longest_run == r->longest_run) {
     printf("  Longest run %.0f %s", r->longest_run, samp);
     if (r->runs == r->runs)      printf("s   Runs %.0f", r->runs);

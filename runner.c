@@ -18,8 +18,7 @@ typedef struct {
   const u8 *     data;
   const u64 *    bounds;     /*  N+1 entries, multiples of 6 except last  */
   fastent_chunk_state * states;
-  u64 * const *  bigrams;    /*  per-slab digram tables; NULL unless
-                                 -ee byte mode  */
+  u64 * const *  bigrams;    /*  per-slab digram tables; NULL unless -ee byte mode  */
   fastent_analyze_fn fn;
   int            extended;
   int            binary;
@@ -59,9 +58,8 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
     (fastent_chunk_state *) calloc((sz) N, sizeof(*states));
   if (!states) { fprintf(stderr, "out of memory\n"); exit(2); }
 
-  /*  Per-slab digram tables (byte -ee only): one each, summed at
-      merge.  Allocated up front so OOM is handled serially; the
-      worker only wires the pointer in after init.  */
+  /*  Per-slab digram tables (byte -ee only), summed at merge.
+      Allocated up front so OOM is handled serially.  */
   u64 ** bgs = NULL;
   if (o->extended >= 2 && !o->binary) {
     bgs = (u64 **) calloc((sz) N, sizeof(*bgs));
@@ -77,11 +75,11 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
   ctx.fold = o->fold;
   fastent_parallel_for((sz) N, mt_worker_, &ctx);
 
-  /*  Merge slabs: adjacent slab pairs contribute b[end-1] *
-      b[start_next] to the SCC; final wrap (last * first) is added in
-      fastent_finalize().  In bit mode the carry/first/last fields are
-      single bits, so the same expression covers the cross-slab bit
-      pair.  */
+  /*  Merge slabs in fixed order so the result is bit-identical to -j1.
+      Adjacent slab pairs contribute carry_byte (prev last) * first_byte
+      (next first) to the SCC; the final wrap (last * first) is added in
+      fastent_finalize().  In bit mode carry/first/last are single bits,
+      so the same expression covers the cross-slab bit pair.  */
   Fk(N,
      const fastent_chunk_state * s = &states[k];
      if (s->total_bytes == 0) continue;
@@ -101,7 +99,7 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
      out->total_bytes  += s->total_bytes;
      out->mc_count     += s->mc_count;
      out->mc_inside    += s->mc_inside;
-     /*  Only the last slab can carry trailing MC ring bytes; the
+     /*  Only the last slab carries trailing MC ring bytes; the
          others end on a 6-aligned boundary.  */
      if (k == N - 1) {
        out->mc_pos = s->mc_pos;
@@ -109,11 +107,10 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
      })
 
   /*  Merge the -ee level-2 reductions.  Per-slab counts are
-      partition-invariant; the pair, bit-run and cusum statistics
-      additionally need the symbol straddling each slab boundary,
-      stitched here in fixed slab order so j1 == jN.  The longest run
-      is a segmented merge: a run can span a boundary, or whole slabs
-      of one symbol (all-zeros input split N ways).  */
+      partition-invariant; pair, bit-run and cusum stats additionally
+      need the symbol straddling each slab boundary, stitched here in
+      fixed slab order so jN == j1.  Longest run is a segmented merge:
+      a run may span a boundary or whole single-symbol slabs.  */
   if (o->extended >= 2) {
     u64 lr_gmax = 0, carry_len = 0;
     unsigned carry_sym = 0;
@@ -185,14 +182,13 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
   free(bounds);
 }
 
-/*  SPMC stream/uring pipeline.  W consumers; whichever holds the
-    mutex performs the next serialized fastent_src_read (re-chunked
-    to a multiple of 6 so no Monte Carlo hexad straddles a block) and
-    claims the next seq, then processes its block lock-free.  Order-
-    independent sums fold into per-consumer accumulators; the order-
-    sensitive boundary quantities go into per-block edge records,
-    stitched in seq order afterwards with the same merge run_mmap_mt_
-    uses, so the result is bit-identical to the serial path and to
+/*  SPMC stream/uring pipeline.  W consumers; whichever holds the mutex
+    does the next serialized fastent_src_read (re-chunked to a multiple
+    of 6 so no Monte Carlo hexad straddles a block), claims a monotone
+    seq, then processes its block lock-free.  Order-independent sums fold
+    into per-consumer accumulators; order-sensitive boundary quantities
+    go into per-block edge records, sorted by seq and stitched with the
+    same merge run_mmap_mt_ uses, so the result is bit-identical to
     -j1.  */
 
 typedef struct {
@@ -526,8 +522,7 @@ typedef struct {
 } recursive_ctx;
 
 static int analyse_one_(const char * path, recursive_ctx * c) {
-  /*  Force mmap when possible (regular files); fall back to stream on
-      open errors so we don't abort the whole walk.  */
+  /*  Skip files we can't open rather than aborting the whole walk.  */
   fastent_source src;
   fastent_io_mode io = (fastent_io_mode) c->o->io_mode;
   if (fastent_src_open(&src, path, io) != 0) {

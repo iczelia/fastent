@@ -14,46 +14,27 @@
     You should have received a copy of the GNU General Public License
     along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    Portable double-double implementation, audited bit-for-bit against
-    a __float128 reference: 0 ULP max error across 5 M log-uniform
-    random samples spanning chisq in [10^-10, 1490] for df=1 (a=0.5)
-    and chisq in [10^-3, 1490] for df=255 (a=127.5), including the
-    deep tail down to Q ~ 3*10^-173.
+    Portable double-double implementation. df=1 and df=255 both have
+    half-integer shape a, collapsing the regularised incomplete gamma
+    to a closed form needing only erfc and a finite polynomial sum;
+    erfc/lgamma are computed in DD rather than via libm.  Libm use is
+    limited to fma, sqrt, round, ldexp (correctly rounded or trivial
+    bit ops).
 
-    Why double-double:
-
-      The two domains we care about (df = 1 and df = 255) both have
-      half-integer shape parameter a, which collapses the regularised
-      incomplete gamma to a closed form requiring only erfc and a
-      finite polynomial sum.  We avoid every "wobbly" libm function
-      (no erfc, no erfcl, no lgamma, no lgammal) by computing those
-      values ourselves via series / continued fraction in double-
-      double arithmetic.
-
-      Libm calls in the deployed code are restricted to: fma, sqrt,
-      round, ldexp: all four are either correctly-rounded by IEEE
-      754 (sqrt, fma) or trivial bit operations (round, ldexp).
-
-    Algorithms:
-
-      df = 1   :  Q(0.5, z) computed directly as the regularised
-                  incomplete gamma via the lower-tail Taylor series
-                  (z < 1.5) or the Steed/Lentz continued fraction
-                  (z >= 1.5), all in DD.  We never call libm erfc.
+      df = 1   :  Q(0.5, z) as the regularised incomplete gamma via
+                  lower-tail Taylor series (z < 1.5) or Lentz CF
+                  (z >= 1.5), in DD.
 
       df = 255 :  Half-integer closed form
                     Q(127.5, z) = Q(0.5, z) + 2 * e^-z * U(z)
                     U(z)        = sum_{k=0..126} T_k
                     T_0         = sqrt(z/pi)
                     T_{k+1}     = T_k * 2z/(2k+3)
-                  derived by integrating Gamma(a, z) by parts 127
-                  times down to Gamma(1/2, z) = sqrt(pi)*erfc(sqrt(z)).
-                  Finite 127-term sum, no convergence test, no regime
-                  split.  e^-z is factored out of the recurrence so
-                  the loop runs in normal range; the single final
-                  multiplication carries any subnormal precision loss
-                  (limited to the inherent precision of subnormal
-                  doubles).  */
+                  from integrating Gamma(a, z) by parts down to
+                  Gamma(1/2, z) = sqrt(pi)*erfc(sqrt(z)).  e^-z is
+                  factored out of the recurrence so the loop stays in
+                  normal range; the final multiply carries any
+                  subnormal precision loss.  */
 
 #include "common.h"   /*  Must precede <math.h> on DJGPP.  */
 #include <math.h>
@@ -68,8 +49,7 @@
 #include "chisq.h"
 
 /*  Double-double (DD) primitives.  hi + lo with |lo| <= ulp(hi)/2.
-    All ops use only basic arithmetic + fma; portable to any IEEE 754
-    host with a correctly-rounded fma (C99 mandates it).  */
+    Uses only basic arithmetic + a correctly-rounded fma.  */
 
 typedef struct { f64 hi, lo; } dd_t;
 
@@ -155,12 +135,11 @@ static inline dd_t dd_sqrt_d(f64 x) {
   return fast_two_sum(y, delta);
 }
 
-/*  DD exp.  Reduce x = k*ln(2) + r with |r| <= ln(2)/2, then Taylor
-    on r, then 2^k via ldexp.  The _scaled variant defers the ldexp
-    so callers that subsequently multiply e^x by a large factor see
-    the product land in normal range with full precision preserved.
-    Crucial for the byte-mode tail near z = 745, where e^-z is in
-    the subnormal regime but Q itself is in normal range.  */
+/*  DD exp.  Reduce x = k*ln(2) + r with |r| <= ln(2)/2, Taylor on r,
+    then 2^k via ldexp.  The _scaled variant defers the ldexp so a
+    caller multiplying e^x by a large factor keeps full precision;
+    needed for the byte-mode tail near z = 745 where e^-z is subnormal
+    but Q is in normal range.  */
 
 static const dd_t LN2_DD = {
   0.6931471805599453,        /*  ln(2) high  */
@@ -194,19 +173,16 @@ static dd_t dd_exp_d(f64 x) {
   return r;
 }
 
-/*  Q(0.5, z): bit-mode tail.  Computed as the regularised
-    incomplete gamma via series for z < 1.5 and Lentz CF for
-    z >= 1.5.  No call to libm erfc.  */
+/*  Q(0.5, z): bit-mode tail.  Regularised incomplete gamma via
+    series for z < 1.5, Lentz CF for z >= 1.5.  */
 
 static const dd_t PI_DD = {
   3.141592653589793, 1.2246467991473532e-16
 };
 
-/*  pref_05(z) = e^-z * sqrt(z/pi), in DD.  Used by both the series
-    and CF branches of Q(0.5, z).  Eager ldexp inside dd_exp_d is OK
-    here because Q(0.5, z) is only ever the FINAL result for binary
-    mode: if z is so large that e^-z underflows, Q itself is
-    underflowing too and we just round to 0.  */
+/*  pref_05(z) = e^-z * sqrt(z/pi), in DD.  Eager ldexp in dd_exp_d
+    is fine: Q(0.5, z) is the final binary-mode result, so if e^-z
+    underflows then Q does too and rounding to 0 is correct.  */
 static dd_t pref_05_dd(f64 z) {
   dd_t e   = dd_exp_d(-z);
   dd_t zp  = dd_div(dd_of(z), PI_DD);
@@ -273,23 +249,17 @@ static dd_t Q_05_dd(f64 z) {
       T_0         = sqrt(z/pi)
       T_{k+1}     = T_k * 2z/(2k+3)
 
-    m = (df - 1) / 2 for odd df:  m = 127 (df = 255, byte mode),
-    m = 7 (df = 15, poker test), m = 0 (df = 1, bit mode: the sum
-    is empty and the result reduces to Q(0.5, z)).
-
-    The m-step recurrence on T_k runs in normal range for all z
-    in [0, 750].  e^-z is computed scaled (mantissa + 2^k exponent)
-    and applied via a single ldexp AFTER the product U * mantissa
-    is formed, so the deep tail (z near 745, e^-z subnormal) does
-    not destroy the recurrence's accumulated precision.  */
+    m = (df - 1) / 2 for odd df: 127 (df=255), 7 (df=15, poker),
+    0 (df=1: empty sum, reduces to Q(0.5, z)).  e^-z is applied
+    scaled (single ldexp after U * mantissa) so the deep tail
+    (z near 745, e^-z subnormal) keeps the recurrence's precision.  */
 
 static dd_t Q_halfint_dd(f64 z, int m) {
   if (z <= 0.0)   return dd_of(1.0);
   if (z >= 750.0) return dd_of(0.0);
   if (m <= 0)     return Q_05_dd(z);
 
-  /*  T_0 = sqrt(z/pi) in DD.  Sqrt-of-DD via one Newton step over
-      the dd_sqrt_d seed.  */
+  /*  T_0 = sqrt(z/pi) in DD; one Newton step over the dd_sqrt_d seed.  */
   dd_t zp     = dd_div(dd_of(z), PI_DD);
   dd_t s0     = dd_sqrt_d(zp.hi);
   dd_t s02    = dd_mul(s0, s0);

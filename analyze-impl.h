@@ -11,9 +11,7 @@
 
     Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).
 
-    Algorithm notes.
-
-    For an input byte stream b[0..N-1] we compute, in a single pass:
+    Single-pass over byte stream b[0..N-1]:
 
       hist[v]     = sum_i [b[i] == v]            (256 bins, banked 4-way)
       cross_prod  = sum_{i=0..N-2} b[i]*b[i+1]   (SCC partial; wrap added
@@ -21,17 +19,14 @@
       mc_inside   = number of hexads (b[6k..6k+5]) whose two 24-bit
                     components squared-and-summed are <= INCIRC.
 
-    SCC SIMD path: PMADDUBSW saturates so we widen to 16-bit and use
-    signed-mul.  Pre-XOR b with 0x80 to map b -> b - 128 in i8 range;
-    mullo_epi16 gives the canonical signed product a*(b-128); madd_epi16
-    sums adjacent pairs into i32 (no saturation).  The 128*sum_a
-    correction is computed on the fly via PSADBW and added inside the
-    same loop, so st->cross_product is always the canonical sum after
-    every analyze() call.
+    SCC SIMD: PMADDUBSW saturates, so widen to i16 and signed-mul.
+    Pre-XOR b with 0x80 maps b -> b-128 into i8 range; mullo_epi16
+    gives a*(b-128); madd_epi16 pair-sums to i32 (no saturation). The
+    128*sum_a correction is computed via PSADBW in the same loop, so
+    st->cross_product is canonical after every analyze() call.
 
-    MC Pi is interleaved into the SIMD body via a scalar drain + SIMD
-    bulk + scalar tail dance per stride; the persistent 6-byte ring
-    handles cross-call boundaries.  */
+    MC Pi interleaves into the SIMD body as scalar drain + SIMD bulk +
+    scalar tail per stride; a persistent 6-byte ring spans calls.  */
 
 #include "analyze.h"
 
@@ -50,19 +45,12 @@
 #define FASTENT_CAT(a, b)  FASTENT_CAT2(a, b)
 #define FASTENT_FN(name)   FASTENT_CAT(name, FASTENT_VAR_SUFFIX)
 
-/*  Stage-buffer pointer launder.  Each SIMD body writes the freshly
-    computed (or freshly folded) vector to a stack stage buffer, then
-    issues 16/32/64 scalar byte loads from it to drive the banked
-    histogram.  Without a launder the compiler sees through stage[]
-    and rewrites the byte loads as a vpextrb/umov chain off the source
-    vector register; that serialises the histogram on the FP->GP
-    datapath and costs ~2x on x86 byte mode, ~1.5x on NEON.
-    On GCC/Clang we use the canonical empty-asm pointer launder.
-    Other compilers (MSVC, XLC, ...) lack GCC-style inline asm; the
-    `volatile` qualifier forbids the same store-to-load fold and
-    produces byte-identical codegen to the asm launder on GCC and
-    Clang (verified on the HIST4-unrolled body), so it's a safe
-    cross-compiler substitute rather than a degradation.  */
+/*  Stage-buffer pointer launder. SIMD bodies store the folded vector
+    to a stack stage then issue scalar byte loads from it for the
+    histogram. Without a launder the compiler folds those loads into a
+    vpextrb/umov chain off the source vector, serialising the histogram
+    on the FP->GP datapath (~2x on x86, ~1.5x on NEON). GCC/Clang use
+    the empty-asm launder; elsewhere `volatile` blocks the same fold.  */
 #if defined(__GNUC__) || defined(__clang__)
   #define FASTENT_STAGE_PTR    const u8 *
   #define FASTENT_LAUNDER(sp)  __asm__("" : "+r"(sp) :: "memory")
@@ -71,13 +59,9 @@
   #define FASTENT_LAUNDER(sp)  ((void) 0)
 #endif
 
-/*  In-register case fold helpers. These produce a byte (or vector of
-    bytes) that has ASCII A-Z and Latin-1 0xC0-0xDE (excluding 0xD7)
-    mapped to lower-case; every other byte passes through unchanged.
-    Both helpers are private to this TU and used by the fused
-    fold + analyse path so we never have to materialise a staging copy
-    of the input buffer.  See also the standalone fold() body further
-    down, which calls fold_vec_inline directly.  */
+/*  In-register case fold: ASCII A-Z and Latin-1 0xC0-0xDE (except
+    0xD7) lowered, other bytes unchanged. Used by the fused fold +
+    analyse path so no staging copy of the input is needed.  */
 
 static inline int FASTENT_FN(fold_is_upper_inline)(unsigned c) {
   return ((unsigned)(c - 'A')   < 26u) ||
@@ -115,10 +99,8 @@ FASTENT_FN(fold_vec_inline)(FASTENT_SIMD_VEC c) {
 }
 #endif
 
-/*  Scalar single-byte update: histogram + SCC + MC Pi + first/last
-    tracking. Used by head/tail of all variants and entire body of scalar
-    variant. MC is folded in so we don't need a second pass over the
-    buffer.  */
+/*  Scalar single-byte update: histogram + SCC + MC Pi + first/last.
+    Used by head/tail of all variants and the whole scalar body.  */
 
 static inline void FASTENT_FN(consume_byte)(fastent_chunk_state * st, u8 b,
                                         unsigned bank_idx) {
@@ -148,10 +130,8 @@ static inline void FASTENT_FN(consume_byte)(fastent_chunk_state * st, u8 b,
   }
 }
 
-/*  Scalar histogram + SCC body. Used as fallback and on chunk edges.
-    Templated on `fold`: when set, each byte is folded in-register
-    before being fed to consume_byte. `fold` is a compile-time constant
-    at every call site so the branch dead-eliminates.  */
+/*  Scalar histogram + SCC body (fallback and chunk edges). Templated
+    on the compile-time `fold` constant; the branch dead-eliminates.  */
 
 static __attribute__((always_inline)) inline sz
 FASTENT_FN(scalar_body_impl)(fastent_chunk_state * st,
@@ -171,9 +151,8 @@ static inline sz FASTENT_FN(scalar_body)(fastent_chunk_state * st,
   return FASTENT_FN(scalar_body_impl)(st, buf, len, start_bank, 0);
 }
 
-/*  SIMD body: histogram (4 banks rotating by within-iter position mod 4)
-    + SCC pmaddubs sign-corrected accumulator. Each variant has a
-    slightly different version below.  */
+/*  SIMD body: 4-bank histogram + sign-corrected SCC accumulator,
+    one variant per ISA below.  */
 
 #if defined(FASTENT_VARIANT_AVX2)
 
@@ -181,9 +160,8 @@ static __attribute__((always_inline)) inline sz
 FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
                            const u8 * FASTENT_RESTRICT buf,
                            sz len, int fold) {
-  /*  AVX2 stride = 64 bytes (two 32-byte vectors). We need byte +1
-      readable for the SCC pmaddubs shifted load, so the body stops
-      at len - 32 (leave 32-byte read-ahead margin).  */
+  /*  Stride 64 (two 32-byte vectors). SCC needs byte +1 readable, so
+      the body stops at len - 32 (32-byte read-ahead margin).  */
   if (len < 65) return 0;
 
   const sz body_max = len - 32;
@@ -191,23 +169,14 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   if (iters == 0) return 0;
   const sz body_end = iters * 64;
 
-  /*  Set up the SCC carry: the very first SCC product in this body's
-      window is carry_byte (from the previous byte) * buf[0]. We handle
-      this scalar before the SIMD loop, then bytes [0..body_end-1] get
-      histogrammed inside the SIMD loop and bytes [1..body_end] get their
-      cross-products via pmaddubs over (a=buf[i..i+31], b=buf[i+1..i+32]).
-      That covers byte-pairs (buf[i], buf[i+1]) for i in [0..body_end-1],
-      which yields products buf[0]*buf[1], buf[1]*buf[2], ...,
-      buf[body_end-1]*buf[body_end].  */
-
-  /*  In fused-fold mode all the per-byte scalar inputs (first_byte
-      seed, SCC carry, epilogue byte) must observe folded values so
-      they agree with what the SIMD loop sees.  */
+  /*  SCC window: the first product carry_byte*buf[0] is done scalar
+      below; the loop's pmaddubs over (buf[i..i+31], buf[i+1..i+32])
+      then covers pairs (buf[i],buf[i+1]) for i in [0..body_end-1].
+      In fold mode the scalar seeds (first_byte, carry, epilogue) use
+      folded values to match the SIMD loop.  */
   u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
 
-  /*  Initialise first_byte / carry from scalar entry into byte 0.  */
   if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
-  /*  Cross product carry * buf[0] (only if we had a previous chunk):  */
   if (st->have_carry)
     st->cross_product += (i64) st->carry_byte * (i64) b0_user;
   st->have_carry = 1;
@@ -217,15 +186,13 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   __m256i scc_acc64        = _mm256_setzero_si256(); /*  4 i64 lanes  */
   __m256i lhs_sad          = _mm256_setzero_si256();
 
-  /*  Histogram: 4 banks. We process 16 bytes per quarter-iter (4 quarters
-      per stride = 64 bytes). Within a quarter, byte 0..3 hit banks 0..3.  */
+  /*  4 histogram banks; bytes 0..3 within each quad hit banks 0..3.  */
   u32 * FASTENT_RESTRICT b0 = st->bank[0];
   u32 * FASTENT_RESTRICT b1 = st->bank[1];
   u32 * FASTENT_RESTRICT b2 = st->bank[2];
   u32 * FASTENT_RESTRICT b3 = st->bank[3];
 
-  /*  MC Pi interleaved into the inner loop. Hoist state into locals so
-      the compiler can keep them in registers.  */
+  /*  MC Pi state hoisted into locals for register residency.  */
   int mc_pos     = st->mc_pos;
   u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
   u8  m3 = st->mc_buf[3], m4 = st->mc_buf[4], m5 = st->mc_buf[5];
@@ -233,15 +200,12 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   u64 mc_inside  = st->mc_inside;
 
   const __m256i ones16_sum = _mm256_set1_epi16(1);
-  /*  Software prefetch: pulls cache lines ~8 strides ahead into L2.
-      Effective on streaming workloads where the HW prefetcher under-
-      pipelines the memory controller.  */
+  /*  Prefetch ~8 strides ahead into L2 for streaming workloads.  */
   #define FASTENT_PREFETCH_DIST 512
   for (sz i = 0; i < body_end; i += 64) {
     __builtin_prefetch(buf + i + FASTENT_PREFETCH_DIST, 0, 1);
-    /*  SCC: two 32-byte chunks, widen-mul-madd path (no saturation).
-        In fused-fold mode every loaded vector is folded in-register
-        before any downstream op consumes it.  */
+    /*  SCC: two 32-byte chunks, widen-mul-madd (no saturation);
+        folded in-register first when fold is set.  */
     __m256i va0 = _mm256_loadu_si256((const __m256i *) (buf + i +  0));
     __m256i vb0 = _mm256_loadu_si256((const __m256i *) (buf + i +  1));
     __m256i va1 = _mm256_loadu_si256((const __m256i *) (buf + i + 32));
@@ -277,11 +241,9 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m256i s1_lo = _mm256_madd_epi16(prod1_lo, ones16_sum);
     __m256i s1_hi = _mm256_madd_epi16(prod1_hi, ones16_sum);
 
-    /*  i32 lane sums fit no problem (each is sum of 2 byte-products in
-        [-65280..64770]). Per iter we add four such i32 vectors here.
-        However, accumulating across many iters in an i32 vector
-        overflows for input with consistent-sign products (e.g.
-        alternating.bin). Convert to i64 lanes for accumulation.  */
+    /*  Each i32 lane is a sum of 2 byte-products in [-65280..64770];
+        widen to i64 before cross-iter accumulation since an i32 acc
+        overflows on consistent-sign inputs.  */
     __m256i sum32 = _mm256_add_epi32(_mm256_add_epi32(s0_lo, s0_hi),
                                      _mm256_add_epi32(s1_lo, s1_hi));
     __m256i sum64_lo =
@@ -295,12 +257,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m256i sad1 = _mm256_sad_epu8(va1, zero);
     lhs_sad = _mm256_add_epi64(lhs_sad, _mm256_add_epi64(sad0, sad1));
 
-    /*  Histogram: 64 byte increments across 4 banks via direct movzbl
-        loads (or, in fused-fold mode, movzbl loads from an L1-resident
-        stack stage of the folded va0/va1).  The asm launder on the
-        stage pointer is load-bearing: without it GCC turns the byte
-        reads into a vpextrb chain off the just-stored vector, which
-        serialises the histogram and costs ~2x.  */
+    /*  Histogram: 64 movzbl increments across 4 banks, from buf or
+        (fold mode) the laundered L1 stage. See launder note above.  */
     u8 stage[64] __attribute__((aligned(32)));
     FASTENT_STAGE_PTR p;
     if (fold) {
@@ -321,9 +279,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     HIST4(48); HIST4(52); HIST4(56); HIST4(60);
     #undef HIST4
 
-    /*  MC Pi. Drain ring if needed, then fire bulk hexads. The bulk
-        loop uses two interleaved accumulators (mi_a, mi_b) to break
-        the sbb serial dependency on a single accumulator.  */
+    /*  MC Pi: drain ring, then bulk hexads. Two accumulators (mi_a,
+        mi_b) break the sbb serial dependency.  */
     u64 mi_a = 0, mi_b = 0;
     int drain_fired = 0;
     #define MC_HIT(d, acc) acc += ((d) <= FASTENT_INCIRC)
@@ -351,9 +308,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     }
 
     unsigned n_hexads = (64u - p_idx) / 6u;
-    /*  SIMD bulk MC Pi: process pairs of hexads (2 hexads = 12 bytes)
-        via PSHUFB + VPMULUDQ. SSE4.2 cmpgt_epi64 is fine here because
-        the AVX2 variant always has it.  */
+    /*  SIMD bulk: 2 hexads (12 bytes) per iter via PSHUFB + VPMULUDQ;
+        cmpgt_epi64 is SSE4.2, always present with AVX2.  */
     const u8 * q = p + p_idx;
     const __m128i mc_shuf = _mm_setr_epi8(2, 1, 0, -1, 5, 4, 3, -1,
                                           8, 7, 6, -1, 11, 10, 9, -1);
@@ -408,13 +364,11 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   u64 lhs_sum  = (u64) _mm_cvtsi128_si64(sb)
                + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(sb, sb));
 
-  /*  scc_sum is sum a_i*(b_i-128). Add 128*sum_a_i to recover sum a_i*b_i.  */
+  /*  scc_sum = sum a_i*(b_i-128); add 128*sum_a to get sum a_i*b_i.  */
   st->cross_product += scc_sum + (i64)(128ULL * lhs_sum);
 
-  /*  Epilogue: process buf[body_end] for histogram + carry + MC. This
-      byte was read by the SCC shifted load (so its product with
-      buf[body_end-1] is already in cross_product) but not yet
-      histogrammed or fed to MC Pi.  */
+  /*  Epilogue: buf[body_end]'s SCC pair was counted by the last
+      shifted load, but it still needs histogram + carry + MC.  */
   {
     u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
                 : buf[body_end];
@@ -424,8 +378,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     st->carry_byte = b;
     st->last_byte  = b;
 
-    /*  MC: push b into the live ring (still in registers) and possibly
-        fire one hexad, then save state.  */
+    /*  MC: push b into the live ring, maybe fire one hexad.  */
     switch (mc_pos) {
       case 0: m0 = b; break;
       case 1: m1 = b; break;
@@ -457,24 +410,17 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
 #elif defined(FASTENT_VARIANT_AVX512)
 
-/*  AVX-512 SIMD body.
-
-    Stride = 128 bytes (two 64-byte vectors).  The SCC pmaddubs-like
-    path is the same as AVX2, just widened to 512-bit lanes via
-    _mm512_madd_epi16 over u16 x i16 products.  The byte histogram
-    stays scalar 4-banked: every AVX-512 CD scatter-based variant we
-    benchmarked (Intel Opt. Manual section 15.16.1 vpermd-fold, Cordes
-    replicated 16x sub-histograms, naive popcount-scatter) lost to the
-    scalar inc-mem chain by 1.5-3x on Zen 4 because VPSCATTERDD is
-    ~16 c reciprocal throughput on this microarchitecture.  */
+/*  AVX-512 SIMD body. Stride 128 (two 64-byte vectors); SCC path is
+    the AVX2 one widened to 512-bit. Histogram stays scalar 4-banked
+    because VPSCATTERDD (~16c recip throughput on Zen 4) loses to the
+    inc-mem chain by 1.5-3x.  */
 
 static __attribute__((always_inline)) inline sz
 FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
                            const u8 * FASTENT_RESTRICT buf,
                            sz len, int fold) {
-  /*  AVX-512 stride = 128 bytes (two 64-byte vectors). Need byte +1
-      readable for the SCC shifted load on the last iter, so the body
-      stops at len - 64 (leave 64-byte read-ahead margin).  */
+  /*  Stride 128 (two 64-byte vectors). SCC needs byte +1 readable, so
+      the body stops at len - 64 (64-byte read-ahead margin).  */
   if (len < 129) return 0;
 
   const sz body_max = len - 64;
@@ -526,12 +472,9 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m512i vbs1 = _mm512_xor_si512(vb1, sign_xor);
 
 #ifdef FASTENT_AVX512_HAVE_VNNI
-    /*  VPDPBUSD fuses (u8 * i8) byte-multiply, 4-way horizontal sum,
-        and i32 accumulate into a single uop.  Saves the cvtep*_epi16,
-        mullo_epi16, and madd_epi16 chain for both halves.  Per i32
-        lane the accumulated value is sum of 4 byte-products in
-        [-32640, 32385]; over a 128-byte stride that's 4 lanes of
-        contributions, so we widen to i64 once per iter as before.  */
+    /*  VPDPBUSD fuses (u8*i8) multiply, 4-way sum and i32 accumulate,
+        replacing the widen/mullo/madd chain. Each i32 lane is a sum
+        of 4 byte-products in [-32640, 32385]; widen to i64 per iter.  */
     __m512i sum32 = _mm512_setzero_si512();
     sum32 = _mm512_dpbusd_epi32(sum32, va0, vbs0);
     sum32 = _mm512_dpbusd_epi32(sum32, va1, vbs1);
@@ -562,10 +505,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m512i s1_lo = _mm512_madd_epi16(prod1_lo, ones16_sum);
     __m512i s1_hi = _mm512_madd_epi16(prod1_hi, ones16_sum);
 
-    /*  Accumulate per-pair i32 sums as i64 lanes. Each i32 lane is the
-        sum of two byte-products in [-65280..64770]; we widen to i64
-        before accumulating across iters to avoid overflow on
-        consistent-sign inputs.  */
+    /*  Each i32 lane is a sum of 2 byte-products in [-65280..64770];
+        widen to i64 before cross-iter accumulation.  */
     __m512i sum32 = _mm512_add_epi32(_mm512_add_epi32(s0_lo, s0_hi),
                                      _mm512_add_epi32(s1_lo, s1_hi));
     __m512i sum64_lo =
@@ -580,9 +521,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m512i sad1 = _mm512_sad_epu8(va1, zero512);
     lhs_sad = _mm512_add_epi64(lhs_sad, _mm512_add_epi64(sad0, sad1));
 
-    /*  Histogram & MC Pi stage buffer.  In fused-fold mode we go via
-        an L1-resident stack stage (with the same asm pointer laundering
-        as the AVX2 path); else we read directly from buf.  */
+    /*  Histogram + MC stage: laundered L1 stage in fold mode, else
+        direct buf reads (see launder note above).  */
     u8 stage[128] __attribute__((aligned(64)));
     FASTENT_STAGE_PTR p;
     if (fold) {
@@ -595,9 +535,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       p = buf + i;
     }
 
-    /*  Scalar 4-banked inc-mem chain: 128 byte increments per iter
-        distributed across 4 bank arrays; mirrors the AVX2 path's bank
-        discipline so cross-variant tail merges line up.  */
+    /*  128 inc-mem increments across 4 banks; same bank discipline
+        as AVX2 so cross-variant tail merges line up.  */
     #define HIST4(o) \
       b0[p[(o) + 0]]++; b1[p[(o) + 1]]++; \
       b2[p[(o) + 2]]++; b3[p[(o) + 3]]++
@@ -611,8 +550,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     HIST4(112); HIST4(116); HIST4(120); HIST4(124);
     #undef HIST4
 
-    /*  MC Pi: same drain + bulk + stash dance as the AVX2 body, but
-        sized for a 128-byte stride (so up to 21 hexads per iter).  */
+    /*  MC Pi: AVX2 drain + bulk + stash, sized for the 128-byte
+        stride (up to 21 hexads/iter).  */
     u64 mi_a = 0, mi_b = 0;
     int drain_fired = 0;
     #define MC_HIT(d, acc) acc += ((d) <= FASTENT_INCIRC)
@@ -791,9 +730,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m128i vbs0 = _mm_xor_si128(vb0, sign_xor);
     __m128i vbs1 = _mm_xor_si128(vb1, sign_xor);
 
-    /*  Widen each 16-byte vector to 8 i16 (low / high halves). SSSE3-
-        compatible: zero-extend va via unpack with zero; sign-extend vbs
-        via unpack with cmpgt(0, vbs) which produces a 0/-1 sign mask.  */
+    /*  Widen to 8 i16 halves (SSSE3-safe): zero-extend va via unpack
+        with zero; sign-extend vbs via unpack with cmpgt(0,vbs).  */
     __m128i va0_lo = _mm_unpacklo_epi8(va0, zero);
     __m128i va0_hi = _mm_unpackhi_epi8(va0, zero);
     __m128i va1_lo = _mm_unpacklo_epi8(va1, zero);
@@ -815,8 +753,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m128i s1_lo = _mm_madd_epi16(prod1_lo, ones16_sum);
     __m128i s1_hi = _mm_madd_epi16(prod1_hi, ones16_sum);
 
-    /*  Widen 4 i32 lanes to 4 i64 lanes via sign-shift + unpack
-        (SSSE3-compatible). Then accumulate as i64.  */
+    /*  Widen i32 -> i64 via sign-shift + unpack (SSSE3-safe).  */
     __m128i sum32 = _mm_add_epi32(_mm_add_epi32(s0_lo, s0_hi),
                                   _mm_add_epi32(s1_lo, s1_hi));
     __m128i sign = _mm_srai_epi32(sum32, 31);  /*  i32 sign bits  */
@@ -827,8 +764,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m128i sad1 = _mm_sad_epu8(va1, zero);
     lhs_sad = _mm_add_epi64(lhs_sad, _mm_add_epi64(sad0, sad1));
 
-    /*  Same stage-buffer + asm-launder pattern as the AVX2 body; the
-        asm is what forces movzbl-from-L1 instead of vpextrb.  */
+    /*  Histogram from buf or laundered L1 stage (see note above).  */
     u8 stage[32] __attribute__((aligned(16)));
     FASTENT_STAGE_PTR p;
     if (fold) {
@@ -847,8 +783,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     HIST4(16); HIST4(20); HIST4(24); HIST4(28);
     #undef HIST4
 
-    /*  MC Pi: same generic drain + bulk + stash pattern as AVX2,
-        scaled for a 32-byte stride (4-5 hexads per iter).  */
+    /*  MC Pi: scalar drain + bulk + stash (32-byte stride).  */
     #define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
       u32 x = ((u32)(x0) << 16) | ((u32)(x1) << 8) | (u32)(x2); \
       u32 y = ((u32)(y0) << 16) | ((u32)(y1) << 8) | (u32)(y2); \
@@ -894,8 +829,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
   st->cross_product += scc_sum + (i64)(128ULL * lhs_sum);
 
-  /*  Epilogue: histogram + MC for buf[body_end] (SCC product already
-      added by the shifted load in the last pmaddubs iter).  */
+  /*  Epilogue: histogram + MC for buf[body_end]; its SCC pair was
+      already added by the last shifted load.  */
   u8 last_b;
   {
     u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
@@ -929,7 +864,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   st->mc_count  = mc_count;
   st->mc_inside = mc_inside;
 
-  /*  carry/last get the value from buf[body_end] (folded if -f).  */
+  /*  carry/last take buf[body_end] (folded if -f).  */
   st->carry_byte = last_b;
   st->last_byte  = last_b;
 
@@ -938,35 +873,14 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
 #elif defined(FASTENT_VARIANT_NEON)
 
-/*  AArch64 NEON SIMD body.
-
-    Stride = 32 bytes (two 16-byte vectors), mirroring the SSE path.
-    NEON has no PMADDUBSW, no PSADBW, and no movemask, but several
-    ladders give us byte-equivalent semantics:
-
-      SCC kernel.  We widen va u8 -> u16 (zero) and vbs s8 -> s16
-      (sign) explicitly, then do an i16 multiply followed by a
-      pairwise add (vpaddlq_s16) which sums adjacent i16 lanes into
-      i32 lanes.  This is exactly what _mm_madd_epi16 with a vector
-      of ones produces.  We accumulate as i64 to avoid overflow on
-      consistent-sign products (alternating.bin and friends).
-
-      LHS byte sum for the 128*sum sign correction.  We need the
-      total bytes processed per iter as a u64 lane sum.  The
-      vpaddlq_u8 -> vpaddlq_u16 -> vpaddlq_u32 ladder produces a
-      u64x2 with two summed halves; we keep accumulating that into
-      lhs_sad and reduce at the end with vaddvq_u64.
-
-      MC Pi: scalar drain + scalar bulk + scalar tail.  NEON has the
-      ops to vectorise the 24x24-bit squared-distance compare, but
-      hexads-per-iter (~5 on a 32-byte stride) is too small to amortise
-      the lane-shuffle setup, and the scalar tail is already tight.
-
-    Histogram: same 4-banked inc-mem chain as SSE.  In fold mode we
-    stage the folded vector to an L1-resident stack buffer with the
-    same asm-launder trick used on x86; without it the compiler turns
-    the byte reads back into umov/lane extractions and serialises the
-    histogram on the FP -> GP pipeline.  */
+/*  AArch64 NEON SIMD body. Stride 32 (two 16-byte vectors), mirroring
+    SSE. NEON lacks PMADDUBSW/PSADBW/movemask; equivalents:
+      SCC: widen va u8->i16 (zero), vbs s8->i16 (sign), i16 mul,
+        vpaddlq_s16 pair-sum to i32 (= madd_epi16 with ones); i64 acc.
+      LHS sum: vpaddlq u8->u16->u32->u64 ladder into lhs_sad.
+      MC Pi: all-scalar; ~5 hexads/iter is too few to amortise SIMD.
+    Histogram: 4-banked inc-mem as SSE; laundered L1 stage in fold
+    mode (see launder note above).  */
 
 static __attribute__((always_inline)) inline sz
 FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
@@ -1015,7 +929,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     int8x16_t vbs0 = vreinterpretq_s8_u8(veorq_u8(vb0, sign_xor));
     int8x16_t vbs1 = vreinterpretq_s8_u8(veorq_u8(vb1, sign_xor));
 
-    /*  Widen va u8 -> i16 (safe; max value 255 fits in i16).  */
+    /*  Widen va u8 -> i16 (255 fits).  */
     int16x8_t va0_lo = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(va0)));
     int16x8_t va0_hi = vreinterpretq_s16_u16(vmovl_u8(vget_high_u8(va0)));
     int16x8_t va1_lo = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(va1)));
@@ -1114,9 +1028,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   u64 lhs_sum = (u64) fastent_neon_addvq_u64(lhs_sad);
   st->cross_product += scc_sum + (i64)(128ULL * lhs_sum);
 
-  /*  Epilogue: process buf[body_end] for histogram + carry + MC.
-      Its product with buf[body_end-1] was already counted via the
-      shifted load in the last iter.  */
+  /*  Epilogue: histogram + carry + MC for buf[body_end]; its SCC pair
+      was already counted by the last shifted load.  */
   u8 last_b;
   {
     u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
@@ -1158,15 +1071,11 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
 #elif defined(FASTENT_VARIANT_WASM128)
 
-/*  WebAssembly SIMD128 byte-mode body.
-
-    Stride = 32 bytes (two 16-byte vectors), mirroring the SSE / NEON
-    bodies.  The SCC kernel uses wasm_i32x4_dot_i16x8: signed i16 x i16
-    pairwise-summed into i32 lanes, fusing the NEON mulq_s16 + vpaddlq
-    pair into a single op.  LHS byte-sum for the 128*sum sign correction
-    is computed via the same extadd-pairwise ladder NEON uses for SAD.
-    Histogram + MC Pi reuse the scalar 4-banked inc-mem chain; MC Pi has
-    no SIMD bulk (only ~5 hexads per iter, same call as NEON).  */
+/*  WebAssembly SIMD128 byte-mode body. Stride 32 (two 16-byte
+    vectors), as SSE/NEON. SCC uses wasm_i32x4_dot_i16x8 (signed i16
+    pair-sum to i32, fusing NEON's mul + vpaddlq). LHS sum via the
+    extadd-pairwise ladder. Histogram + MC Pi scalar 4-banked, no
+    SIMD bulk (~5 hexads/iter).  */
 
 static __attribute__((always_inline)) inline sz
 FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
@@ -1227,15 +1136,14 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     v128_t vb1_lo = wasm_i16x8_extend_low_i8x16(vbs1);
     v128_t vb1_hi = wasm_i16x8_extend_high_i8x16(vbs1);
 
-    /*  dot_i16x8: signed i16 x i16 -> i32 pair-summed (PMADDWD).
-        Net 4 i32 lanes per dot, 8 byte-pair products per dot.  */
+    /*  dot_i16x8: signed i16 -> i32 pair-summed (PMADDWD).  */
     v128_t s0_lo = wasm_i32x4_dot_i16x8(va0_lo, vb0_lo);
     v128_t s0_hi = wasm_i32x4_dot_i16x8(va0_hi, vb0_hi);
     v128_t s1_lo = wasm_i32x4_dot_i16x8(va1_lo, vb1_lo);
     v128_t s1_hi = wasm_i32x4_dot_i16x8(va1_hi, vb1_hi);
 
-    /*  Widen i32 lane sums to i64 before cross-iter accumulation; an
-        i32 acc would overflow on consistent-sign inputs.  */
+    /*  Widen i32 -> i64 before cross-iter accumulation (i32 acc
+        overflows on consistent-sign inputs).  */
     v128_t sum32 = wasm_i32x4_add(wasm_i32x4_add(s0_lo, s0_hi),
                                   wasm_i32x4_add(s1_lo, s1_hi));
     v128_t sum64_lo = wasm_i64x2_extend_low_i32x4(sum32);
@@ -1272,7 +1180,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     HIST4(16); HIST4(20); HIST4(24); HIST4(28);
     #undef HIST4
 
-    /*  MC Pi: scalar drain + scalar bulk + scalar stash (NEON-style).  */
+    /*  MC Pi: all-scalar (NEON-style).  */
     #define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
       u32 x = ((u32)(x0) << 16) | ((u32)(x1) << 8) | (u32)(x2); \
       u32 y = ((u32)(y0) << 16) | ((u32)(y1) << 8) | (u32)(y2); \
@@ -1316,9 +1224,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
               + (u64) wasm_i64x2_extract_lane(lhs_sad, 1);
   st->cross_product += scc_sum + (i64)(128ULL * lhs_sum);
 
-  /*  Epilogue: process buf[body_end] for histogram + carry + MC.  Its
-      SCC pair with buf[body_end-1] was already counted via the last
-      iter's shifted load.  */
+  /*  Epilogue: histogram + carry + MC for buf[body_end]; its SCC pair
+      was already counted by the last shifted load.  */
   u8 last_b;
   {
     u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
@@ -1360,10 +1267,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
 #endif
 
-/*  SIMD trampolines: the simd_body_impl above is templated on the
-    compile-time `fold` constant; these inline trampolines pin it for
-    the two analyse entry points.  Emitted for both AVX2 and SSE
-    variants (whichever owns simd_body_impl in this TU).  */
+/*  SIMD trampolines: pin the compile-time `fold` constant of
+    simd_body_impl for the two analyse entry points.  */
 #ifdef FASTENT_HAVE_SIMD
 static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
     const u8 * FASTENT_RESTRICT buf, sz len) {
@@ -1396,8 +1301,7 @@ FASTENT_FN(analyze_impl)(fastent_chunk_state * st,
   sz start_bank = st->total_bytes;
   FASTENT_FN(scalar_body_impl)(st, buf, len, start_bank, fold);
 #endif
-  /*  MC Pi has been folded into the histogram/SCC pass and into
-      consume_byte; no separate walk required.  */
+  /*  MC Pi is folded into the histogram/SCC pass; no separate walk.  */
 }
 
 void FASTENT_FN(analyze)(fastent_chunk_state * st,
@@ -1413,9 +1317,8 @@ void FASTENT_FN(analyze_fold)(fastent_chunk_state * st,
   FASTENT_FN(analyze_impl)(st, buf, len, 1);
 }
 
-/*  Case fold: ASCII A-Z and Latin-1 0xC0-0xDE (excluding 0xD7) folded
-    to lower-case in place. Range tests use saturating unsigned subtract
-    so we stay on SSSE3-grade integer ops only.  */
+/*  Case fold in place: ASCII A-Z and Latin-1 0xC0-0xDE (except 0xD7)
+    lowered. Range tests use saturating sub (SSSE3-grade ops only).  */
 
 static inline int FASTENT_FN(fold_is_upper_scalar)(unsigned c) {
   return ((unsigned)(c - 'A')  < 26u) ||
@@ -1438,10 +1341,8 @@ void FASTENT_FN(fold)(u8 * buf, sz len) {
     for (; i < simd_end; i += FASTENT_SIMD_VLEN) {
       FASTENT_SIMD_VEC c = V_LOAD(buf + i);
 
-      /*  ASCII: c in ['A', 'Z'].
-          subs_epu8(K, c) saturates to 0 iff c >= K (because then
-          K - c <= 0).  So s_ge_a == 0 iff c >= 'A', s_le_z == 0 iff
-          c <= 'Z'.  Both zero <=> in range.  */
+      /*  ASCII c in ['A','Z']: subs_epu8(K,c)==0 iff c>=K, so
+          s_ge_a==0 iff c>='A', s_le_z==0 iff c<='Z'; both 0 = in range.  */
       FASTENT_SIMD_VEC s_ge_a  = V_SUBS_EPU8(v_amin, c);
       FASTENT_SIMD_VEC s_le_z  = V_SUBS_EPU8(c, v_zmax);
       FASTENT_SIMD_VEC m_ascii = V_CMPEQ_EPI8(V_OR(s_ge_a, s_le_z), zero);
@@ -1465,24 +1366,18 @@ void FASTENT_FN(fold)(u8 * buf, sz len) {
   }
 }
 
-/*  Bit-mode analyser.
-
-    For an input byte stream b[0..N-1] the bit stream interleaves bits
-    MSB-first (b[i] bit 7, bit 6, ..., bit 0, b[i+1] bit 7, ...). We
-    compute, in one pass over the byte buffer:
+/*  Bit-mode analyser. Bits run MSB-first within each byte. One pass:
 
       bit_hist[1]  += sum_i popcount(b[i])
       bit_hist[0]  += 8*N - bit_hist[1]
       cross_product +=  sum_i popcount(b[i] & (b[i] >> 1))   (within-byte)
                       + sum_{i<N-1} (b[i] & 1) & (b[i+1] >> 7)   (cross-byte)
-      MC Pi is byte-driven (one trial per 6 input bytes, same as byte
-      mode).
+      MC Pi is byte-driven (one trial per 6 bytes, as byte mode).
 
-    The SIMD body vectorises the three counters via PSHUFB-LUT popcount
-    + PSADBW reduction. Per VLEN bytes we issue ~3 popcounts and 3 SADs.
-    Carry / first / last are stored as bit values (0 or 1) so that the
-    existing run_mmap_mt merge (carry * first) is exactly the cross-slab
-    bit-pair contribution; no separate bit-mode merge is needed.  */
+    SIMD vectorises the counters via PSHUFB-LUT popcount + PSADBW.
+    carry/first/last are bit values (0/1) so the run_mmap_mt
+    carry*first merge already gives the cross-slab bit-pair; no
+    separate bit-mode merge needed.  */
 
 #ifdef FASTENT_HAVE_SIMD
 
@@ -1490,8 +1385,7 @@ static __attribute__((always_inline)) inline sz
 FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
                                 const u8 * FASTENT_RESTRICT buf,
                                 sz len, int fold) {
-  /*  We need buf[i+VLEN] readable in the last iter for the +1 shifted
-      load (used by the cross-byte computation), so the body stops at
+  /*  Cross-byte needs buf[i+VLEN] readable, so the body stops at
       len - VLEN.  */
   if (len < (sz) FASTENT_SIMD_VLEN + 1) return 0;
   const sz body_max = len - FASTENT_SIMD_VLEN;
@@ -1511,10 +1405,8 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   }
   st->have_carry = 1;
 
-  /*  PSHUFB-LUT for nibble popcount. PSHUFB is per-128-bit lane, so the
-      16-entry table is replicated across every lane of the chosen vector
-      width.  AVX-512 with BITALG replaces the LUT with VPOPCNTB; NEON
-      uses vcntq_u8 directly.  */
+  /*  Nibble-popcount LUT, replicated per 128-bit PSHUFB lane.
+      AVX-512+BITALG uses VPOPCNTB, NEON vcntq_u8, WASM popcnt.  */
 #if defined(FASTENT_VARIANT_AVX2)
   const FASTENT_SIMD_VEC popcnt_lut = _mm256_setr_epi8(
     0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
@@ -1523,9 +1415,8 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   #if defined(FASTENT_AVX512_HAVE_BITALG)
     /*  Unused: VPOPCNTB replaces the LUT lookups.  */
   #else
-    /*  AVX-512 F+BW fallback: same 16-entry nibble LUT, broadcast into
-        all four 128-bit PSHUFB lanes of the zmm via vbroadcasti32x4
-        (AVX-512F). _mm512_setr_epi8 is not part of the intrinsic set.  */
+    /*  AVX-512 F+BW: nibble LUT broadcast into all four PSHUFB lanes
+        via vbroadcasti32x4 (_mm512_setr_epi8 does not exist).  */
     const FASTENT_SIMD_VEC popcnt_lut = _mm512_broadcast_i32x4(
       _mm_setr_epi8(0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4));
   #endif
@@ -1568,8 +1459,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
     }
 
 #if defined(FASTENT_VARIANT_AVX512) && defined(FASTENT_AVX512_HAVE_BITALG)
-    /*  Direct byte-wise popcount via VPOPCNTB; horizontal reduce to
-        qword via PSADBW.  */
+    /*  Byte-wise popcount via VPOPCNTB, PSADBW reduce to qword.  */
     FASTENT_SIMD_VEC pc_va = _mm512_popcnt_epi8(va);
     acc_ones = V_ADD_EPI64(acc_ones, V_SAD_EPU8(pc_va, zero));
 
@@ -1579,8 +1469,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
     FASTENT_SIMD_VEC pc_pairs = _mm512_popcnt_epi8(pairs);
     acc_within = V_ADD_EPI64(acc_within, V_SAD_EPU8(pc_pairs, zero));
 #elif defined(FASTENT_VARIANT_NEON)
-    /*  Direct byte-wise popcount via vcntq_u8; horizontal-sum into
-        u64x2 via the vpaddl ladder folded into V_SAD_EPU8.  */
+    /*  Byte-wise popcount via vcntq_u8; vpaddl ladder in V_SAD_EPU8.  */
     FASTENT_SIMD_VEC pc_va = vcntq_u8(va);
     acc_ones = V_ADD_EPI64(acc_ones, V_SAD_EPU8(pc_va, zero));
 
@@ -1589,8 +1478,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
     FASTENT_SIMD_VEC pc_pairs = vcntq_u8(pairs);
     acc_within = V_ADD_EPI64(acc_within, V_SAD_EPU8(pc_pairs, zero));
 #elif defined(FASTENT_VARIANT_WASM128)
-    /*  Direct byte-wise popcount via wasm_i8x16_popcnt; sum via the
-        extadd-pairwise ladder folded into V_SAD_EPU8.  */
+    /*  Byte-wise popcount via wasm_i8x16_popcnt; ladder in V_SAD_EPU8.  */
     FASTENT_SIMD_VEC pc_va = wasm_i8x16_popcnt(va);
     acc_ones = V_ADD_EPI64(acc_ones, V_SAD_EPU8(pc_va, zero));
 
@@ -1606,8 +1494,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
                                          V_SHUFFLE_EPI8(popcnt_lut, hi));
     acc_ones = V_ADD_EPI64(acc_ones, V_SAD_EPU8(pc_va, zero));
 
-    /*  Within-byte adjacent-1 pairs: popcount(va & (va >> 1)).
-        SRLI_EPI16 + AND 0x7F gives byte-wise >> 1.  */
+    /*  popcount(va & (va>>1)); SRLI16 + AND 0x7F = byte-wise >>1.  */
     FASTENT_SIMD_VEC va_shr1 = V_AND(V_SRLI_EPI16(va, 1), mask_7f);
     FASTENT_SIMD_VEC pairs   = V_AND(va, va_shr1);
     FASTENT_SIMD_VEC plo = V_AND(pairs, nibble_mask);
@@ -1617,17 +1504,15 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
     acc_within = V_ADD_EPI64(acc_within, V_SAD_EPU8(pc_pairs, zero));
 #endif
 
-    /*  Cross-byte pair: (va.LSB & vb.MSB) per lane.
-        vb.MSB = (vb >> 7) & 1 (the SRLI epi16 contaminates bit 1+ from
-        the adjacent byte but the AND 1 keeps only bit 0).  */
+    /*  Cross-byte (va.LSB & vb.MSB) per lane; AND 1 after the epi16
+        shift drops the adjacent byte's contamination.  */
     FASTENT_SIMD_VEC va_lsb = V_AND(va, mask_01);
     FASTENT_SIMD_VEC vb_msb = V_AND(V_SRLI_EPI16(vb, 7), mask_01);
     FASTENT_SIMD_VEC cross  = V_AND(va_lsb, vb_msb);
     acc_cross = V_ADD_EPI64(acc_cross, V_SAD_EPU8(cross, zero));
 
-    /*  MC Pi: scalar drain + SIMD bulk hexads + scalar tail + stash.
-        Same stage-buffer + asm-launder pattern as the byte-mode body
-        when fold is set (forces movzbl-from-L1, not vpextrb).  */
+    /*  MC Pi: scalar drain + SIMD bulk + scalar tail + stash; fold
+        mode uses the laundered L1 stage (see launder note above).  */
     u8 bits_stage[FASTENT_SIMD_VLEN] __attribute__((aligned(32)));
     FASTENT_STAGE_PTR p;
     if (fold) {
@@ -1660,9 +1545,8 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
               MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
     }
     unsigned n_hexads = ((unsigned) FASTENT_SIMD_VLEN - p_idx) / 6u;
-    /*  SIMD bulk: same intrinsic pattern as the byte-mode bodies.
-        Accounts for in-circle hits via mi_simd; mc_count gets all
-        n_hexads added below.  */
+    /*  SIMD bulk (byte-mode pattern); mi_simd counts hits, mc_count
+        gets all n_hexads added below.  */
     u64 mi_simd = 0;
     const u8 * q = p + p_idx;
 #if !defined(FASTENT_VARIANT_NEON) && !defined(FASTENT_VARIANT_WASM128)
@@ -1672,9 +1556,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
 #endif
     unsigned k = 0;
 #if defined(FASTENT_VARIANT_AVX2) || defined(FASTENT_VARIANT_AVX512)
-    /*  4 hexads per iter via 256-bit. We need 24 bytes of source readable
-        per iter; n_hexads <= 5 (AVX2) or <= 10 (AVX-512) so we may see
-        2-3 such iters per outer iter on the wider stride.  */
+    /*  256-bit: 4 hexads (24 bytes) per iter.  */
     const __m256i mc_shuf256 = _mm256_broadcastsi128_si256(mc_shuf);
     const __m256i mc_lim256  = _mm256_set1_epi64x((i64)(FASTENT_INCIRC + 1ULL));
     for (; k + 4 <= n_hexads; k += 4) {
@@ -1692,10 +1574,8 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
       mi_simd += (u64) FASTENT_POPCOUNT32(bits);
     }
 #endif
-    /*  128-bit residual: 2 hexads per iter. On AVX-2 path requires
-        SSE4.2 cmpgt_epi64 (always present with AVX2). On SSE4.1 path
-        same. On SSSE3-only we skip the SIMD and fall through to scalar
-        because cmpgt_epi64 is SSE4.2.  */
+    /*  128-bit residual: 2 hexads/iter. Needs SSE4.2 cmpgt_epi64
+        (present with AVX2/SSE4.1); SSSE3-only falls to scalar.  */
 #if defined(FASTENT_VARIANT_AVX2) || defined(FASTENT_VARIANT_SSE41) \
  || defined(FASTENT_VARIANT_AVX512)
     for (; k + 2 <= n_hexads; k += 2) {
@@ -1733,7 +1613,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
     #undef MC_HEXAD
   }
 
-  /*  Horizontal reduce acc_ones / acc_within / acc_cross (i64 lanes).  */
+  /*  Reduce acc_ones / acc_within / acc_cross (i64 lanes).  */
 #if defined(FASTENT_VARIANT_AVX512)
   u64 sum_ones   = (u64) _mm512_reduce_add_epi64(acc_ones);
   u64 sum_within = (u64) _mm512_reduce_add_epi64(acc_within);
@@ -1779,9 +1659,8 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   st->cross_product += (i64) sum_within + (i64) sum_cross;
   st->total_bytes   += (u64) body_end * 8u;
 
-  /*  Epilogue: byte buf[body_end] hasn't yet been histogrammed or fed
-      to MC Pi (its cross-byte pair with buf[body_end-1] WAS counted via
-      the last iter's shifted load). Process it scalarly.  */
+  /*  Epilogue: buf[body_end]'s cross-byte pair was counted by the
+      last shifted load; still needs popcount + MC, done scalar.  */
   {
     u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
                 : buf[body_end];
@@ -1834,10 +1713,8 @@ static inline sz FASTENT_FN(bits_simd_body_fold)(fastent_chunk_state * st,
 
 #endif  /*  FASTENT_HAVE_SIMD  */
 
-/*  Scalar bit-mode walker: one byte at a time. Used by the scalar
-    variant entry and as the tail of every SIMD body.  Templated on
-    `fold` so the fused -f -b path can drive a single-pass scalar
-    walker too.  */
+/*  Scalar bit-mode walker (scalar entry and SIMD tail). Templated on
+    `fold` for the fused -f -b path.  */
 static __attribute__((always_inline)) inline void
 FASTENT_FN(bits_scalar_body_impl)(fastent_chunk_state * st,
                                   const u8 * FASTENT_RESTRICT buf,

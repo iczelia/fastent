@@ -25,6 +25,14 @@ void fastent_bigram_free(u64 * bg) {
   free(bg);
 }
 
+/*  Collapse the FASTENT_BG_NB round-robin planes for one 16-bit
+    digram key into its total count.  */
+static u64 bg_cell_(const u64 * bg, int key) {
+  u64 c = 0;
+  Fi(FASTENT_BG_NB, c += bg[i * FASTENT_BG_TABLE + key])
+  return c;
+}
+
 void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
                       fastent_result * FASTENT_RESTRICT out) {
   memset(out, 0, sizeof(*out));
@@ -55,9 +63,8 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
   const f64 denom = totalc * sum_x2 - scct2_sq;
   out->scc = (denom == 0.0) ? -100000.0 : (totalc * scct1 - scct2_sq) / denom;
 
-  /*  +NaN from <math.h> formats consistently as "nan" across
-      libc/ISA; 0.0/0.0 can print "-nan" on glibc x86 and "nan" on
-      musl aarch64.  */
+  /*  Use +NaN (formats as "nan" everywhere); 0.0/0.0 can print
+      "-nan" on glibc x86 but "nan" on musl aarch64.  */
   out->mean = (out->total_samples > 0) ? (sum_x / totalc) : NAN;
 
   const f64 cexp = totalc / (f64) bins;
@@ -83,10 +90,8 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
 
   out->monte_pi = 4.0 * ((f64) st->mc_inside / (f64) st->mc_count);
 
-  /*  Min-entropy and collision entropy are log2 of an exact ratio
-      that is always >= 1: H_inf = log2(N / max_count),
-      H_2 = log2(N^2 / sum_c2).  They call the libm-free fastent_log2
-      family directly: no probability detour, bit-identical.  */
+  /*  H_inf = log2(N / max_count), H_2 = log2(N^2 / sum_c2): log2 of
+      an exact ratio >= 1, via the libm-free fastent_log2 family.  */
   const f64 hmax = binary ? 1.0 : 8.0;
   out->distinct      = distinct;
   out->mode_value    = mode_value;
@@ -127,11 +132,10 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
     out->poker_p     = fastent_chisq_tail_df(pk, 15);
   }
 
-  /*  Per-bit-position bias.  ones[k] = sum of hist[v] over values v
-      with bit k set, derived from the byte histogram at zero per-byte
-      cost.  Catches structured binary (dead high bits, ASCII bit 7)
-      that order-0 byte entropy and chi-square both miss.  Byte mode
-      only; in bit mode the byte histogram does not exist.  */
+  /*  Per-bit-position bias.  ones[k] = sum of hist[v] over v with bit
+      k set, from the byte histogram.  Catches structured binary (dead
+      high bits, ASCII bit 7) that order-0 entropy/chi-square miss.
+      Byte mode only; bit mode has no byte histogram.  */
   if (binary || out->total_samples == 0) {
     Fi(8, out->bit_freq[i] = NAN)
     out->bit_bias_max   = NAN;
@@ -153,10 +157,9 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
     out->bit_bias_worst = wk;
   }
 
-  /*  Order-1 H(cur|prev) and I(prev;cur).  Byte mode (-ee) collapses
-      the NB 64K digram tables (key = prev<<8 | cur); bit mode the 2x2
-      bit_bigram.  Logs via fastent_entropy_term, so bit-identical
-      like the order-0 entropy.  */
+  /*  Order-1 H(cur|prev) and I(prev;cur).  Byte mode (-ee) sums the
+      NB 64K digram tables (key = prev<<8 | cur); bit mode the 2x2
+      bit_bigram.  Logs via fastent_entropy_term (bit-identical).  */
   out->conditional_entropy = out->mutual_information = NAN;
   if (!binary && st->bigram && out->total_samples >= 2) {
     const u64 * bg = st->bigram;
@@ -164,16 +167,12 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
     memset(R, 0, sizeof R);  memset(S, 0, sizeof S);
     f64 M = 0.0;
     Fi(FASTENT_BG_TABLE,
-       const u64 c = bg[i] + bg[FASTENT_BG_TABLE + i]
-                   + bg[2 * FASTENT_BG_TABLE + i]
-                   + bg[3 * FASTENT_BG_TABLE + i];
+       const u64 c = bg_cell_(bg, i);
        if (c) { R[i >> 8] += c; S[i & 0xFF] += c; M += (f64) c; })
     if (M >= 1.0) {
       f64 hj = 0.0, hp = 0.0, hc = 0.0;
       Fi(FASTENT_BG_TABLE,
-         const u64 c = bg[i] + bg[FASTENT_BG_TABLE + i]
-                     + bg[2 * FASTENT_BG_TABLE + i]
-                     + bg[3 * FASTENT_BG_TABLE + i];
+         const u64 c = bg_cell_(bg, i);
          if (c) hj += fastent_entropy_term((f64) c / M))
       Fi(256,
          if (R[i]) hp += fastent_entropy_term((f64) R[i] / M);
@@ -203,12 +202,10 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
   }
 
   /*  Runs / longest run / cusum from the fused -ee pass.  st->lr_have
-      is set iff that pass ran with >= 1 symbol, so it doubles as the
-      -ee gate.  Byte runs-vs-median is derived here from the order-1
-      digram joint counts: the number of median-class runs is 1 + the
-      count of adjacent byte pairs whose median class differs, and
-      that pair multiset is exactly the digram table, so no buffer
-      rescan is needed and it works for stream input too.  */
+      is set iff that pass ran with >= 1 symbol, doubling as the -ee
+      gate.  Byte runs-vs-median = 1 + count of adjacent byte pairs
+      whose median class differs; that pair multiset is exactly the
+      digram table, so no rescan and it works for streams too.  */
   out->runs = out->longest_run = out->cusum_max = NAN;
   if (st->lr_have) {
     const u64 lr = st->lr_cur > st->lr_max ? st->lr_cur : st->lr_max;
@@ -230,19 +227,17 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
       int m = 0;
       Fi(256, acc += out->hist[i];  if (acc >= half) { m = i; break; })
       Fi(FASTENT_BG_TABLE,
-         const u64 c = bg[i] + bg[FASTENT_BG_TABLE + i]
-                     + bg[2 * FASTENT_BG_TABLE + i]
-                     + bg[3 * FASTENT_BG_TABLE + i];
+         const u64 c = bg_cell_(bg, i);
          if (c && (((i >> 8) >= m) != ((i & 0xFF) >= m))) chg += c)
       out->runs = (f64) (1 + chg);
     }
   }
 }
 
-/*  Variant table.  Order matters: dispatcher picks the LAST entry whose
-    `available` predicate returns true, so place narrower (preferred)
-    variants after their wider supersets.  AVX-512 has two tiers; base
-    (F+BW, PSHUFB-LUT popcount) and bitalg (+VPOPCNTB).  */
+/*  Variant table.  Order matters: dispatcher picks the LAST entry
+    whose `available` returns true, so place narrower (preferred)
+    variants after their wider supersets.  AVX-512 has two tiers:
+    base (F+BW, PSHUFB-LUT popcount) and bitalg (+VPOPCNTB).  */
 
 #define CPU_HAS(name)      (fastent_cpu_get()->name)
 

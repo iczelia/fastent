@@ -14,13 +14,13 @@
 /*  incirc = (256^3 - 1)^2 = 281474943156225  (fits in 49 bits).  */
 #define FASTENT_INCIRC ((u64) 281474943156225ULL)
 
-/*  Order-1 bigram accumulator (opt-in, -ee).  Counted as an order-0
-    histogram of the 16-bit digram key ((prev<<8)|cur) over FASTENT_BG_NB
-    round-robin shadow tables, so consecutive pairs land in different
-    tables and the store-to-load-forward dependency does not serialise
-    (the htscodecs hist1_4 technique); tables summed at finalize.  u64
+/*  Order-1 bigram accumulator (opt-in, -ee).  Order-0 histogram of
+    the 16-bit key ((prev<<8)|cur) over FASTENT_BG_NB round-robin
+    shadow tables so consecutive pairs avoid the store-to-load-forward
+    serialisation; summed at finalize.  Two planes (1 MiB) keep the
+    working set in L2 while still breaking the dependency chain.  u64
     so a cell can reach N-1 (all-same-byte input) at any size.  */
-#define FASTENT_BG_NB    4
+#define FASTENT_BG_NB    2
 #define FASTENT_BG_TABLE 65536
 #define FASTENT_BG_CELLS (FASTENT_BG_NB * FASTENT_BG_TABLE)
 
@@ -42,10 +42,9 @@ typedef struct {
       p with (p mod FASTENT_BANKS) == k.  Merged at finalize.  */
   u32 bank[FASTENT_BANKS][256];
 
-  /*  Sum of x[i] * x[i+1] over all bytes processed by this state so far,
-      MINUS the wrap-around term (which is added globally at finalize).
-      The SIMD body applies its sign correction internally before
-      adding to this field, so it always holds the canonical unsigned
+  /*  Sum of x[i] * x[i+1] over bytes seen so far, MINUS the wrap term
+      (added globally at finalize).  The SIMD body applies its sign
+      correction before adding, so this holds the canonical unsigned
       cross-product sum.  */
   i64 cross_product;
 
@@ -69,11 +68,10 @@ typedef struct {
   int mc_pos;
 
   /*  Order-1 digram: FASTENT_BG_CELLS u64 (NB flat 65536 tables),
-      NULL unless -ee byte mode is active; allocated/freed by the
-      runner.  bit_bigram[prev_bit][cur_bit] is the tiny bit-mode
-      counterpart, always present.  dg_prev/dg_have carry the previous
-      byte across fastent_digram_count calls (independent of the SCC
-      carry, which the SIMD analyser owns).  */
+      NULL unless -ee byte mode active; runner allocates/frees.
+      bit_bigram[prev_bit][cur_bit] is the bit-mode counterpart,
+      always present.  dg_prev/dg_have carry the previous byte across
+      fastent_digram_count calls (independent of the SCC carry).  */
   u64 * bigram;
   u64   bit_bigram[2][2];
   u8    dg_prev;
@@ -81,12 +79,10 @@ typedef struct {
 
   /*  -ee level-2 sequential extras (runs / longest run / cusum),
       filled by fastent_digram_count; zeroed at init.  Symbols are
-      bits in bit mode, byte values in byte mode.  Stream accumulates
-      across chunks in one state; single-thread mmap scans the whole
-      buffer; with -j each slab is scanned in its worker and these
-      per-slab reductions are merged with a boundary stitch
-      (run_mmap_mt_).  lr_head_* records the slab's leading run so the
-      merge can splice runs that straddle a boundary.  */
+      bits (bit mode) or byte values (byte mode).  Streams accumulate
+      across chunks; with -j each slab's reductions are merged with a
+      boundary stitch (run_mmap_mt_), lr_head_* recording the slab's
+      leading run so straddling runs can be spliced.  */
   u64 lr_max;        /*  longest completed identical-symbol run  */
   u64 lr_cur;        /*  open run length                         */
   u8  lr_sym;        /*  open run symbol                          */
@@ -222,14 +218,12 @@ void analyze_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
 /*  The -ee level-2 extra pass: one scalar scan over the same bytes
-    the fast SIMD analyser just consumed (order-0 keeps full SIMD
-    throughput).  Folds the digram histogram, longest run, 0/1 runs
-    and the +-1 cusum walk into a single pass.  Byte mode fills the
-    NB-table 64K histogram (st->bigram); bit mode fills bit_bigram.
-    dg_prev/dg_have carry across calls (a byte, or the last bit in
-    bit mode).  Byte runs-vs-median is derived in fastent_finalize
-    from the digram joint counts, so it needs no buffer rescan.
-    fold case-folds the input first (matches the -f order-0 path).  */
+    the SIMD analyser just consumed (order-0 keeps full SIMD speed).
+    Folds digram histogram, longest run, 0/1 runs and the +-1 cusum
+    walk into one pass.  Byte mode fills st->bigram; bit mode fills
+    bit_bigram.  dg_prev/dg_have carry across calls.  Byte runs-vs-
+    median is derived in fastent_finalize from the digram counts (no
+    rescan).  fold case-folds the input first (matches -f).  */
 void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
                           sz len, int binary, int fold);
 

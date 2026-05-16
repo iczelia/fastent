@@ -96,8 +96,8 @@ level-2 reductions are split across the
 .B \-j
 workers (per-slab on mmap, an SPMC pipeline on stream and io_uring)
 and merged with a boundary stitch, deterministic and bit-identical
-across thread counts.  Byte mode keeps four 64K u64 tables per worker
-thread (2 MiB); bit mode is free.
+across thread counts.  Byte mode keeps two 64K u64 tables per worker
+thread (1 MiB); bit mode is free.
 .TP
 .BR \-a ", " \-\-annotate
 Render an interpretive report instead of the plain text: every metric
@@ -525,7 +525,7 @@ bins; total resident overhead under
 stays well under a megabyte on top of the mapped region.  The one
 exception is
 .B \-ee
-in byte mode, which adds four 64K u64 digram tables (2 MiB) per
+in byte mode, which adds two 64K u64 digram tables (1 MiB) per
 worker thread plus one aggregate; bit-mode
 .B \-ee
 adds only a 2-by-2 table.

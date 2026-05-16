@@ -50,14 +50,10 @@ static char * wide_to_utf8(const wchar_t * w) {
   return s;
 }
 
-/*  MSVCRT C command-line parsing rules:
-
-      whitespace separates args outside quotes;
-      backslashes before `"`: 2N becomes N literal '\\' and toggles
-        quote state; 2N+1 becomes N literal '\\' and one literal '"';
-      `""` inside quotes is a literal '"'.
-
-    Two-pass: count argc, then fill.  */
+/*  MSVCRT command-line parsing: whitespace separates args outside
+    quotes; 2N backslashes before `"` become N '\\' and toggle quote
+    state, 2N+1 become N '\\' plus a literal '"'; `""` inside quotes
+    is a literal '"'.  Two-pass: count argc, then fill.  */
 
 static int grow_buf_w(wchar_t ** pbuf, size_t * pbcap) {
   if (*pbcap > (size_t) -1 / (2 * sizeof(wchar_t))) return 0;
@@ -235,7 +231,7 @@ int fastent_win32_close(int fd) {
 }
 
 long fastent_win32_read(int fd, void * buf, size_t n) {
-  /*  _read takes unsigned int; cap to avoid truncation on huge n.  */
+  /*  _read takes unsigned int; cap to avoid truncation.  */
   unsigned int cap = (n > 0x7FFFFFFFu) ? 0x7FFFFFFFu : (unsigned int) n;
   return (long) _read(fd, buf, cap);
 }
@@ -246,9 +242,8 @@ long fastent_win32_num_cpus(void) {
   return (long) si.dwNumberOfProcessors;
 }
 
-/*  GetFileSizeEx is Win2000+; the Win95/98 (FASTENT_WIN_LEGACY) target
-    has only GetFileSize.  Returns 0 and sets *out on success, -1 on
-    error or an empty file.  */
+/*  GetFileSizeEx is Win2000+; FASTENT_WIN_LEGACY uses GetFileSize.
+    Returns 0 and sets *out on success, -1 on error or empty file.  */
 static int fastent_win32_filesize_(HANDLE h, unsigned long long * out) {
 #ifdef FASTENT_WIN_LEGACY
   DWORD hi = 0;
@@ -280,9 +275,8 @@ int fastent_win32_mmap(int fd, void ** out_base,
   h = (HANDLE) raw;
   if (GetFileType(h) != FILE_TYPE_DISK) return -1;
   if (fastent_win32_filesize_(h, &fsz) != 0) return -1;
-  /*  0,0 = the file's current size; NULL name = anonymous.  The A
-      entry works on every Win32 (the W variant is an unimplemented
-      stub on Win9x); with a NULL name A and W are equivalent.  */
+  /*  0,0 = current file size; NULL name = anonymous.  CreateFileMappingW
+      is a stub on Win9x; with a NULL name the A entry is equivalent.  */
   hm = CreateFileMappingA(h, NULL, PAGE_READONLY, 0, 0, NULL);
   if (!hm) return -1;
   p = MapViewOfFile(hm, FILE_MAP_READ, 0, 0, 0);
@@ -393,7 +387,7 @@ void fastent_win32_set_console_sev(int sev) {
 }
 
 void fastent_win32_mmap_prefetch(void * base, unsigned long long size) {
-  /*  PrefetchVirtualMemory is Win 8+; resolve at runtime so this
+  /*  PrefetchVirtualMemory is Win 8+; resolve at runtime so the
       binary still loads on Vista/7.  */
   typedef struct _FE_MEM_RANGE {
     PVOID VirtualAddress;  SIZE_T NumberOfBytes;

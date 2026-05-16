@@ -7,8 +7,8 @@
 
 #if defined(__i386__) || defined(__x86_64__)
 
-/*  Toggling EFLAGS bit 21 flips only on Pentium-class and newer;
-    pre-Pentium 386/486 leave it stuck and we bail to scalar.  */
+/*  EFLAGS bit 21 toggles only on Pentium-class+; stuck on 386/486
+    means no CPUID and we bail to scalar.  */
 #if defined(__x86_64__)
 static inline int has_cpuid(void) { return 1; }
 #else
@@ -30,8 +30,8 @@ static int has_cpuid(void) {
 }
 #endif
 
-/*  On i386 -fPIC, EBX is the PIC base register so we xchg through a
-    scratch instead of clobbering it.  */
+/*  i386 -fPIC reserves EBX as the PIC base, so xchg it via a scratch
+    instead of clobbering it.  */
 static inline void cpuid_(unsigned int leaf, unsigned int subleaf,
                           unsigned int * a, unsigned int * b,
                           unsigned int * c, unsigned int * d) {

@@ -108,8 +108,8 @@ static void json_escape_(const char * s) {
   putchar('"');
 }
 
-/*  JSON has no NaN/Infinity literal, so any non-finite value becomes
-    null (the same convention the extended fields already use).  */
+/*  JSON has no NaN/Infinity literal, so non-finite values render
+    as null.  */
 static void json_num_(const char * fmt, double v) {
   if (!isfinite(v)) { fputs("null", stdout); return; }
   printf(fmt, v);

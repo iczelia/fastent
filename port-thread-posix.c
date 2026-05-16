@@ -31,10 +31,7 @@ static void * worker_main(void * arg) {
   int k = ((struct worker_args *) arg)->k;
   free(arg);
 
-  /*  No explicit affinity.  Empirically on Zen 3 / CCD architectures
-      pinning N=ncpu/2..ncpu workers to fixed CPU IDs straddles SMT
-      pairs and CCD boundaries and slightly hurts -j auto throughput.
-      Let the scheduler place threads.  */
+  /*  No explicit affinity; let the scheduler place threads.  */
 
   u64 last_gen = 0;
   for (;;) {

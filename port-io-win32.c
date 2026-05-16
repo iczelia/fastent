@@ -33,9 +33,8 @@ static int alloc_stream_buf(fastent_source * s) {
   return 0;
 }
 
-/*  IOCP backend.  Requires CancelIoEx and GetQueuedCompletionStatus
-    semantics from Vista+, so it's disabled under FASTENT_WIN_LEGACY
-    (Win95 target).  */
+/*  IOCP backend.  CancelIoEx + Vista+ GQCS semantics, so disabled
+    under FASTENT_WIN_LEGACY (Win95 target).  */
 #ifndef FASTENT_WIN_LEGACY
 
 #define FASTENT_IOCP_SLOTS 4u
@@ -61,8 +60,8 @@ typedef struct {
 
 static void iocp_destroy(iocp_state * u) {
   if (!u) return;
-  /*  Cancel any in-flight I/Os so CloseHandle below doesn't strand
-      a kernel-side pending operation referencing our buffers.  */
+  /*  Cancel in-flight I/Os; otherwise CloseHandle strands a kernel
+      pending op still referencing our buffers.  */
   if (u->file && u->file != INVALID_HANDLE_VALUE) {
     CancelIoEx(u->file, NULL);
     CloseHandle(u->file);
@@ -90,8 +89,8 @@ static int iocp_submit_(iocp_state * u, int slot) {
   u->next_submit_offset = off + (u64) to_read;
 
   if (to_read == 0) {
-    /*  No more to read; post a zero-byte completion ourselves so
-        the consumer sees EOF without blocking in GQCS.  */
+    /*  Post a zero-byte completion so the consumer sees EOF
+        without blocking in GQCS.  */
     if (!PostQueuedCompletionStatus(u->iocp, 0, (ULONG_PTR) slot, &s->ov))
       return -1;
     return 0;

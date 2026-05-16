@@ -65,10 +65,10 @@ static inline dd_t log2_1pr_poly(f64 r) {
   return dd_mul_d_(poly, r);
 }
 
-/*  log2(x) in DD by the generic exponent / mantissa decomposition.
-    Correct for any finite x > 0 (handles denormals).  The only weak
-    spot is the e + log2(m) cancellation for x just below 1 (e = -1,
-    m near 2); callers that hit that regime use log2_near1_dd_.  */
+/*  log2(x) in DD by generic exponent / mantissa decomposition.
+    Correct for any finite x > 0 (incl. denormals).  Weak spot: the
+    e + log2(m) cancellation for x just below 1 (e=-1, m near 2);
+    such callers use log2_near1_dd_.  */
 static dd_t log2_generic_dd_(f64 x) {
   u64 pb;
   memcpy(&pb, &x, 8);
@@ -122,8 +122,7 @@ f64 fastent_entropy_term(f64 p) {
   if (p >= 1.0)            return p == 1.0 ? 0.0 : fastent_qnan_();
   if (p == 0.5)            return 0.5;
 
-  /*  Same op sequence as before the split into helpers, so the
-      finalised entropy stays bit-identical.  */
+  /*  Op order chosen so finalised entropy stays bit-identical.  */
   dd_t log2_p   = (p > 0.5) ? log2_near1_dd_(p) : log2_generic_dd_(p);
   dd_t neg_log2 = (dd_t){ -log2_p.hi, -log2_p.lo };
   dd_t res_dd   = dd_mul_d_(neg_log2, p);
