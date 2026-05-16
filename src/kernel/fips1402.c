@@ -21,19 +21,85 @@
 #define FIPS_BLOCK_BYTES 2500u
 #define FIPS_BLOCK_BITS  20000u
 #define FIPS_LONGRUN     34u
+#define FIPS_NW          ((FIPS_BLOCK_BITS + 63u) / 64u)   /*  313 words  */
+/*  Valid bits in the final word: 20000 - 64*(FIPS_NW-1) = 32.  */
+#define FIPS_LAST_MASK   0x00000000FFFFFFFFull
 
-static unsigned popc_(unsigned b) {
-  b = b - ((b >> 1) & 0x55u);
-  b = (b & 0x33u) + ((b >> 2) & 0x33u);
-  return (b + (b >> 4)) & 0x0Fu;
+static u64 pc64_(u64 x) {
+  x = x - ((x >> 1) & 0x5555555555555555ull);
+  x = (x & 0x3333333333333333ull) + ((x >> 2) & 0x3333333333333333ull);
+  x = (x + (x >> 4)) & 0x0f0f0f0f0f0f0f0full;
+  return (x * 0x0101010101010101ull) >> 56;
+}
+
+/*  Reverse the 8 bits of a byte (so MSB-first stream order maps to
+    ascending bit index within a word).  */
+static u32 rev8_(unsigned x) {
+  u64 v = (u64) x;
+  v = ((v * 0x0802ull & 0x22110ull) | (v * 0x8020ull & 0x88440ull))
+      * 0x10101ull >> 16;
+  return (u32)(v & 0xFFu);
+}
+
+/*  One run polarity.  ge[k] = number of maximal runs of length >= k;
+    *lr34 = 1 iff some run reaches FIPS_LONGRUN.  A_k[p] holds "bits
+    p..p+k-1 are all set" via the recurrence A_k = V & succ(A_{k-1});
+    out-of-block positions are zero, so the block end terminates a
+    run.  S marks run starts, so popcount(S & A_k) counts runs >= k.
+    Fully branchless and word-parallel.  */
+static void fips_runs_side_(const u64 * V, u32 ge[7], int * lr34) {
+  u64 A[FIPS_NW], S[FIPS_NW], nx[FIPS_NW];
+  int w;
+  u32 k;
+  for (w = 0; w < (int) FIPS_NW; w++) {
+    const u64 pred = (V[w] << 1) | (w > 0 ? V[w - 1] >> 63 : 0ull);
+    S[w] = V[w] & ~pred;
+    A[w] = V[w];
+  }
+  Fi0(7, 1, ge[i] = 0)
+  *lr34 = 0;
+  for (k = 1; ; k++) {
+    u64 orA = 0;
+    if (k >= 2) {
+      for (w = 0; w < (int) FIPS_NW; w++)
+        nx[w] = (A[w] >> 1)
+              | (w + 1 < (int) FIPS_NW ? A[w + 1] << 63 : 0ull);
+      for (w = 0; w < (int) FIPS_NW; w++) A[w] = V[w] & nx[w];
+    }
+    if (k <= 6) {
+      u64 g = 0;
+      for (w = 0; w < (int) FIPS_NW; w++) {
+        orA |= A[w];  g += pc64_(S[w] & A[w]);
+      }
+      ge[k] = (u32) g;
+    } else {
+      for (w = 0; w < (int) FIPS_NW; w++) orA |= A[w];
+    }
+    if (k == FIPS_LONGRUN) { *lr34 = (orA != 0);  break; }
+    if (orA == 0) break;        /*  no run >= k; longer ge stay 0  */
+  }
 }
 
 /*  Test one 2500-byte block and fold the verdict into r.  */
 static void fips_block_(const u8 * b, fastent_fips_report * r) {
-  u32 ones = 0;
-  Fi((int) FIPS_BLOCK_BYTES, ones += popc_(b[i]))
-  const int mono_ok = (ones > 9725u && ones < 10275u);
+  u64 W[FIPS_NW], C[FIPS_NW];
+  int w;
 
+  /*  Pack the MSB-first bit stream into words; trailing bits stay
+      zero.  C is the complement, masked to the valid 20000 bits so a
+      0-run cannot run off the block end.  */
+  memset(W, 0, sizeof W);
+  Fi((int) FIPS_BLOCK_BYTES,
+     W[i >> 3] |= (u64) rev8_(b[i]) << ((unsigned)(i & 7) * 8u))
+  for (w = 0; w < (int) FIPS_NW; w++) C[w] = ~W[w];
+  C[FIPS_NW - 1] &= FIPS_LAST_MASK;
+
+  /*  Monobit: total set bits (popcount is bit-position invariant).  */
+  u64 ones = 0;
+  for (w = 0; w < (int) FIPS_NW; w++) ones += pc64_(W[w]);
+  const int mono_ok = (ones > 9725ull && ones < 10275ull);
+
+  /*  Poker: 5000 4-bit groups, high then low nibble.  */
   u32 f[16];
   memset(f, 0, sizeof f);
   Fi((int) FIPS_BLOCK_BYTES, f[b[i] >> 4]++;  f[b[i] & 0x0Fu]++)
@@ -42,32 +108,22 @@ static void fips_block_(const u8 * b, fastent_fips_report * r) {
   const f64 X = (16.0 / 5000.0) * (f64) ssq - 5000.0;
   const int poker_ok = (X > 2.16 && X < 46.17);
 
-  /*  Runs and long run over the MSB-first bit stream.  Buckets
-      1..5 are exact lengths; bucket 6 is length >= 6.  */
-  u32 rc0[7], rc1[7];
-  memset(rc0, 0, sizeof rc0);  memset(rc1, 0, sizeof rc1);
-  unsigned cur = (b[0] >> 7) & 1u;
-  u32 runlen = 0, maxrun = 0;
-  Fi((int) FIPS_BLOCK_BITS,
-     const unsigned bit = (b[i >> 3] >> (7 - (i & 7))) & 1u;
-     if (bit == cur) { runlen++; }
-     else {
-       if (runlen > maxrun) maxrun = runlen;
-       { const u32 bk = runlen >= 6u ? 6u : runlen;
-         if (cur) rc1[bk]++;  else rc0[bk]++; }
-       cur = bit;  runlen = 1;
-     })
-  if (runlen > maxrun) maxrun = runlen;
-  { const u32 bk = runlen >= 6u ? 6u : runlen;
-    if (cur) rc1[bk]++;  else rc0[bk]++; }
+  /*  Runs / long run.  Exact-length bucket L = ge[L]-ge[L+1] for
+      L=1..5; bucket 6 = ge[6] (length >= 6).  */
+  u32 ge1[7], ge0[7];
+  int lr1, lr0;
+  fips_runs_side_(W, ge1, &lr1);
+  fips_runs_side_(C, ge0, &lr0);
 
   static const u32 lo_[7] = { 0, 2315, 1114, 527, 240, 103, 103 };
   static const u32 hi_[7] = { 0, 2685, 1386, 723, 384, 209, 209 };
   int runs_ok = 1;
   Fi0(7, 1,
-      if (rc0[i] < lo_[i] || rc0[i] > hi_[i]) runs_ok = 0;
-      if (rc1[i] < lo_[i] || rc1[i] > hi_[i]) runs_ok = 0)
-  const int long_ok = (maxrun < FIPS_LONGRUN);
+      const u32 c1 = (i < 6) ? ge1[i] - ge1[i + 1] : ge1[6];
+      const u32 c0 = (i < 6) ? ge0[i] - ge0[i + 1] : ge0[6];
+      if (c1 < lo_[i] || c1 > hi_[i]) runs_ok = 0;
+      if (c0 < lo_[i] || c0 > hi_[i]) runs_ok = 0)
+  const int long_ok = !(lr1 || lr0);
 
   r->blocks++;
   if (!mono_ok)  r->monobit_fail++;
