@@ -19,19 +19,24 @@ typedef struct {
   const u64 *    bounds;     /*  N+1 entries, multiples of 6 except last  */
   fastent_chunk_state * states;
   fastent_analyze_fn fn;
-  int            want_bigram;
+  int            want_bigram;  /*  byte -ee: allocate the 64K table  */
+  int            digram;       /*  -ee (byte or bit): run the pass    */
+  int            binary;
 } mt_ctx;
 
 static void mt_worker_(sz k, void * vctx) {
   mt_ctx * c = (mt_ctx *) vctx;
   u64 start = c->bounds[k];
   u64 end   = c->bounds[k + 1];
+  sz  n     = (sz)(end - start);
   fastent_chunk_state_init(&c->states[k]);
   if (c->want_bigram) {
     c->states[k].bigram = fastent_bigram_alloc();
     if (!c->states[k].bigram) { fprintf(stderr, "out of memory\n"); exit(2); }
   }
-  c->fn(&c->states[k], c->data + start, (sz)(end - start));
+  c->fn(&c->states[k], c->data + start, n);
+  if (c->digram)
+    fastent_digram_count(&c->states[k], c->data + start, n, c->binary);
 }
 
 static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
@@ -56,7 +61,9 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
   if (!states) { fprintf(stderr, "out of memory\n"); exit(2); }
 
   mt_ctx ctx = { data, bounds, states, fn,
-                 out->bigram != NULL };
+                 out->bigram != NULL,        /*  want_bigram  */
+                 o->extended >= 2,           /*  digram       */
+                 o->binary };
   fastent_parallel_for((sz) N, mt_worker_, &ctx);
 
   /*  Merge slabs: adjacent slab pairs contribute b[end-1] *
@@ -79,9 +86,11 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
      if (out->have_carry) {
        out->cross_product += (i64) out->carry_byte * (i64) s->first_byte;
        /*  Boundary pair (prev slab last, this slab first), once per
-           adjacency, no wrap.  Byte: plane 0; bit: the 2x2 table.  */
+           adjacency, no wrap.  Byte: table 0 of the 64K histogram;
+           bit: the 2x2 table (carry/first hold single bits here).  */
        if (out->bigram)
-         FASTENT_BG_AT(out->bigram, 0, out->carry_byte, s->first_byte)++;
+         out->bigram[((unsigned) out->carry_byte << 8)
+                      | (unsigned) s->first_byte]++;
        if (o->binary)
          out->bit_bigram[out->carry_byte & 1u][s->first_byte & 1u]++;
      } else {
@@ -126,6 +135,8 @@ void fastent_run_mmap(fastent_chunk_state * st, const fastent_options * o,
 #endif
 
   body(st, data, (sz) size);
+  if (o->extended >= 2)
+    fastent_digram_count(st, data, (sz) size, o->binary);
 }
 
 void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
@@ -145,6 +156,8 @@ void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
     }
     if (n == 0) break;
     body(st, src->stream_buf, n);
+    if (o->extended >= 2)
+      fastent_digram_count(st, src->stream_buf, n, o->binary);
   }
 }
 

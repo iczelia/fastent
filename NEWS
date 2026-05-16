@@ -17,15 +17,15 @@ v1.2 (May 2026)
   source code, many binary formats) that the order-0 measures and the
   linear serial-correlation coefficient miss.  Reported in the default,
   terse, JSON, recursive and annotated output; sortable via
-  --sort-by=cond-entropy / mutual-info.  Unlike the level-1 stats this
-  is a genuine second statistic with a per-symbol cost: it runs a
-  scalar single pass (the 256x256 byte joint-count scatter does not
-  vectorise; bit mode uses a 2x2 table), so an -ee invocation forgoes
-  the SIMD analyser for that run only.  It stays single-pass,
-  deterministic and bit-identical across thread counts.  Byte mode
-  uses a padded 256x256 u64 table per worker thread (about 1 MiB);
-  bit mode is free.  All logarithms use the existing
-  faithfully-rounded, libm-free entropy term.
+  --sort-by=cond-entropy / mutual-info.  The order-0 statistics keep
+  full SIMD throughput; the order-1 table is filled by a separate
+  tight pass over the same bytes (a 16-bit-key histogram over four
+  round-robin shadow tables, the htscodecs hist1_4 technique, since
+  the 64K-bin scatter does not profitably vectorise).  Bit mode uses
+  a 2x2 table.  Deterministic and bit-identical across thread counts.
+  Byte mode uses four 64K u64 tables per worker thread (2 MiB); bit
+  mode is free.  All logarithms use the existing faithfully-rounded,
+  libm-free entropy term.
 
   Extended statistics (-e / --extended)
   -------------------------------------

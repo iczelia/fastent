@@ -14,19 +14,15 @@
 /*  incirc = (256^3 - 1)^2 = 281474943156225  (fits in 49 bits).  */
 #define FASTENT_INCIRC ((u64) 281474943156225ULL)
 
-/*  Order-1 bigram accumulator (opt-in, -ee).  FASTENT_BG_NB padded
-    shadow planes break the consecutive-pair store-to-load-forward
-    dependency on the 256x256 scatter; collapsed at finalize.  Counts
-    are u64 so a single cell can reach N-1 (all-same-byte input)
-    without overflow at any input size.  */
-#define FASTENT_BG_NB     2
-#define FASTENT_BG_PAD    3
-#define FASTENT_BG_STRIDE (256 + FASTENT_BG_PAD)
-#define FASTENT_BG_PLANE  (256 * FASTENT_BG_STRIDE)
-#define FASTENT_BG_CELLS  (FASTENT_BG_NB * FASTENT_BG_PLANE)
-#define FASTENT_BG_AT(bg, plane, a, b)                                  \
-  ((bg)[(sz)(plane) * FASTENT_BG_PLANE                                  \
-       + (sz)(unsigned)(a) * FASTENT_BG_STRIDE + (sz)(unsigned)(b)])
+/*  Order-1 bigram accumulator (opt-in, -ee).  Counted as an order-0
+    histogram of the 16-bit digram key ((prev<<8)|cur) over FASTENT_BG_NB
+    round-robin shadow tables, so consecutive pairs land in different
+    tables and the store-to-load-forward dependency does not serialise
+    (the htscodecs hist1_4 technique); tables summed at finalize.  u64
+    so a cell can reach N-1 (all-same-byte input) at any size.  */
+#define FASTENT_BG_NB    4
+#define FASTENT_BG_TABLE 65536
+#define FASTENT_BG_CELLS (FASTENT_BG_NB * FASTENT_BG_TABLE)
 
 /*  Per-thread chunk state. Accumulates histogram, SCC cross-product,
     Monte Carlo hits, and the first/last/carry bytes needed to stitch
@@ -62,15 +58,16 @@ typedef struct {
   u8  mc_buf[6];
   int mc_pos;
 
-  /*  Order-1 bigram shadow planes (FASTENT_BG_CELLS u64), NULL unless
-      -ee byte mode is active.  Allocated/freed by the runner; the
-      default and all SIMD paths leave it NULL and never touch it.  */
+  /*  Order-1 digram: FASTENT_BG_CELLS u64 (NB flat 65536 tables),
+      NULL unless -ee byte mode is active; allocated/freed by the
+      runner.  bit_bigram[prev_bit][cur_bit] is the tiny bit-mode
+      counterpart, always present.  dg_prev/dg_have carry the previous
+      byte across fastent_digram_count calls (independent of the SCC
+      carry, which the SIMD analyser owns).  */
   u64 * bigram;
-
-  /*  Bit-mode order-1 joint counts [prev_bit][cur_bit].  Tiny, always
-      present, zeroed at init; only the scalar bit bigram variant ever
-      writes it.  bit_bigram all-zero == "-ee bit mode did not run".  */
-  u64 bit_bigram[2][2];
+  u64   bit_bigram[2][2];
+  u8    dg_prev;
+  u8    dg_have;
 } fastent_chunk_state;
 
 /*  Final reduced results.  */
@@ -186,13 +183,13 @@ void analyze_fold_sve2(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
-/*  Scalar-only bigram-augmented analysers (opt-in, -ee).  Same
-    reductions as analyze_scalar plus the order-1 joint-count scatter;
-    never enters the CPU-variant dispatch table.  */
-void analyze_bigram(fastent_chunk_state * st, const u8 * buf, sz len);
-void analyze_fold_bigram(fastent_chunk_state * st, const u8 * buf, sz len);
-void analyze_bits_bigram(fastent_chunk_state * st, const u8 * buf, sz len);
-void analyze_bits_fold_bigram(fastent_chunk_state * st, const u8 * buf, sz len);
+/*  Order-1 digram counter (opt-in, -ee).  Runs as its own tight pass
+    over the same bytes the fast SIMD analyser just consumed, so the
+    order-0 stats keep full SIMD throughput.  Byte mode fills the
+    NB-table 64K histogram (st->bigram); bit mode fills bit_bigram.
+    binary selects the mode; dg_prev/dg_have carry across calls.  */
+void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
+                          sz len, int binary);
 
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which);
 fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which);

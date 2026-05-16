@@ -154,23 +154,27 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
   }
 
   /*  Order-1 H(cur|prev) and I(prev;cur).  Byte mode (-ee) collapses
-      the NB 256x256 planes; bit mode the 2x2 bit_bigram.  Logs via
-      fastent_entropy_term, so bit-identical like the order-0 entropy.  */
+      the NB 64K digram tables (key = prev<<8 | cur); bit mode the 2x2
+      bit_bigram.  Logs via fastent_entropy_term, so bit-identical
+      like the order-0 entropy.  */
   out->conditional_entropy = out->mutual_information = NAN;
   if (!binary && st->bigram && out->total_samples >= 2) {
+    const u64 * bg = st->bigram;
     u64 R[256], S[256];
     memset(R, 0, sizeof R);  memset(S, 0, sizeof S);
     f64 M = 0.0;
-    Fi(256, Fj(256,
-       const u64 c = FASTENT_BG_AT(st->bigram, 0, i, j)
-                   + FASTENT_BG_AT(st->bigram, 1, i, j);
-       if (c) { R[i] += c; S[j] += c; M += (f64) c; }))
+    Fi(FASTENT_BG_TABLE,
+       const u64 c = bg[i] + bg[FASTENT_BG_TABLE + i]
+                   + bg[2 * FASTENT_BG_TABLE + i]
+                   + bg[3 * FASTENT_BG_TABLE + i];
+       if (c) { R[i >> 8] += c; S[i & 0xFF] += c; M += (f64) c; })
     if (M >= 1.0) {
       f64 hj = 0.0, hp = 0.0, hc = 0.0;
-      Fi(256, Fj(256,
-         const u64 c = FASTENT_BG_AT(st->bigram, 0, i, j)
-                     + FASTENT_BG_AT(st->bigram, 1, i, j);
-         if (c) hj += fastent_entropy_term((f64) c / M)))
+      Fi(FASTENT_BG_TABLE,
+         const u64 c = bg[i] + bg[FASTENT_BG_TABLE + i]
+                     + bg[2 * FASTENT_BG_TABLE + i]
+                     + bg[3 * FASTENT_BG_TABLE + i];
+         if (c) hj += fastent_entropy_term((f64) c / M))
       Fi(256,
          if (R[i]) hp += fastent_entropy_term((f64) R[i] / M);
          if (S[i]) hc += fastent_entropy_term((f64) S[i] / M))

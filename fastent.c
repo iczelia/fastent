@@ -70,18 +70,6 @@ int main(int argc, char ** argv) {
   fastent_analyze_fn fn_byte_fold = fastent_pick_fold_byte_variant(NULL);
   fastent_analyze_fn fn_bits_fold = fastent_pick_fold_bits_variant(NULL);
 
-  /*  -ee: order-1 bigram uses the scalar-only analyser (the 256x256
-      byte scatter cannot vectorise; bit mode keeps a 2x2 table).  */
-  if (o.extended >= 2) {
-    if (o.binary) {
-      fn_bits      = analyze_bits_bigram;
-      fn_bits_fold = analyze_bits_fold_bigram;
-    } else {
-      fn_byte      = analyze_bigram;
-      fn_byte_fold = analyze_fold_bigram;
-    }
-  }
-
   if (o.recursive) {
     fastent_recursive_row * rows = NULL;
     sz n = 0;
