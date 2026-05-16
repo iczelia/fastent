@@ -151,7 +151,8 @@ static void uring_destroy(uring_state * u) {
   if (u->sqes && u->sqes != MAP_FAILED) munmap(u->sqes, u->sqes_size);
   if (u->cq_ring && u->cq_ring != u->sq_ring && u->cq_ring != MAP_FAILED)
     munmap(u->cq_ring, u->cq_ring_size);
-  if (u->sq_ring && u->sq_ring != MAP_FAILED) munmap(u->sq_ring, u->sq_ring_size);
+  if (u->sq_ring && u->sq_ring != MAP_FAILED)
+    munmap(u->sq_ring, u->sq_ring_size);
   if (u->ring_fd >= 0) close(u->ring_fd);
   free(u);
 }
@@ -182,7 +183,8 @@ static uring_state * uring_setup(int src_fd, u64 file_size) {
     u->cq_ring = u->sq_ring;
   } else {
     u->cq_ring = mmap(NULL, u->cq_ring_size, PROT_READ | PROT_WRITE,
-                      MAP_SHARED | MAP_POPULATE, u->ring_fd, IORING_OFF_CQ_RING);
+                      MAP_SHARED | MAP_POPULATE, u->ring_fd,
+                      IORING_OFF_CQ_RING);
     if (u->cq_ring == MAP_FAILED) { uring_destroy(u); return NULL; }
   }
 
@@ -199,7 +201,8 @@ static uring_state * uring_setup(int src_fd, u64 file_size) {
   u->cq_khead     = (uint32_t *)((char *) u->cq_ring + p.cq_off.head);
   u->cq_ktail     = (uint32_t *)((char *) u->cq_ring + p.cq_off.tail);
   u->cq_ring_mask = (uint32_t *)((char *) u->cq_ring + p.cq_off.ring_mask);
-  u->cqes         = (struct io_uring_cqe *)((char *) u->cq_ring + p.cq_off.cqes);
+  u->cqes = (struct io_uring_cqe *)
+            ((char *) u->cq_ring + p.cq_off.cqes);
 
   for (unsigned i = 0; i < FASTENT_URING_SLOTS; i++) {
     void * raw = NULL, * user = NULL;
@@ -221,7 +224,9 @@ static uring_state * uring_setup(int src_fd, u64 file_size) {
 #endif
 
   for (unsigned i = 0; i < FASTENT_URING_SLOTS; i++) {
-    if (uring_submit_read(u, src_fd, (int) i) < 0) { uring_destroy(u); return NULL; }
+    if (uring_submit_read(u, src_fd, (int) i) < 0) {
+      uring_destroy(u);  return NULL;
+    }
   }
   return u;
 }

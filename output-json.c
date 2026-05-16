@@ -32,7 +32,8 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   printf("  \"chi_square\": {\n");
   printf("    \"statistic\": "); printf(fmt_fp, r->chi_square); printf(",\n");
   printf("    \"df\": %d,\n", o->binary ? 1 : 255);
-  printf("    \"p_exceed\": "); printf(fmt_fp, r->chi_probability); printf("\n");
+  printf("    \"p_exceed\": ");
+  printf(fmt_fp, r->chi_probability);  printf("\n");
   printf("  },\n");
   printf("  \"arithmetic_mean\": "); printf(fmt_fp, r->mean); printf(",\n");
   printf("  \"monte_carlo_pi\": {\n");
@@ -45,7 +46,8 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   else                 printf(fmt_fp, r->scc);
   if (o->extended) {
     printf(",\n  \"min_entropy\": ");          jnum_(fmt_fp, r->min_entropy);
-    printf(",\n  \"collision_entropy\": ");    jnum_(fmt_fp, r->collision_entropy);
+    printf(",\n  \"collision_entropy\": ");
+    jnum_(fmt_fp, r->collision_entropy);
     printf(",\n  \"index_of_coincidence\": "); jnum_(fmt_fp, r->ic);
     printf(",\n  \"poker\": ");
     if (!(r->poker_chisq == r->poker_chisq)) {

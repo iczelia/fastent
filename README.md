@@ -1,7 +1,8 @@
 # fastent
 
-fastent - high-throughput entropy and randomness tester for byte and bit streams,
-with deterministic multi-threaded output and runtime SIMD dispatch.
+fastent: high-throughput entropy and randomness tester for byte and bit
+streams, with deterministic multi-threaded output and runtime SIMD
+dispatch.
 Licensed under the terms of GNU GPL version 3 only - see [`COPYING`](COPYING).
 Report issues to Kamila Szewczyk &lt;k@iczelia.net&gt;.
 Project homepage: https://github.com/iczelia/fastent
@@ -22,8 +23,9 @@ the flag (`-ee`) adds the order-1 bigram conditional entropy
 `H(cur|prev)` and adjacent mutual information `I(prev;cur)`, which expose
 order-1 structure (text, code, many binary formats) that the order-0
 measures and the linear serial correlation miss.  Byte mode by default;
-bit mode under `-b`.  Output formats: human-readable, CSV (`-t`), JSON (`-J`), and
-an interpretive pass/fail report (`-a`/`--annotate`); add a per-value
+bit mode under `-b`.  Output formats: human-readable, CSV (`-t`), JSON
+(`-J`), and an interpretive pass/fail report (`-a`/`--annotate`); add a
+per-value
 occurrence table with `-c` or a terminal block-plot of the histogram
 with `-H`.
 

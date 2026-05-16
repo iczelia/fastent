@@ -114,7 +114,8 @@ void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
            (unsigned long long) r->result.total_samples);
     fputs(", \"entropy\": ", stdout);        json_num_(f, r->result.entropy);
     fputs(", \"chi_square\": ", stdout);     json_num_(f, r->result.chi_square);
-    fputs(", \"p_exceed\": ", stdout);       json_num_(f, r->result.chi_probability);
+    fputs(", \"p_exceed\": ", stdout);
+    json_num_(f, r->result.chi_probability);
     fputs(", \"mean\": ", stdout);           json_num_(f, r->result.mean);
     fputs(", \"monte_carlo_pi\": ", stdout); json_num_(f, r->result.monte_pi);
     fputs(", \"serial_correlation\": ", stdout);

@@ -24,53 +24,59 @@
 
 void fastent_print_version(void) {
   printf("fastent %s\n", FASTENT_VERSION_STRING);
-  printf("Copyright (C) 2026 Kamila Szewczyk.\n");
-  printf("License GPLv3: GNU GPL version 3 only"
-         " <https://gnu.org/licenses/gpl-3.0.html>.\n");
-  printf("This is free software: you are free to change and redistribute it.\n");
-  printf("There is NO WARRANTY, to the extent permitted by law.\n");
+  fputs(
+    "Copyright (C) 2026 Kamila Szewczyk.\n"
+    "License GPLv3: GNU GPL version 3 only"
+    " <https://gnu.org/licenses/gpl-3.0.html>.\n"
+    "This is free software: you are free to change and redistribute it.\n"
+    "There is NO WARRANTY, to the extent permitted by law.\n",
+    stdout);
 }
 
 void fastent_print_help(void) {
-  printf("fastent -- measure randomness of a byte (or bit) stream.\n");
-  printf("Usage:     fastent [options] [file]\n");
-  printf("\n");
-  printf("Options:   -b,  --bits               Treat input as a stream of bits\n");
-  printf("           -c,  --counts             Print occurrence counts\n");
-  printf("           -f,  --fold               Fold upper- to lower-case letters\n");
-  printf("           -t,  --terse              Terse output in CSV format\n");
-  printf("           -J,  --json               Emit results as JSON\n");
-  printf("           -H,  --histogram          Render a block bar plot\n");
-  printf("                                     of the byte distribution\n");
-  printf("           -l,  --log                Logarithmic y-axis for --histogram\n");
-  printf("           -C,  --color=MODE         auto, always, never\n");
-  printf("           -p,  --full-precision     Render every float at %%.17g\n");
-  printf("           -e,  --extended           Also report min-entropy,\n");
-  printf("                                     collision entropy / IC, poker\n");
-  printf("                                     test, variance, distinct,\n");
-  printf("                                     per-bit-position bias, etc.\n");
-  printf("                                     Repeatable: -ee (level 2)\n");
-  printf("                                     adds the order-1 bigram\n");
-  printf("                                     H(cur|prev) + mutual info\n");
-  printf("                                     (scalar single pass).\n");
-  printf("           -a,  --annotate           Interpretive pass/fail report\n");
-  printf("                                     (implies --extended)\n");
-  printf("           -i,  --io=MODE            auto (default), mmap, stream,\n");
-  printf("                                     uring (io_uring / Win32 IOCP)\n");
+  fputs(
+    "fastent: measure randomness of a byte (or bit) stream.\n"
+    "Usage:     fastent [options] [file]\n"
+    "\n"
+    "Options:   -b,  --bits               Treat input as a stream of bits\n"
+    "           -c,  --counts             Print occurrence counts\n"
+    "           -f,  --fold               Fold upper- to lower-case letters\n"
+    "           -t,  --terse              Terse output in CSV format\n"
+    "           -J,  --json               Emit results as JSON\n"
+    "           -H,  --histogram          Render a block bar plot\n"
+    "                                     of the byte distribution\n"
+    "           -l,  --log                Logarithmic y-axis for --histogram\n"
+    "           -C,  --color=MODE         auto, always, never\n"
+    "           -p,  --full-precision     Render every float at %.17g\n"
+    "           -e,  --extended           Also report min-entropy,\n"
+    "                                     collision entropy / IC, poker\n"
+    "                                     test, variance, distinct,\n"
+    "                                     per-bit-position bias, etc.\n"
+    "                                     Repeatable: -ee (level 2)\n"
+    "                                     adds the order-1 bigram\n"
+    "                                     H(cur|prev) + mutual info\n"
+    "                                     (scalar single pass).\n"
+    "           -a,  --annotate           Interpretive pass/fail report\n"
+    "                                     (implies --extended)\n"
+    "           -i,  --io=MODE            auto (default), mmap, stream,\n"
+    "                                     uring (io_uring / Win32 IOCP)\n",
+    stdout);
 #ifdef FASTENT_HAVE_THREADS
-  printf("           -j N --threads=N          Use N worker threads"
-         " (default 1)\n");
+  fputs("           -j N --threads=N          Use N worker threads"
+        " (default 1)\n", stdout);
 #endif
-  printf("           -r,  --recursive          Treat the positional arg as a\n");
-  printf("                                     directory; emit one row per file\n");
-  printf("                --sort-by=COL[:dir]  Sort recursive output by COL:\n");
-  printf("                                     path, samples, entropy, chisq,\n");
-  printf("                                     mean, pi, scc, min-entropy,\n");
-  printf("                                     collision, ic, poker, variance,\n");
-  printf("                                     redundancy, distinct, bitbias.\n");
-  printf("                                     dir = asc | desc\n");
-  printf("           -V,  --version            Print version and exit\n");
-  printf("           -h,  --help               Print this message\n");
+  fputs(
+    "           -r,  --recursive          Treat the positional arg as a\n"
+    "                                     directory; emit one row per file\n"
+    "                --sort-by=COL[:dir]  Sort recursive output by COL:\n"
+    "                                     path, samples, entropy, chisq,\n"
+    "                                     mean, pi, scc, min-entropy,\n"
+    "                                     collision, ic, poker, variance,\n"
+    "                                     redundancy, distinct, bitbias.\n"
+    "                                     dir = asc | desc\n"
+    "           -V,  --version            Print version and exit\n"
+    "           -h,  --help               Print this message\n",
+    stdout);
 }
 
 static int parse_int(const char * s, int * out) {
@@ -98,7 +104,10 @@ static int parse_sort_by_(const char * arg, fastent_options * o) {
     const char * dir = colon + 1;
     if      (!strcmp(dir, "asc"))  o->sort_desc = 0;
     else if (!strcmp(dir, "desc")) o->sort_desc = 1;
-    else { fprintf(stderr, "--sort-by direction must be asc or desc\n"); return -1; }
+    else {
+      fprintf(stderr, "--sort-by direction must be asc or desc\n");
+      return -1;
+    }
   } else {
     o->sort_desc = -1;  /*  fill in column default below  */
   }
@@ -186,8 +195,12 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
 
   /*  Help / version win over everything and exit immediately.  */
   for (int k = 0; k < r->argc; k++) {
-    if (r->args[k].opt == 'h') { fastent_print_help();    yarg_destroy(r); exit(0); }
-    if (r->args[k].opt == 'V') { fastent_print_version(); yarg_destroy(r); exit(0); }
+    if (r->args[k].opt == 'h') {
+      fastent_print_help();  yarg_destroy(r);  exit(0);
+    }
+    if (r->args[k].opt == 'V') {
+      fastent_print_version();  yarg_destroy(r);  exit(0);
+    }
   }
 
   int rc = 0;
@@ -203,7 +216,8 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
       case 'p': o->full_precision = 1; break;
       case 'H': o->histogram = 1; break;
       case 'l': o->histogram_log = 1; break;
-      case 'e': o->extended++; break;   /*  -e level (repeatable; -ee = bigram)  */
+      /*  -e level (repeatable; -ee adds the order-1 bigram).  */
+      case 'e': o->extended++; break;
       case 'a': o->annotate = 1; if (o->extended < 1) o->extended = 1; break;
       case 'r': o->recursive = 1; break;
       case 'C':
@@ -217,7 +231,8 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
       case 'i':
         if      (v && !strcmp(v, "auto"))   o->io_mode = (int) FASTENT_IO_AUTO;
         else if (v && !strcmp(v, "mmap"))   o->io_mode = (int) FASTENT_IO_MMAP;
-        else if (v && !strcmp(v, "stream")) o->io_mode = (int) FASTENT_IO_STREAM;
+        else if (v && !strcmp(v, "stream"))
+          o->io_mode = (int) FASTENT_IO_STREAM;
         else if (v && !strcmp(v, "uring"))  o->io_mode = (int) FASTENT_IO_URING;
         else { fprintf(stderr,
                  "fastent: --io must be auto, mmap, stream or uring\n");

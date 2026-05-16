@@ -83,15 +83,10 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
 
   out->monte_pi = 4.0 * ((f64) st->mc_inside / (f64) st->mc_count);
 
-  /*  Extended stats.  Pure functions of the merged histogram and the
-      sums above, so they keep the slab-merge determinism.
-
-      Min-entropy and collision entropy are log2 of an exact ratio that
-      is always >= 1 (max_count <= N, and sum_c2 in [N^2/bins, N^2]):
-        H_inf = log2(N / max_count)
-        H_2   = log2(N^2 / sum_c2)
-      so they use the faithful libm-free fastent_log2 family directly,
-      no probability detour, bit-identical across hosts.  */
+  /*  Min-entropy and collision entropy are log2 of an exact ratio
+      that is always >= 1: H_inf = log2(N / max_count),
+      H_2 = log2(N^2 / sum_c2).  They call the libm-free fastent_log2
+      family directly: no probability detour, bit-identical.  */
   const f64 hmax = binary ? 1.0 : 8.0;
   out->distinct      = distinct;
   out->mode_value    = mode_value;
@@ -160,18 +155,13 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
     out->bit_bias_worst = wk;
   }
 
-  /*  Order-1 bigram: conditional entropy H(cur|prev) and adjacent
-      mutual information I(prev;cur).  Byte mode (-ee) collapses the NB
-      256x256 shadow planes; bit mode (-ee -b) reads the tiny 2x2
-      bit_bigram.  Both reduce to H_joint - H_prev and
-      H_prev + H_cur - H_joint, all logs via fastent_entropy_term
-      (faithful, libm-free, bit-identical), as the order-0 entropy.
-      The loop is once-per-file and cheap.  */
+  /*  Order-1 H(cur|prev) and I(prev;cur).  Byte mode (-ee) collapses
+      the NB 256x256 planes; bit mode the 2x2 bit_bigram.  Logs via
+      fastent_entropy_term, so bit-identical like the order-0 entropy.  */
   out->conditional_entropy = out->mutual_information = NAN;
   if (!binary && st->bigram && out->total_samples >= 2) {
     u64 R[256], S[256];
-    memset(R, 0, sizeof R);
-    memset(S, 0, sizeof S);
+    memset(R, 0, sizeof R);  memset(S, 0, sizeof S);
     f64 M = 0.0;
     Fi(256, Fj(256,
        const u64 c = FASTENT_BG_AT(st->bigram, 0, i, j)

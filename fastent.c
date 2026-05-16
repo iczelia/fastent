@@ -70,10 +70,8 @@ int main(int argc, char ** argv) {
   fastent_analyze_fn fn_byte_fold = fastent_pick_fold_byte_variant(NULL);
   fastent_analyze_fn fn_bits_fold = fastent_pick_fold_bits_variant(NULL);
 
-  /*  -ee (extended level 2): order-1 bigram needs the scalar-only
-      analyser (the 256x256 byte scatter does not vectorise; the bit
-      path keeps a 2x2 in-struct table).  Covers the recursive path
-      too (the same fns are passed on).  */
+  /*  -ee: order-1 bigram uses the scalar-only analyser (the 256x256
+      byte scatter cannot vectorise; bit mode keeps a 2x2 table).  */
   if (o.extended >= 2) {
     if (o.binary) {
       fn_bits      = analyze_bits_bigram;

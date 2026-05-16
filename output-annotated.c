@@ -245,10 +245,9 @@ void fastent_print_annotated(const fastent_result * r,
        :               "structured bit lane");
   }
 
-  /*  Order-1 bigram: informational only (core=0, never moves the
-      headline verdict, like Collision entropy).  redux = fraction of
-      order-0 entropy the previous byte explains: ~0 for random,
-      large for text/code.  NaN unless -ee ran in byte mode.  */
+  /*  Informational only (core=0, never moves the verdict).  redux =
+      fraction of order-0 entropy the previous byte explains; NaN
+      unless -ee ran.  */
   if (r->conditional_entropy != r->conditional_entropy) {
     row_(o, color, &v, 0, "Cond. entropy", "pass -ee (byte only)",
          B_NA, "");

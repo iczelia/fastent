@@ -51,7 +51,8 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
       bounds[k] = (raw / 6ULL) * 6ULL;
       if (bounds[k] < bounds[k - 1]) bounds[k] = bounds[k - 1])
 
-  fastent_chunk_state * states = (fastent_chunk_state *) calloc((sz) N, sizeof(*states));
+  fastent_chunk_state * states =
+    (fastent_chunk_state *) calloc((sz) N, sizeof(*states));
   if (!states) { fprintf(stderr, "out of memory\n"); exit(2); }
 
   mt_ctx ctx = { data, bounds, states, fn,
@@ -80,10 +81,8 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
      out->bit_bigram[1][1] += s->bit_bigram[1][1];
      if (out->have_carry) {
        out->cross_product += (i64) out->carry_byte * (i64) s->first_byte;
-       /*  Linear boundary pair (last symbol of prev slab, first of
-           this slab), once per adjacency, no wrap.  Byte mode: fixed
-           plane 0 of the 256x256 table.  Bit mode: the 2x2 table,
-           carry/first hold single bits.  */
+       /*  Boundary pair (prev slab last, this slab first), once per
+           adjacency, no wrap.  Byte: plane 0; bit: the 2x2 table.  */
        if (out->bigram)
          FASTENT_BG_AT(out->bigram, 0, out->carry_byte, s->first_byte)++;
        if (o->binary)

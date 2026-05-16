@@ -36,7 +36,7 @@ typedef struct {
   int io_mode;        /*  --io={auto,mmap,stream,uring}  */
   int histogram;      /*  -H / --histogram  */
   int histogram_log;  /*  --log  (log-y for the histogram)  */
-  int color;          /*  --color={auto,always,never}, 0=never 1=auto 2=always  */
+  int color;          /*  --color mode: 0=never 1=auto 2=always  */
   int threads;        /*  -j / --threads  (0 = auto, 1 = default)  */
   int recursive;      /*  -r / --recursive  */
   int extended;       /*  -e / --extended level (repeatable): >=1 emits

@@ -182,7 +182,7 @@ Logarithmic Y axis for the histogram.  Useful when one bin dominates.
 .TP
 .BR \-C ", " "\-\-color=" \fIMODE\fR
 Colour mode for the histogram.  \fIMODE\fR is
-.BR auto " (default; uses colour iff stdout is a terminal and " NO_COLOR " is unset), "
+.BR auto " (default; colour iff stdout is a TTY and " NO_COLOR " unset), "
 .BR always ,
 or
 .BR never .
@@ -303,7 +303,8 @@ Under
 the CSV header becomes
 .RS
 .nf
-path,unit,samples,entropy,chi_square,p_exceed,mean,monte_carlo_pi,serial_correlation
+path,unit,samples,entropy,chi_square,p_exceed,mean,\
+monte_carlo_pi,serial_correlation
 .fi
 .RE
 with one data line per file (paths are RFC 4180-quoted when they

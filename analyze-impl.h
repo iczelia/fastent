@@ -131,10 +131,9 @@ static inline void FASTENT_FN(consume_byte)(fastent_chunk_state * st, u8 b,
   if (st->have_carry) {
     st->cross_product += (i64) st->carry_byte * (i64) b;
 #ifdef FASTENT_BIGRAM
-    /*  Count the ordered pair (prev=carry_byte, cur=b).  Routing the
-        increment to a plane chosen by position parity breaks the
-        store-to-load-forward dependency between consecutive pairs
-        (the hist1_4 F0/F1 idea); planes are summed at finalize.  */
+    /*  Count pair (prev=carry_byte, cur=b).  Plane chosen by position
+        parity breaks the store-forward dependency between consecutive
+        pairs (hist1_4 idea); planes summed at finalize.  */
     if (st->bigram)
       FASTENT_BG_AT(st->bigram,
                     (unsigned) st->total_bytes & (FASTENT_BG_NB - 1),
@@ -299,8 +298,10 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
         alternating.bin). Convert to i64 lanes for accumulation.  */
     __m256i sum32 = _mm256_add_epi32(_mm256_add_epi32(s0_lo, s0_hi),
                                      _mm256_add_epi32(s1_lo, s1_hi));
-    __m256i sum64_lo = _mm256_cvtepi32_epi64(_mm256_castsi256_si128(sum32));
-    __m256i sum64_hi = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(sum32, 1));
+    __m256i sum64_lo =
+      _mm256_cvtepi32_epi64(_mm256_castsi256_si128(sum32));
+    __m256i sum64_hi =
+      _mm256_cvtepi32_epi64(_mm256_extracti128_si256(sum32, 1));
     scc_acc64 = _mm256_add_epi64(scc_acc64,
                   _mm256_add_epi64(sum64_lo, sum64_hi));
     /*  LHS byte sum via PSADBW for sign correction.  */
@@ -375,9 +376,9 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     for (; k + 2 <= n_hexads; k += 2) {
       __m128i v   = _mm_loadu_si128((const __m128i *) (q + k * 6u));
       __m128i xy  = _mm_shuffle_epi8(v, mc_shuf);          /*  [x0,y0,x1,y1]  */
-      __m128i xs  = _mm_mul_epu32(xy, xy);                  /*  x0^2, x1^2 (u64)  */
+      __m128i xs  = _mm_mul_epu32(xy, xy);        /*  x^2 (u64)  */
       __m128i yshr = _mm_srli_epi64(xy, 32);
-      __m128i ys  = _mm_mul_epu32(yshr, yshr);              /*  y0^2, y1^2     */
+      __m128i ys  = _mm_mul_epu32(yshr, yshr);    /*  y^2 (u64)  */
       __m128i d   = _mm_add_epi64(xs, ys);
       __m128i mask = _mm_cmpgt_epi64(mc_lim, d);
       int bits = _mm_movemask_pd(_mm_castsi128_pd(mask));
@@ -547,8 +548,10 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m512i sum32 = _mm512_setzero_si512();
     sum32 = _mm512_dpbusd_epi32(sum32, va0, vbs0);
     sum32 = _mm512_dpbusd_epi32(sum32, va1, vbs1);
-    __m512i sum64_lo = _mm512_cvtepi32_epi64(_mm512_castsi512_si256(sum32));
-    __m512i sum64_hi = _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(sum32, 1));
+    __m512i sum64_lo =
+      _mm512_cvtepi32_epi64(_mm512_castsi512_si256(sum32));
+    __m512i sum64_hi =
+      _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(sum32, 1));
     scc_acc64 = _mm512_add_epi64(scc_acc64,
                   _mm512_add_epi64(sum64_lo, sum64_hi));
 #else
@@ -578,8 +581,10 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
         consistent-sign inputs.  */
     __m512i sum32 = _mm512_add_epi32(_mm512_add_epi32(s0_lo, s0_hi),
                                      _mm512_add_epi32(s1_lo, s1_hi));
-    __m512i sum64_lo = _mm512_cvtepi32_epi64(_mm512_castsi512_si256(sum32));
-    __m512i sum64_hi = _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(sum32, 1));
+    __m512i sum64_lo =
+      _mm512_cvtepi32_epi64(_mm512_castsi512_si256(sum32));
+    __m512i sum64_hi =
+      _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(sum32, 1));
     scc_acc64 = _mm512_add_epi64(scc_acc64,
                   _mm512_add_epi64(sum64_lo, sum64_hi));
 #endif
@@ -895,7 +900,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   }
 
   i64 scc_sum = (i64) _mm_cvtsi128_si64(scc_acc64)
-              + (i64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(scc_acc64, scc_acc64));
+    + (i64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(scc_acc64, scc_acc64));
 
   u64 lhs_sum = (u64) _mm_cvtsi128_si64(lhs_sad)
               + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(lhs_sad, lhs_sad));
@@ -1374,11 +1379,11 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     variants (whichever owns simd_body_impl in this TU).  */
 #ifdef FASTENT_HAVE_SIMD
 static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
-                                       const u8 * FASTENT_RESTRICT buf, sz len) {
+    const u8 * FASTENT_RESTRICT buf, sz len) {
   return FASTENT_FN(simd_body_impl)(st, buf, len, 0);
 }
 static inline sz FASTENT_FN(simd_body_fold)(fastent_chunk_state * st,
-                                            const u8 * FASTENT_RESTRICT buf, sz len) {
+    const u8 * FASTENT_RESTRICT buf, sz len) {
   return FASTENT_FN(simd_body_impl)(st, buf, len, 1);
 }
 #endif
@@ -1408,14 +1413,16 @@ FASTENT_FN(analyze_impl)(fastent_chunk_state * st,
       consume_byte; no separate walk required.  */
 }
 
-void FASTENT_FN(analyze)(fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
+void FASTENT_FN(analyze)(fastent_chunk_state * st,
+                         const u8 * FASTENT_RESTRICT buf, sz len) {
   FASTENT_FN(analyze_impl)(st, buf, len, 0);
 #if defined(FASTENT_VARIANT_AVX2) || defined(FASTENT_VARIANT_AVX512)
   _mm256_zeroupper();
 #endif
 }
 
-void FASTENT_FN(analyze_fold)(fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
+void FASTENT_FN(analyze_fold)(fastent_chunk_state * st,
+                              const u8 * FASTENT_RESTRICT buf, sz len) {
   FASTENT_FN(analyze_impl)(st, buf, len, 1);
 }
 
@@ -1702,7 +1709,8 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
         SSE4.2 cmpgt_epi64 (always present with AVX2). On SSE4.1 path
         same. On SSSE3-only we skip the SIMD and fall through to scalar
         because cmpgt_epi64 is SSE4.2.  */
-#if defined(FASTENT_VARIANT_AVX2) || defined(FASTENT_VARIANT_SSE41) || defined(FASTENT_VARIANT_AVX512)
+#if defined(FASTENT_VARIANT_AVX2) || defined(FASTENT_VARIANT_SSE41) \
+ || defined(FASTENT_VARIANT_AVX512)
     for (; k + 2 <= n_hexads; k += 2) {
       __m128i v   = _mm_loadu_si128((const __m128i *) (q + k * 6u));
       __m128i xy  = _mm_shuffle_epi8(v, mc_shuf);
@@ -1772,11 +1780,11 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
                  + (u64) wasm_i64x2_extract_lane(acc_cross, 1);
 #else
   u64 sum_ones = (u64) _mm_cvtsi128_si64(acc_ones)
-              + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(acc_ones, acc_ones));
+    + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(acc_ones, acc_ones));
   u64 sum_within = (u64) _mm_cvtsi128_si64(acc_within)
-              + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(acc_within, acc_within));
+    + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(acc_within, acc_within));
   u64 sum_cross = (u64) _mm_cvtsi128_si64(acc_cross)
-              + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(acc_cross, acc_cross));
+    + (u64) _mm_cvtsi128_si64(_mm_unpackhi_epi64(acc_cross, acc_cross));
 #endif
 
   st->bit_hist[1]   += sum_ones;
@@ -1829,11 +1837,11 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
 
 /*  Bit-mode SIMD trampolines.  */
 static inline sz FASTENT_FN(bits_simd_body)(fastent_chunk_state * st,
-                                            const u8 * FASTENT_RESTRICT buf, sz len) {
+    const u8 * FASTENT_RESTRICT buf, sz len) {
   return FASTENT_FN(bits_simd_body_impl)(st, buf, len, 0);
 }
 static inline sz FASTENT_FN(bits_simd_body_fold)(fastent_chunk_state * st,
-                                                 const u8 * FASTENT_RESTRICT buf, sz len) {
+    const u8 * FASTENT_RESTRICT buf, sz len) {
   return FASTENT_FN(bits_simd_body_impl)(st, buf, len, 1);
 }
 
@@ -1902,7 +1910,7 @@ static inline void FASTENT_FN(bits_scalar_body)(fastent_chunk_state * st,
 
 static __attribute__((always_inline)) inline void
 FASTENT_FN(analyze_bits_impl)(fastent_chunk_state * st,
-                              const u8 * FASTENT_RESTRICT buf, sz len, int fold) {
+    const u8 * FASTENT_RESTRICT buf, sz len, int fold) {
   if (len == 0) return;
 #ifdef FASTENT_HAVE_SIMD
   sz body = fold ? FASTENT_FN(bits_simd_body_fold)(st, buf, len)
