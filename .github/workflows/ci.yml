@@ -596,3 +596,72 @@ jobs:
         run: |
           cd build
           make check
+
+  # MSVC (cl.exe): native Windows runner, scalar core + Win32 threads,
+  # no SIMD (configure.ac's -m SIMD probes reject under cl, so this
+  # uses the dedicated build/msvc/Makefile.nmake instead of autotools).
+  build-msvc:
+    name: msvc / windows-x86_64
+    needs: dist
+    runs-on: windows-latest
+    steps:
+      - name: download tarball
+        uses: actions/download-artifact@v6
+        with:
+          name: fastent-dist
+
+      - name: unpack
+        shell: bash
+        run: |
+          tar xzf fastent-*.tar.gz
+          src=$(ls -d fastent-*/ | head -1 | sed 's,/$,,')
+          echo "SRCDIR=$src" >> "$GITHUB_ENV"
+
+      - name: setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: build (nmake + cl)
+        shell: cmd
+        run: |
+          cd %SRCDIR%
+          nmake /f build\msvc\Makefile.nmake
+          dir fastent.exe
+
+      - name: smoke test
+        shell: bash
+        run: |
+          cd "$SRCDIR"
+          ./fastent.exe --version
+          dd if=/dev/urandom bs=4096 count=8 status=none > smoke.bin
+          ./fastent.exe -t  smoke.bin
+          ./fastent.exe -tb smoke.bin
+          ./fastent.exe -tf smoke.bin
+          ./fastent.exe --json smoke.bin | python -c \
+            "import json,sys; json.loads(sys.stdin.read())"
+
+      - name: test suite (best effort under Git Bash)
+        shell: bash
+        continue-on-error: true
+        run: |
+          cd "$SRCDIR"
+          bash tests/run-tests.sh ./fastent.exe tests/fixtures
+
+      - name: package binary
+        shell: bash
+        run: |
+          ver=$(echo "$SRCDIR" | sed 's/^fastent-//')
+          name="fastent-${ver}-windows-x86_64-msvc"
+          mkdir -p "dist/$name"
+          cp "$SRCDIR/fastent.exe" "dist/$name/"
+          cp "$SRCDIR/README.md" "$SRCDIR/COPYING" "$SRCDIR/NEWS" \
+             "$SRCDIR/fastent.1" "dist/$name/"
+          (cd dist && 7z a "${name}.zip" "$name" >/dev/null)
+
+      - name: upload binary artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: fastent-windows-x86_64-msvc
+          path: dist/fastent-*-windows-x86_64-msvc.zip
+          if-no-files-found: error

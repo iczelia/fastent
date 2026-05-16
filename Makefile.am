@@ -112,6 +112,7 @@ endif
 dist_man_MANS = fastent.1
 
 EXTRA_DIST = README.md NEWS ChangeLog AUTHORS COPYING bootstrap \
+             build/msvc/Makefile.nmake \
              tests/run-tests.sh tests/bench.sh tests/bench-gen.c \
              doc/bench.png doc/bench.tsv \
              contrib/dos/dosbox-x.conf contrib/gplv3.png

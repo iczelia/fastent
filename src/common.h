@@ -58,12 +58,21 @@ typedef double   f64;
   #define FASTENT_PREFETCH(p) __builtin_prefetch((p))
   #define FASTENT_NOINLINE __attribute__((noinline))
   #define FASTENT_HOT __attribute__((hot))
+  #define FASTENT_ALWAYS_INLINE __attribute__((always_inline)) inline
+#elif defined(_MSC_VER)
+  #define LIKELY(x)   (x)
+  #define UNLIKELY(x) (x)
+  #define FASTENT_PREFETCH(p) ((void) 0)
+  #define FASTENT_NOINLINE __declspec(noinline)
+  #define FASTENT_HOT
+  #define FASTENT_ALWAYS_INLINE __forceinline
 #else
   #define LIKELY(x)   (x)
   #define UNLIKELY(x) (x)
   #define FASTENT_PREFETCH(p) ((void) 0)
   #define FASTENT_NOINLINE
   #define FASTENT_HOT
+  #define FASTENT_ALWAYS_INLINE inline
 #endif
 
 #ifdef restrict

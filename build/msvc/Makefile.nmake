@@ -1,0 +1,42 @@
+# fastent: MSVC (cl.exe) build, scalar core + Win32 threads, no SIMD.
+#
+# Autotools does not drive cl, and the -mssse3/-mavx2 SIMD probes in
+# configure.ac reject under MSVC, so this is the dedicated cl path
+# (the same way DOS/wasm get bespoke handling).  Run from the source
+# tree root:
+#
+#     nmake /f build\msvc\Makefile.nmake
+#
+# POSIX port TUs are listed too: they are #ifndef _WIN32 and emit
+# nothing under MSVC, exactly as in the autotools build.
+
+CC      = cl
+CFLAGS  = /nologo /std:c17 /O2 /W3 /MD /D_CRT_SECURE_NO_WARNINGS \
+          /D_WIN32_WINNT=0x0600 /DWINVER=0x0600 /DFASTENT_HAVE_THREADS \
+          /I src /I src\kernel /I src\platform
+LDFLAGS = /link /SUBSYSTEM:CONSOLE
+
+SRCS = \
+  src\fastent.c src\cli.c src\runner.c \
+  src\kernel\analyze.c src\kernel\analyze-scalar.c src\kernel\digram.c \
+  src\kernel\chisq.c src\kernel\fips1402.c src\kernel\fastent-math.c \
+  src\output-default.c src\output-terse.c src\output-json.c \
+  src\output-histogram.c src\output-recursive.c src\output-annotated.c \
+  src\platform\port-cpu-x86.c src\platform\port-cpu-arm.c \
+  src\platform\port-cpu-other.c \
+  src\platform\port-io.c src\platform\port-io-posix.c \
+  src\platform\port-io-win32.c \
+  src\platform\port-term-posix.c src\platform\port-term-win32.c \
+  src\platform\port-term-djgpp.c \
+  src\platform\port-os-posix.c src\platform\port-os-win32.c \
+  src\platform\port-walk-posix.c src\platform\port-walk-win32.c \
+  src\platform\port-thread-posix.c src\platform\port-thread-win32.c \
+  src\platform\fastent-win32.c
+
+all: fastent.exe
+
+fastent.exe: $(SRCS)
+	$(CC) $(CFLAGS) /Fe:fastent.exe $(SRCS) $(LDFLAGS)
+
+clean:
+	-del /q *.obj fastent.exe 2>nul

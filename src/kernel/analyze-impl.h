@@ -75,7 +75,7 @@ static inline u8 FASTENT_FN(fold_byte_inline)(u8 b) {
 }
 
 #ifdef FASTENT_HAVE_SIMD
-static __attribute__((always_inline)) inline FASTENT_SIMD_VEC
+static FASTENT_ALWAYS_INLINE FASTENT_SIMD_VEC
 FASTENT_FN(fold_vec_inline)(FASTENT_SIMD_VEC c) {
   const FASTENT_SIMD_VEC zero    = V_SETZERO();
   const FASTENT_SIMD_VEC v_amin  = V_SET1_EPI8('A');
@@ -133,7 +133,7 @@ static inline void FASTENT_FN(consume_byte)(fastent_chunk_state * st, u8 b,
 /*  Scalar histogram + SCC body (fallback and chunk edges). Templated
     on the compile-time `fold` constant; the branch dead-eliminates.  */
 
-static __attribute__((always_inline)) inline sz
+static FASTENT_ALWAYS_INLINE sz
 FASTENT_FN(scalar_body_impl)(fastent_chunk_state * st,
                              const u8 * FASTENT_RESTRICT buf,
                              sz len, sz start_bank, int fold) {
@@ -156,7 +156,7 @@ static inline sz FASTENT_FN(scalar_body)(fastent_chunk_state * st,
 
 #if defined(FASTENT_VARIANT_AVX2)
 
-static __attribute__((always_inline)) inline sz
+static FASTENT_ALWAYS_INLINE sz
 FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
                            const u8 * FASTENT_RESTRICT buf,
                            sz len, int fold) {
@@ -415,7 +415,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     because VPSCATTERDD (~16c recip throughput on Zen 4) loses to the
     inc-mem chain by 1.5-3x.  */
 
-static __attribute__((always_inline)) inline sz
+static FASTENT_ALWAYS_INLINE sz
 FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
                            const u8 * FASTENT_RESTRICT buf,
                            sz len, int fold) {
@@ -681,7 +681,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
 #elif defined(FASTENT_VARIANT_SSE41) || defined(FASTENT_VARIANT_SSSE3)
 
-static __attribute__((always_inline)) inline sz
+static FASTENT_ALWAYS_INLINE sz
 FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
                            const u8 * FASTENT_RESTRICT buf,
                            sz len, int fold) {
@@ -882,7 +882,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     Histogram: 4-banked inc-mem as SSE; laundered L1 stage in fold
     mode (see launder note above).  */
 
-static __attribute__((always_inline)) inline sz
+static FASTENT_ALWAYS_INLINE sz
 FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
                            const u8 * FASTENT_RESTRICT buf,
                            sz len, int fold) {
@@ -1077,7 +1077,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     extadd-pairwise ladder. Histogram + MC Pi scalar 4-banked, no
     SIMD bulk (~5 hexads/iter).  */
 
-static __attribute__((always_inline)) inline sz
+static FASTENT_ALWAYS_INLINE sz
 FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
                            const u8 * FASTENT_RESTRICT buf,
                            sz len, int fold) {
@@ -1282,7 +1282,7 @@ static inline sz FASTENT_FN(simd_body_fold)(fastent_chunk_state * st,
 
 /*  Public entry point.  */
 
-static __attribute__((always_inline)) inline void
+static FASTENT_ALWAYS_INLINE void
 FASTENT_FN(analyze_impl)(fastent_chunk_state * st,
                          const u8 * FASTENT_RESTRICT buf, sz len, int fold) {
   if (len == 0) return;
@@ -1381,7 +1381,7 @@ void FASTENT_FN(fold)(u8 * buf, sz len) {
 
 #ifdef FASTENT_HAVE_SIMD
 
-static __attribute__((always_inline)) inline sz
+static FASTENT_ALWAYS_INLINE sz
 FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
                                 const u8 * FASTENT_RESTRICT buf,
                                 sz len, int fold) {
@@ -1715,7 +1715,7 @@ static inline sz FASTENT_FN(bits_simd_body_fold)(fastent_chunk_state * st,
 
 /*  Scalar bit-mode walker (scalar entry and SIMD tail). Templated on
     `fold` for the fused -f -b path.  */
-static __attribute__((always_inline)) inline void
+static FASTENT_ALWAYS_INLINE void
 FASTENT_FN(bits_scalar_body_impl)(fastent_chunk_state * st,
                                   const u8 * FASTENT_RESTRICT buf,
                                   sz len, int fold) {
@@ -1759,7 +1759,7 @@ static inline void FASTENT_FN(bits_scalar_body)(fastent_chunk_state * st,
   FASTENT_FN(bits_scalar_body_impl)(st, buf, len, 0);
 }
 
-static __attribute__((always_inline)) inline void
+static FASTENT_ALWAYS_INLINE void
 FASTENT_FN(analyze_bits_impl)(fastent_chunk_state * st,
     const u8 * FASTENT_RESTRICT buf, sz len, int fold) {
   if (len == 0) return;
