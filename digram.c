@@ -14,11 +14,13 @@
       runs       : number of 0/1 runs                (bit mode).
       cusum_max  : extent of the +-1 bit walk         (bit mode).
 
-    Stream calls this per chunk on one persistent state; mmap calls it
-    once over the whole resident buffer (single or -j) post-merge, so
-    no cross-slab stitch is needed and the result is bit-identical
-    regardless of thread count.  Byte runs-vs-median is then derived
-    in fastent_finalize from the digram joint counts (no rescan).
+    Stream calls this per chunk on one persistent state.  Single-
+    thread mmap calls it once over the whole resident buffer.  With
+    -j each worker calls it on its own slab and run_mmap_mt_ merges
+    the per-slab reductions with a boundary stitch, so the result is
+    bit-identical regardless of thread count.  Byte runs-vs-median is
+    then derived in fastent_finalize from the digram joint counts (no
+    rescan).
 
     Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
@@ -32,11 +34,14 @@
 static void lr_one_(fastent_chunk_state * st, unsigned s) {
   if (!st->lr_have) {
     st->lr_have = 1;  st->lr_sym = (u8) s;  st->lr_cur = 1;
+    st->lr_head_sym = (u8) s;  st->lr_head_len = 1;  st->lr_head_open = 1;
   } else if (s == st->lr_sym) {
     st->lr_cur++;
+    if (st->lr_head_open) st->lr_head_len++;
   } else {
     if (st->lr_cur > st->lr_max) st->lr_max = st->lr_cur;
     st->lr_sym = (u8) s;  st->lr_cur = 1;
+    st->lr_head_open = 0;        /*  leading run closed; head frozen  */
   }
 }
 

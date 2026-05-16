@@ -72,12 +72,19 @@ typedef struct {
   /*  -ee level-2 sequential extras (runs / longest run / cusum),
       filled by fastent_digram_count; zeroed at init.  Symbols are
       bits in bit mode, byte values in byte mode.  Stream accumulates
-      across chunks in one state; mmap does a single serial scan of
-      the whole buffer (no cross-slab stitch in this first cut).  */
+      across chunks in one state; single-thread mmap scans the whole
+      buffer; with -j each slab is scanned in its worker and these
+      per-slab reductions are merged with a boundary stitch
+      (run_mmap_mt_).  lr_head_* records the slab's leading run so the
+      merge can splice runs that straddle a boundary.  */
   u64 lr_max;        /*  longest completed identical-symbol run  */
   u64 lr_cur;        /*  open run length                         */
   u8  lr_sym;        /*  open run symbol                          */
   u8  lr_have;
+  u64 lr_head_len;   /*  length of this slab's leading run        */
+  u8  lr_head_sym;   /*  symbol of that leading run               */
+  u8  lr_head_open;  /*  set while the leading run is still the
+                         only run (whole slab is one run)         */
   u64 rn_count;      /*  bit-runs (bit mode)                      */
   u8  rn_last;       /*  most recent bit                          */
   u8  rn_have;

@@ -18,7 +18,11 @@ typedef struct {
   const u8 *     data;
   const u64 *    bounds;     /*  N+1 entries, multiples of 6 except last  */
   fastent_chunk_state * states;
+  u64 * const *  bigrams;    /*  per-slab digram tables; NULL unless
+                                 -ee byte mode  */
   fastent_analyze_fn fn;
+  int            extended;
+  int            binary;
 } mt_ctx;
 
 static void mt_worker_(sz k, void * vctx) {
@@ -26,7 +30,11 @@ static void mt_worker_(sz k, void * vctx) {
   u64 start = c->bounds[k];
   u64 end   = c->bounds[k + 1];
   fastent_chunk_state_init(&c->states[k]);
+  if (c->bigrams) c->states[k].bigram = c->bigrams[k];
   c->fn(&c->states[k], c->data + start, (sz)(end - start));
+  if (c->extended >= 2)
+    fastent_digram_count(&c->states[k], c->data + start,
+                         (sz)(end - start), c->binary);
 }
 
 static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
@@ -50,7 +58,21 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
     (fastent_chunk_state *) calloc((sz) N, sizeof(*states));
   if (!states) { fprintf(stderr, "out of memory\n"); exit(2); }
 
-  mt_ctx ctx = { data, bounds, states, fn };
+  /*  Per-slab digram tables (byte -ee only): one each, summed at
+      merge.  Allocated up front so OOM is handled serially; the
+      worker only wires the pointer in after init.  */
+  u64 ** bgs = NULL;
+  if (o->extended >= 2 && !o->binary) {
+    bgs = (u64 **) calloc((sz) N, sizeof(*bgs));
+    if (!bgs) { fprintf(stderr, "out of memory\n"); exit(2); }
+    Fk(N, bgs[k] = fastent_bigram_alloc();
+          if (!bgs[k]) { fprintf(stderr, "out of memory\n"); exit(2); })
+  }
+
+  mt_ctx ctx;
+  ctx.data = data;  ctx.bounds = bounds;  ctx.states = states;
+  ctx.bigrams = bgs;  ctx.fn = fn;
+  ctx.extended = o->extended;  ctx.binary = o->binary;
   fastent_parallel_for((sz) N, mt_worker_, &ctx);
 
   /*  Merge slabs: adjacent slab pairs contribute b[end-1] *
@@ -84,14 +106,77 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
        memcpy(out->mc_buf, s->mc_buf, sizeof(out->mc_buf));
      })
 
+  /*  Merge the -ee level-2 reductions.  Per-slab counts are
+      partition-invariant; the pair, bit-run and cusum statistics
+      additionally need the symbol straddling each slab boundary,
+      stitched here in fixed slab order so j1 == jN.  The longest run
+      is a segmented merge: a run can span a boundary, or whole slabs
+      of one symbol (all-zeros input split N ways).  */
+  if (o->extended >= 2) {
+    u64 lr_gmax = 0, carry_len = 0;
+    unsigned carry_sym = 0;
+    int have_run = 0, seen = 0;
+    i64 cs_off = 0, cs_min = 0, cs_max = 0;
+    Fk(N,
+       fastent_chunk_state * s = &states[k];
+       if (s->total_bytes == 0) continue;
+       const u64 start = bounds[k];
+       if (out->bigram && s->bigram)
+         Fi((int) FASTENT_BG_CELLS, out->bigram[i] += s->bigram[i])
+       if (o->binary) {
+         out->bit_bigram[0][0] += s->bit_bigram[0][0];
+         out->bit_bigram[0][1] += s->bit_bigram[0][1];
+         out->bit_bigram[1][0] += s->bit_bigram[1][0];
+         out->bit_bigram[1][1] += s->bit_bigram[1][1];
+       }
+       if (seen && start > 0) {     /*  pair straddling this boundary  */
+         if (o->binary) {
+           const unsigned pb = data[start - 1] & 1u;
+           const unsigned cb = (data[start] >> 7) & 1u;
+           out->bit_bigram[pb][cb]++;
+           if (pb == cb) out->rn_count--;       /*  two runs join  */
+         } else if (out->bigram) {
+           out->bigram[((unsigned) data[start - 1] << 8)
+                       | data[start]]++;
+         }
+       }
+       {
+         const u64 imax = s->lr_cur > s->lr_max ? s->lr_cur : s->lr_max;
+         const unsigned hs = s->lr_head_sym;
+         const u64 hl = s->lr_head_len;  const u64 tl = s->lr_cur;
+         const int whole = s->lr_head_open;
+         if (imax > lr_gmax) lr_gmax = imax;
+         if (have_run && carry_sym == hs) {
+           const u64 j = carry_len + hl;
+           if (j > lr_gmax) lr_gmax = j;
+           if (whole) carry_len = j;
+           else { carry_sym = s->lr_sym;  carry_len = tl; }
+         } else {
+           if (have_run && carry_len > lr_gmax) lr_gmax = carry_len;
+           if (whole) { carry_sym = hs;        carry_len = hl; }
+           else       { carry_sym = s->lr_sym; carry_len = tl; }
+           have_run = 1;
+         }
+       }
+       if (o->binary) {
+         out->rn_count += s->rn_count;  out->rn_have = 1;
+         if (cs_off + s->cs_min < cs_min) cs_min = cs_off + s->cs_min;
+         if (cs_off + s->cs_max > cs_max) cs_max = cs_off + s->cs_max;
+         cs_off += s->cs_sum;
+       }
+       seen = 1;)
+    if (have_run) {
+      if (carry_len > lr_gmax) lr_gmax = carry_len;
+      out->lr_have = 1;  out->lr_max = lr_gmax;  out->lr_cur = 0;
+    }
+    if (o->binary) {
+      out->cs_min = cs_min;  out->cs_max = cs_max;  out->cs_sum = cs_off;
+    }
+  }
+
+  if (bgs) { Fk(N, fastent_bigram_free(bgs[k])) free(bgs); }
   free(states);
   free(bounds);
-
-  /*  The -ee extras (digram + longest run + runs + cusum) are one
-      fused serial scan of the whole resident buffer into the merged
-      state: no cross-slab stitch, bit-identical regardless of -j.  */
-  if (o->extended >= 2)
-    fastent_digram_count(out, data, (sz) size, o->binary);
 }
 #endif
 

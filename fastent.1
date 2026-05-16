@@ -92,9 +92,12 @@ the adjacent mutual information
 .RB I( prev ; cur ),
 a longest identical-symbol run, a runs test, and a bit-mode cusum
 max excursion.  The order-0 statistics keep full SIMD throughput; the
-level-2 reductions are one scalar pass, deterministic and
-bit-identical across thread counts.  Byte mode keeps four 64K u64
-tables per worker thread (2 MiB); bit mode is free.
+level-2 reductions are a scalar pass split per slab across the
+.B \-j
+workers (mmap path) and merged with a boundary stitch, deterministic
+and bit-identical across thread counts.  Stream and io_uring input is
+single-threaded.  Byte mode keeps four 64K u64 tables per worker
+thread (2 MiB); bit mode is free.
 .TP
 .BR \-a ", " \-\-annotate
 Render an interpretive report instead of the plain text: every metric

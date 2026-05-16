@@ -46,9 +46,10 @@ with `-H`.
   across hosts and thread counts.  `--annotate` turns them into a
   per-metric PASS / WEAK / FAIL report with a headline verdict
 - order-1 bigram (`-ee`): conditional entropy `H(cur|prev)`, adjacent
-  mutual information `I(prev;cur)`, runs / longest-run / cusum; one
-  scalar pass, deterministic and bit-identical across thread counts
-  (~2 MiB/thread byte table, 2x2 in bit mode)
+  mutual information `I(prev;cur)`, runs / longest-run / cusum; a
+  scalar pass split per slab across the `-j` workers (mmap path) and
+  merged with a boundary stitch, deterministic and bit-identical
+  across thread counts (~2 MiB/thread byte table, 2x2 in bit mode)
 - recursive mode (`-r DIR`): one CSV / JSON row per file, sortable via
   `--sort-by` (path, entropy, chisq, the extended columns, ...)
 - terminal histogram (`-H`) with Unicode block glyphs, optional log Y
