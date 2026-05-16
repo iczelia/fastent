@@ -25,7 +25,8 @@ static void print_counts_(const fastent_result * r, int binary) {
          (unsigned long long) r->total_samples, 1.0);
 }
 
-void fastent_print_default(const fastent_result * r, const fastent_options * o) {
+void fastent_print_default(const fastent_result * r,
+                           const fastent_options * o) {
   const char * samp = o->binary ? "bit" : "byte";
   const int fp = o->full_precision;
 

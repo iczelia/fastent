@@ -32,8 +32,8 @@
     Monte Carlo hits, and the first/last/carry bytes needed to stitch
     chunk boundaries at finalize.  */
 typedef struct {
-  /*  Banked histogram: bank[k][v] counts bytes of value v at stream
-      positions p with (p mod FASTENT_BANKS) == k.  Banks merged at finalize.  */
+  /*  Banked histogram: bank[k][v] counts value v at stream positions
+      p with (p mod FASTENT_BANKS) == k.  Merged at finalize.  */
   u32 bank[FASTENT_BANKS][256];
 
   /*  Sum of x[i] * x[i+1] over all bytes processed by this state so far,
@@ -84,26 +84,26 @@ typedef struct {
   f64 scc;
 
   /*  Extended stats (always computed; surfaced only under -e).  */
-  f64 min_entropy;        /*  H_inf = -log2(max p_i), bits per sample  */
-  f64 collision_entropy;  /*  H_2   = -log2(sum p_i^2), bits per sample */
-  f64 ic;                 /*  index of coincidence                     */
-  f64 poker_chisq;        /*  16-bin nibble chi-square; NaN in bit mode */
-  f64 poker_p;            /*  upper tail, df=15;        NaN in bit mode */
-  f64 variance;           /*  of sample value                          */
+  f64 min_entropy;          /*  H_inf = -log2(max p_i), per sample  */
+  f64 collision_entropy;    /*  H_2 = -log2(sum p_i^2), per sample  */
+  f64 ic;                   /*  index of coincidence  */
+  f64 poker_chisq;          /*  16-bin nibble chi-square; NaN in bits  */
+  f64 poker_p;              /*  upper tail, df=15; NaN in bit mode  */
+  f64 variance;             /*  of sample value  */
   f64 stddev;
-  f64 redundancy;         /*  1 - H/Hmax                               */
-  u32 distinct;           /*  distinct symbols observed                */
-  int mode_value;         /*  most frequent symbol (-1 if none)        */
+  f64 redundancy;           /*  1 - H/Hmax  */
+  u32 distinct;             /*  distinct symbols observed  */
+  int mode_value;           /*  most frequent symbol (-1 if none)  */
   u64 mode_count;
-  int rarest_value;       /*  least frequent observed symbol (-1 none) */
+  int rarest_value;         /*  least frequent observed (-1 none)  */
   u64 rarest_count;
-  f64 bit_freq[8];        /*  P(bit k = 1), k=0 LSB..7 MSB; byte mode  */
-  f64 bit_bias_max;       /*  max_k |bit_freq[k]-0.5|; NaN in bit mode */
-  int bit_bias_worst;     /*  argmax k of that bias; -1 in bit mode    */
-  f64 conditional_entropy;/*  H(cur|prev); NaN if no bigram / bit mode */
-  f64 mutual_information; /*  I(prev;cur); NaN likewise                */
+  f64 bit_freq[8];          /*  P(bit k=1), k=0 LSB..7 MSB; byte mode  */
+  f64 bit_bias_max;         /*  max_k |bit_freq[k]-0.5|; NaN in bits  */
+  int bit_bias_worst;       /*  argmax k of that bias; -1 in bit mode  */
+  f64 conditional_entropy;  /*  H(cur|prev); NaN if no bigram / bits  */
+  f64 mutual_information;   /*  I(prev;cur); NaN likewise  */
 
-  u64 hist[256];     /*  For -c output. In bit mode, hist[0]/hist[1] are bit counts.  */
+  u64 hist[256];            /*  -c output; bits: hist[0]/hist[1]  */
 } fastent_result;
 
 /*  Dispatch flags returned by fastent_pick_variant().  */
@@ -122,7 +122,8 @@ typedef enum {
 typedef void (* fastent_analyze_fn)(fastent_chunk_state *, const u8 *, sz);
 
 void fastent_chunk_state_init(fastent_chunk_state * st);
-u64 * fastent_bigram_alloc(void);   /*  FASTENT_BG_CELLS u64, zeroed; NULL=OOM  */
+/*  FASTENT_BG_CELLS u64, zeroed; NULL on OOM.  */
+u64 * fastent_bigram_alloc(void);
 void  fastent_bigram_free(u64 * bg);
 void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
                       fastent_result * FASTENT_RESTRICT out);
@@ -172,7 +173,8 @@ void analyze_fold_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_fold_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX512_BITALG
-void analyze_fold_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, sz len);
+void analyze_fold_avx512_bitalg(fastent_chunk_state * st,
+                                const u8 * buf, sz len);
 #endif
 #ifdef HAVE_NEON
 void analyze_fold_neon(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -212,7 +214,8 @@ void analyze_bits_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_bits_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX512_BITALG
-void analyze_bits_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, sz len);
+void analyze_bits_avx512_bitalg(fastent_chunk_state * st,
+                                const u8 * buf, sz len);
 #endif
 #ifdef HAVE_NEON
 void analyze_bits_neon(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -239,7 +242,8 @@ void analyze_bits_fold_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_bits_fold_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX512_BITALG
-void analyze_bits_fold_avx512_bitalg(fastent_chunk_state * st, const u8 * buf, sz len);
+void analyze_bits_fold_avx512_bitalg(fastent_chunk_state * st,
+                                     const u8 * buf, sz len);
 #endif
 #ifdef HAVE_NEON
 void analyze_bits_fold_neon(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -248,7 +252,8 @@ void analyze_bits_fold_neon(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_bits_fold_sve2(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_WASM128
-void analyze_bits_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
+void analyze_bits_fold_wasm128(fastent_chunk_state * st,
+                               const u8 * buf, sz len);
 #endif
 
 fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which);

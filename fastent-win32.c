@@ -210,7 +210,7 @@ int fastent_win32_open_utf8(const char * path, int flags) {
   return fd;
 }
 
-#else  /* FASTENT_WIN_LEGACY: Win95 narrow-API path */
+#else  /*  FASTENT_WIN_LEGACY: Win95 narrow-API path  */
 
 int fastent_win32_argv_utf8(int * argc_out, char *** argv_out) {
   (void) argc_out; (void) argv_out;
@@ -226,7 +226,7 @@ int fastent_win32_open_utf8(const char * path, int flags) {
   return _open(path, flags);
 }
 
-#endif  /* FASTENT_WIN_LEGACY */
+#endif  /*  FASTENT_WIN_LEGACY  */
 
 void fastent_win32_set_stdin_binary(void) {
   _setmode(_fileno(stdin), _O_BINARY);
@@ -375,7 +375,9 @@ void fastent_win32_set_console_sev(int sev) {
 void fastent_win32_mmap_prefetch(void * base, unsigned long long size) {
   /*  PrefetchVirtualMemory is Win 8+; resolve at runtime so this
       binary still loads on Vista/7.  */
-  typedef struct _FE_MEM_RANGE { PVOID VirtualAddress; SIZE_T NumberOfBytes; } FE_MEM_RANGE;
+  typedef struct _FE_MEM_RANGE {
+    PVOID VirtualAddress;  SIZE_T NumberOfBytes;
+  } FE_MEM_RANGE;
   typedef BOOL (WINAPI * PFN_PVM)(HANDLE, ULONG_PTR, FE_MEM_RANGE *, ULONG);
   static PFN_PVM pfn = NULL;
   static int     resolved = 0;

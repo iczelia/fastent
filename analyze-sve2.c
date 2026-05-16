@@ -136,10 +136,10 @@ void analyze_fold_sve2(fastent_chunk_state * st, const u8 * buf, sz len) {
 }
 
 static inline void sve2_consume_bit_byte(fastent_chunk_state * st, u8 b) {
-  const unsigned ones_in_byte = (unsigned) __builtin_popcount((unsigned) b);
+  const unsigned ones_in_byte = FASTENT_POPCOUNT32(b);
   st->bit_hist[1] += ones_in_byte;
   st->bit_hist[0] += 8u - ones_in_byte;
-  const unsigned within = (unsigned) __builtin_popcount((unsigned)(b & (b >> 1)));
+  const unsigned within = FASTENT_POPCOUNT32(b & (b >> 1));
   st->cross_product += (i64) within;
   if (st->have_carry) {
     const unsigned prev_lsb = (unsigned)(st->carry_byte & 1u);

@@ -240,7 +240,9 @@ static int avail_sse41_(void)   { return CPU_HAS(sse42); }
 static int avail_avx2_(void)    { return CPU_HAS(avx2); }
 #endif
 #ifdef HAVE_AVX512
-static int avail_avx512_(void)  { return CPU_HAS(avx512f) && CPU_HAS(avx512bw); }
+static int avail_avx512_(void) {
+  return CPU_HAS(avx512f) && CPU_HAS(avx512bw);
+}
 #endif
 #ifdef HAVE_AVX512_BITALG
 static int avail_avx512b_(void) {
