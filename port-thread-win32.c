@@ -103,4 +103,16 @@ void fastent_parallel_for(sz n, fastent_parfor_fn fn, void * ctx) {
   ReleaseSRWLockExclusive(&g_m);
 }
 
+struct fastent_mutex { SRWLOCK l; };
+
+fastent_mutex * fastent_mutex_create(void) {
+  fastent_mutex * x = (fastent_mutex *) malloc(sizeof(*x));
+  if (!x) return NULL;
+  InitializeSRWLock(&x->l);
+  return x;
+}
+void fastent_mutex_lock(fastent_mutex * m)   { AcquireSRWLockExclusive(&m->l); }
+void fastent_mutex_unlock(fastent_mutex * m) { ReleaseSRWLockExclusive(&m->l); }
+void fastent_mutex_destroy(fastent_mutex * m) { free(m); }
+
 #endif

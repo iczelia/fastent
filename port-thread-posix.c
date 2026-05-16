@@ -103,4 +103,19 @@ void fastent_parallel_for(sz n, fastent_parfor_fn fn, void * ctx) {
   pthread_mutex_unlock(&g_m);
 }
 
+struct fastent_mutex { pthread_mutex_t m; };
+
+fastent_mutex * fastent_mutex_create(void) {
+  fastent_mutex * x = (fastent_mutex *) malloc(sizeof(*x));
+  if (!x) return NULL;
+  if (pthread_mutex_init(&x->m, NULL) != 0) { free(x);  return NULL; }
+  return x;
+}
+void fastent_mutex_lock(fastent_mutex * m)   { pthread_mutex_lock(&m->m); }
+void fastent_mutex_unlock(fastent_mutex * m) { pthread_mutex_unlock(&m->m); }
+void fastent_mutex_destroy(fastent_mutex * m) {
+  if (!m) return;
+  pthread_mutex_destroy(&m->m);  free(m);
+}
+
 #endif

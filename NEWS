@@ -21,11 +21,13 @@ v1.2 (May 2026)
   annotated output; sortable via --sort-by=cond-entropy / mutual-info.
 
   The order-0 statistics keep full SIMD throughput; the level-2
-  reductions are a scalar pass split per slab across the -j workers
-  (mmap path) and merged with a boundary stitch, deterministic and
-  bit-identical across thread counts.  Stream and io_uring input is
-  single-threaded.  Byte mode uses four 64K u64 tables per worker
-  thread (2 MiB); bit mode is free.
+  reductions are split across the -j workers and merged with a
+  boundary stitch, deterministic and bit-identical across thread
+  counts.  All three input modes scale: mmap slices the resident
+  buffer per thread, while stream and io_uring use an SPMC pipeline
+  (one serialized read at a time, analysis in parallel).  Byte mode
+  uses four 64K u64 tables per worker thread (2 MiB); bit mode is
+  free.
 
   Extended statistics (-e / --extended)
   -------------------------------------

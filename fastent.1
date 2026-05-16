@@ -92,11 +92,11 @@ the adjacent mutual information
 .RB I( prev ; cur ),
 a longest identical-symbol run, a runs test, and a bit-mode cusum
 max excursion.  The order-0 statistics keep full SIMD throughput; the
-level-2 reductions are a scalar pass split per slab across the
+level-2 reductions are split across the
 .B \-j
-workers (mmap path) and merged with a boundary stitch, deterministic
-and bit-identical across thread counts.  Stream and io_uring input is
-single-threaded.  Byte mode keeps four 64K u64 tables per worker
+workers (per-slab on mmap, an SPMC pipeline on stream and io_uring)
+and merged with a boundary stitch, deterministic and bit-identical
+across thread counts.  Byte mode keeps four 64K u64 tables per worker
 thread (2 MiB); bit mode is free.
 .TP
 .BR \-a ", " \-\-annotate
@@ -122,13 +122,15 @@ worker threads (default 1).  Pass
 .B "\-j auto"
 to use one thread per online CPU
 .RB ( sysconf(_SC_NPROCESSORS_ONLN) ).
-Threading is only enabled on the mmap fast path; stdin and unmappable
-sources remain single-threaded.  Slab boundaries are aligned to
-multiples of six so the Monte Carlo \(*p state machine never crosses
-threads, and adjacent slab boundary products are stitched into the
-serial-correlation sum.  Output is byte-for-byte identical to the
-single-threaded run because all arithmetic is integer and the merge
-order is deterministic.
+Threading covers every input path: mmap slices the resident buffer
+into per-thread slabs, while stdin/stream and io_uring use an SPMC
+pipeline (one serialized read at a time, analysis in parallel).
+Blocks are aligned to multiples of six so the Monte Carlo \(*p state
+machine never crosses threads, and the boundary products, digram
+pair, longest run, bit runs and cusum walk are stitched in stream
+order.  Output is byte-for-byte identical to the single-threaded run
+because all arithmetic is integer and the merge order is
+deterministic.
 This option is present only when
 .B fastent
 was built with a thread backend; a single-threaded build omits both

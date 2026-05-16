@@ -46,16 +46,17 @@ with `-H`.
   across hosts and thread counts.  `--annotate` turns them into a
   per-metric PASS / WEAK / FAIL report with a headline verdict
 - order-1 bigram (`-ee`): conditional entropy `H(cur|prev)`, adjacent
-  mutual information `I(prev;cur)`, runs / longest-run / cusum; a
-  scalar pass split per slab across the `-j` workers (mmap path) and
-  merged with a boundary stitch, deterministic and bit-identical
-  across thread counts (~2 MiB/thread byte table, 2x2 in bit mode)
+  mutual information `I(prev;cur)`, runs / longest-run / cusum; split
+  across the `-j` workers and merged with a boundary stitch,
+  deterministic and bit-identical across thread counts (~2 MiB/thread
+  byte table, 2x2 in bit mode)
 - recursive mode (`-r DIR`): one CSV / JSON row per file, sortable via
   `--sort-by` (path, entropy, chisq, the extended columns, ...)
 - terminal histogram (`-H`) with Unicode block glyphs, optional log Y
   axis (`--log`), platform-native colouring
-- optional worker pool (pthread / Win32) over 6-aligned mmap slabs;
-  multi-threaded output byte-identical to `-j 1`
+- optional worker pool (pthread / Win32): mmap slabs or an SPMC
+  stream/io_uring pipeline, both 6-aligned; output byte-identical
+  to `-j 1`
 - faithfully-rounded, libm-free entropy (double-double Horner over a
   128-entry log table); bit-identical across libc / FPU
 - portable C99 sources: builds under gcc, clang, mingw-w64, DJGPP,
@@ -170,11 +171,12 @@ throughput for a 16-element zmm scatter on current x86 (Zen 3 / Zen
 ~0.5 c/B at the ROB-rate limit.
 
 Past the per-core compute ceiling, headroom comes from
-multi-threading.  Slabs are 6-aligned so the Monte Carlo Pi state
-machine never crosses threads, and adjacent slab boundary products
-are stitched into the serial-correlation sum at merge time.  `-j
-auto` resolves to `sysconf(_SC_NPROCESSORS_ONLN)` (GetSystemInfo on
-Windows).
+multi-threading, on every input path: mmap slabs, or an SPMC
+pipeline for stream/io_uring.  Blocks are 6-aligned so the Monte
+Carlo Pi state machine never crosses threads, and adjacent boundary
+products are stitched into the serial-correlation sum at merge time.
+`-j auto` resolves to `sysconf(_SC_NPROCESSORS_ONLN)` (GetSystemInfo
+on Windows).
 
 `make bench-quick` is a sub-minute smoke variant (64 MiB, 3 trials,
 `-j 1` and `-j nproc` only).  Override `SIZE_MB`, `RUNS`, `WARMUP`,

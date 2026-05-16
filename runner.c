@@ -178,6 +178,278 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
   free(states);
   free(bounds);
 }
+
+/*  SPMC stream/uring pipeline.  W consumers; whichever holds the
+    mutex performs the next serialized fastent_src_read (re-chunked
+    to a multiple of 6 so no Monte Carlo hexad straddles a block) and
+    claims the next seq, then processes its block lock-free.  Order-
+    independent sums fold into per-consumer accumulators; the order-
+    sensitive boundary quantities go into per-block edge records,
+    stitched in seq order afterwards with the same merge run_mmap_mt_
+    uses, so the result is bit-identical to the serial path and to
+    -j1.  */
+
+typedef struct {
+  u64 seq, n;
+  u8  raw_first, raw_last;        /*  digram / bit boundary  */
+  u8  o0_first, o0_last;          /*  order-0 SCC boundary   */
+  u64 lr_internal, lr_head_len, lr_tail_len;
+  u8  lr_head_sym, lr_tail_sym, lr_whole;
+  u64 rn_count;                   /*  bit mode               */
+  i64 cs_sum, cs_min, cs_max;     /*  bit mode               */
+  int mc_pos;  u8 mc_buf[6];      /*  trailing ring (final)  */
+} stream_edge;
+
+typedef struct {
+  fastent_source *   src;
+  fastent_mutex *    mtx;
+  fastent_analyze_fn fn;
+  int                extended, binary;
+  sz                 blocksz;
+  u64                next_seq;          /*  guarded by mtx  */
+  int                eof, err;          /*  guarded by mtx  */
+  const u8 *         stage;             /*  guarded by mtx  */
+  sz                 stage_len;
+  u8 **              bufs;
+  void **            bufs_raw;
+  int *              freelist;  int free_n;
+  stream_edge *      edges;  sz ne, ecap;
+  fastent_chunk_state * accs;           /*  W, per-consumer  */
+} stream_ctx;
+
+/*  Caller holds mtx.  Fills buf with blocksz bytes (multiple of 6),
+    or fewer at EOF; (sz)-1 on error.  Re-chunks the source's own
+    reads so a Monte Carlo hexad never straddles a block.  */
+static sz stream_fill_(stream_ctx * c, u8 * buf) {
+  sz filled = 0;
+  while (filled < c->blocksz) {
+    if (c->stage_len == 0) {
+      sz n = fastent_src_read(c->src);
+      if (n == (sz) -1) return (sz) -1;
+      if (n == 0) break;                /*  EOF: short final block  */
+      c->stage = c->src->stream_buf;  c->stage_len = n;
+    }
+    sz take = c->blocksz - filled;
+    if (take > c->stage_len) take = c->stage_len;
+    memcpy(buf + filled, c->stage, take);
+    filled += take;  c->stage += take;  c->stage_len -= take;
+  }
+  return filled;
+}
+
+static void stream_consumer_(sz k, void * vctx) {
+  stream_ctx * c = (stream_ctx *) vctx;
+  fastent_chunk_state * acc = &c->accs[k];
+  for (;;) {
+    fastent_mutex_lock(c->mtx);
+    if (c->eof || c->err) { fastent_mutex_unlock(c->mtx);  break; }
+    int bi = c->freelist[--c->free_n];
+    u8 * buf = c->bufs[bi];
+    sz got = stream_fill_(c, buf);
+    if (got == (sz) -1) {
+      c->err = errno ? errno : EIO;  c->freelist[c->free_n++] = bi;
+      fastent_mutex_unlock(c->mtx);  break;
+    }
+    if (got == 0) {
+      c->eof = 1;  c->freelist[c->free_n++] = bi;
+      fastent_mutex_unlock(c->mtx);  break;
+    }
+    u64 myseq = c->next_seq++;
+    fastent_mutex_unlock(c->mtx);
+
+    fastent_chunk_state blk;
+    fastent_chunk_state_init(&blk);
+    blk.bigram = acc->bigram;           /*  byte -ee: accumulate here  */
+    c->fn(&blk, buf, got);
+    if (c->extended >= 2)
+      fastent_digram_count(&blk, buf, got, c->binary);
+
+    Fi(FASTENT_BANKS, Fj(256, acc->bank[i][j] += blk.bank[i][j]))
+    acc->bit_hist[0] += blk.bit_hist[0];
+    acc->bit_hist[1] += blk.bit_hist[1];
+    acc->bit_bigram[0][0] += blk.bit_bigram[0][0];
+    acc->bit_bigram[0][1] += blk.bit_bigram[0][1];
+    acc->bit_bigram[1][0] += blk.bit_bigram[1][0];
+    acc->bit_bigram[1][1] += blk.bit_bigram[1][1];
+    acc->cross_product += blk.cross_product;
+    acc->mc_count  += blk.mc_count;
+    acc->mc_inside += blk.mc_inside;
+    acc->total_bytes += blk.total_bytes;
+
+    stream_edge e;
+    e.seq = myseq;  e.n = got;
+    e.raw_first = buf[0];  e.raw_last = buf[got - 1];
+    e.o0_first = blk.first_byte;  e.o0_last = blk.last_byte;
+    e.lr_internal = blk.lr_cur > blk.lr_max ? blk.lr_cur : blk.lr_max;
+    e.lr_head_sym = blk.lr_head_sym;  e.lr_head_len = blk.lr_head_len;
+    e.lr_tail_sym = blk.lr_sym;       e.lr_tail_len = blk.lr_cur;
+    e.lr_whole = blk.lr_head_open;
+    e.rn_count = blk.rn_count;
+    e.cs_sum = blk.cs_sum;  e.cs_min = blk.cs_min;  e.cs_max = blk.cs_max;
+    e.mc_pos = blk.mc_pos;  memcpy(e.mc_buf, blk.mc_buf, sizeof(e.mc_buf));
+
+    fastent_mutex_lock(c->mtx);
+    if (c->ne == c->ecap) {
+      sz nc = c->ecap ? c->ecap * 2 : 64;
+      stream_edge * grow =
+        (stream_edge *) realloc(c->edges, nc * sizeof(*grow));
+      if (!grow) {
+        c->err = ENOMEM;  c->freelist[c->free_n++] = bi;
+        fastent_mutex_unlock(c->mtx);  break;
+      }
+      c->edges = grow;  c->ecap = nc;
+    }
+    c->edges[c->ne++] = e;
+    c->freelist[c->free_n++] = bi;
+    fastent_mutex_unlock(c->mtx);
+  }
+}
+
+static int stream_edge_cmp_(const void * a, const void * b) {
+  u64 sa = ((const stream_edge *) a)->seq;
+  u64 sb = ((const stream_edge *) b)->seq;
+  return sa < sb ? -1 : sa > sb ? 1 : 0;
+}
+
+static void run_stream_mt_(fastent_chunk_state * out,
+                           const fastent_options * o,
+                           fastent_analyze_fn fn, fastent_source * src) {
+  int W = o->threads;
+  fastent_set_num_threads(W);
+  if (W < 2) {                          /*  no real pool: serial  */
+    for (;;) {
+      sz n = fastent_src_read(src);
+      if (n == (sz) -1) { perror("read");  exit(2); }
+      if (n == 0) break;
+      fn(out, src->stream_buf, n);
+      if (o->extended >= 2)
+        fastent_digram_count(out, src->stream_buf, n, o->binary);
+    }
+    return;
+  }
+
+  stream_ctx c;
+  memset(&c, 0, sizeof c);
+  c.src = src;  c.fn = fn;
+  c.extended = o->extended;  c.binary = o->binary;
+  c.blocksz = (FASTENT_STREAM_BUF / 6u) * 6u;
+  c.mtx = fastent_mutex_create();
+  if (!c.mtx) { fprintf(stderr, "out of memory\n"); exit(2); }
+
+  int P = W + 1;
+  c.bufs     = (u8 **) calloc((sz) P, sizeof(*c.bufs));
+  c.bufs_raw = (void **) calloc((sz) P, sizeof(*c.bufs_raw));
+  c.freelist = (int *) malloc((sz) P * sizeof(*c.freelist));
+  c.accs = (fastent_chunk_state *) calloc((sz) W, sizeof(*c.accs));
+  if (!c.bufs || !c.bufs_raw || !c.freelist || !c.accs) {
+    fprintf(stderr, "out of memory\n"); exit(2);
+  }
+  Fk(P,
+     void * raw = NULL;  void * user = NULL;
+     if (fastent_io_alloc_aligned(&raw, &user, c.blocksz) < 0) {
+       fprintf(stderr, "out of memory\n"); exit(2);
+     }
+     c.bufs[k] = (u8 *) user;  c.bufs_raw[k] = raw;
+     c.freelist[k] = k)
+  c.free_n = P;
+  if (o->extended >= 2 && !o->binary)
+    Fk(W,
+       c.accs[k].bigram = fastent_bigram_alloc();
+       if (!c.accs[k].bigram) { fprintf(stderr, "out of memory\n"); exit(2); })
+
+  fastent_parallel_for((sz) W, stream_consumer_, &c);
+
+  if (c.err) {
+    if (c.err == ENOMEM) fprintf(stderr, "out of memory\n");
+    else { errno = c.err;  perror("read"); }
+    exit(2);
+  }
+
+  /*  Order-independent sums.  */
+  Fk(W,
+     const fastent_chunk_state * a = &c.accs[k];
+     Fi(FASTENT_BANKS, Fj(256, out->bank[i][j] += a->bank[i][j]))
+     out->bit_hist[0] += a->bit_hist[0];
+     out->bit_hist[1] += a->bit_hist[1];
+     out->bit_bigram[0][0] += a->bit_bigram[0][0];
+     out->bit_bigram[0][1] += a->bit_bigram[0][1];
+     out->bit_bigram[1][0] += a->bit_bigram[1][0];
+     out->bit_bigram[1][1] += a->bit_bigram[1][1];
+     out->cross_product += a->cross_product;
+     out->mc_count  += a->mc_count;
+     out->mc_inside += a->mc_inside;
+     out->total_bytes += a->total_bytes;
+     if (out->bigram && a->bigram)
+       Fi((int) FASTENT_BG_CELLS, out->bigram[i] += a->bigram[i]))
+
+  qsort(c.edges, c.ne, sizeof(*c.edges), stream_edge_cmp_);
+
+  /*  Ordered boundary stitch (same algebra as run_mmap_mt_).  */
+  u64 lr_gmax = 0, carry_len = 0;
+  unsigned carry_sym = 0;
+  int have_run = 0;
+  i64 cs_off = 0, cs_min = 0, cs_max = 0;
+  for (sz i = 0; i < c.ne; i++) {
+    const stream_edge * e = &c.edges[i];
+    if (out->have_carry) {
+      out->cross_product += (i64) out->carry_byte * (i64) e->o0_first;
+      if (out->bigram)
+        out->bigram[((unsigned) c.edges[i - 1].raw_last << 8)
+                    | e->raw_first]++;
+      if (o->binary && o->extended >= 2) {
+        const unsigned pb = c.edges[i - 1].raw_last & 1u;
+        const unsigned cb = (e->raw_first >> 7) & 1u;
+        out->bit_bigram[pb][cb]++;
+        if (pb == cb) out->rn_count--;
+      }
+    } else {
+      out->first_byte = e->o0_first;  out->have_first = 1;
+    }
+    out->carry_byte = e->o0_last;  out->last_byte = e->o0_last;
+    out->have_carry = 1;
+
+    if (o->extended >= 2) {
+      const u64 imax = e->lr_internal;
+      if (imax > lr_gmax) lr_gmax = imax;
+      if (have_run && carry_sym == e->lr_head_sym) {
+        const u64 j = carry_len + e->lr_head_len;
+        if (j > lr_gmax) lr_gmax = j;
+        if (e->lr_whole) carry_len = j;
+        else { carry_sym = e->lr_tail_sym;  carry_len = e->lr_tail_len; }
+      } else {
+        if (have_run && carry_len > lr_gmax) lr_gmax = carry_len;
+        if (e->lr_whole) { carry_sym = e->lr_head_sym;
+                           carry_len = e->lr_head_len; }
+        else { carry_sym = e->lr_tail_sym;  carry_len = e->lr_tail_len; }
+        have_run = 1;
+      }
+      if (o->binary) {
+        out->rn_count += e->rn_count;  out->rn_have = 1;
+        if (cs_off + e->cs_min < cs_min) cs_min = cs_off + e->cs_min;
+        if (cs_off + e->cs_max > cs_max) cs_max = cs_off + e->cs_max;
+        cs_off += e->cs_sum;
+      }
+    }
+  }
+  if (c.ne) {     /*  trailing MC ring lives in the final block  */
+    out->mc_pos = c.edges[c.ne - 1].mc_pos;
+    memcpy(out->mc_buf, c.edges[c.ne - 1].mc_buf, sizeof(out->mc_buf));
+  }
+  if (o->extended >= 2 && have_run) {
+    if (carry_len > lr_gmax) lr_gmax = carry_len;
+    out->lr_have = 1;  out->lr_max = lr_gmax;  out->lr_cur = 0;
+  }
+  if (o->extended >= 2 && o->binary) {
+    out->cs_min = cs_min;  out->cs_max = cs_max;  out->cs_sum = cs_off;
+  }
+
+  if (o->extended >= 2 && !o->binary)
+    Fk(W, fastent_bigram_free(c.accs[k].bigram))
+  Fk(P, free(c.bufs_raw[k]))
+  free(c.bufs);  free(c.bufs_raw);  free(c.freelist);
+  free(c.accs);  free(c.edges);
+  fastent_mutex_destroy(c.mtx);
+}
 #endif
 
 void fastent_run_mmap(fastent_chunk_state * st, const fastent_options * o,
@@ -211,6 +483,14 @@ void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
   fastent_analyze_fn body = o->binary
     ? (o->fold ? fn_bits_fold : fn_bits)
     : (o->fold ? fn_byte_fold : fn_byte);
+
+#ifdef FASTENT_HAVE_THREADS
+  if (o->threads > 1) {
+    run_stream_mt_(st, o, body, src);
+    return;
+  }
+#endif
+
   for (;;) {
     sz n = fastent_src_read(src);
     if (n == (sz) -1) {
