@@ -186,11 +186,53 @@ check "uniform -e: min-entropy = 8.000000" bash -c '
     grep -qE "Collision entropy is 8\.000000 bits per byte\." <<< "$out"
 '
 
-check "terse -e: 30 columns" bash -c '
+check "terse -e: 32 columns" bash -c '
   out=$('"${FASTENT}"' -e -t "'"${FIX}"'/lcg.bin")
   grep -q "Min-Entropy,Collision-Entropy,IC,Poker,Poker-p," <<< "$out" &&
-    grep -q "Bit0,Bit1,Bit2,Bit3,Bit4,Bit5,Bit6,Bit7,Bit-Bias-Max,Bit-Bias-Worst" <<< "$out" &&
-    [ "$(printf "%s\n" "$out" | sed -n 2p | tr , "\n" | wc -l)" -eq 30 ]
+    grep -q "Bit-Bias-Max,Bit-Bias-Worst,Conditional-Entropy,Mutual-Information" <<< "$out" &&
+    [ "$(printf "%s\n" "$out" | sed -n 2p | tr , "\n" | wc -l)" -eq 32 ]
+'
+
+check "no -ee: bigram fields are nan" bash -c '
+  out=$('"${FASTENT}"' -e -t "'"${FIX}"'/lcg.bin")
+  printf "%s\n" "$out" | sed -n 2p | awk -F, "{ exit !(\$31==\"nan\" && \$32==\"nan\") }"
+'
+
+check "-ee text: low cond-entropy, high MI" bash -c '
+  out=$('"${FASTENT}"' -ee --json "'"${FIX}"'/lcg.bin")
+  python3 -c "import json,sys
+d=json.load(sys.stdin)
+ce=d[\"conditional_entropy\"]; mi=d[\"mutual_information\"]; h0=d[\"entropy\"]
+assert ce is not None and mi is not None
+assert ce <= h0 + 1e-9 and mi >= -1e-9" <<< "$out"
+'
+
+check "-ee uniform: cond ~ H0, MI ~ 0" bash -c '
+  out=$('"${FASTENT}"' -ee --json "'"${FIX}"'/uniform.bin")
+  python3 -c "import json,sys
+d=json.load(sys.stdin)
+assert abs(d[\"conditional_entropy\"]-d[\"entropy\"]) < 0.05
+assert abs(d[\"mutual_information\"]) < 0.05" <<< "$out"
+'
+
+check "-ee determinism j1 == j4" bash -c '
+  a=$('"${FASTENT}"' -ee -t -j 1 "'"${FIX}"'/lcg.bin")
+  b=$('"${FASTENT}"' -ee -t -j 4 "'"${FIX}"'/lcg.bin")
+  [ "$a" = "$b" ]
+'
+
+check "-ee bit mode: 2x2 computed" bash -c '
+  out=$('"${FASTENT}"' -ee -b --json "'"${FIX}"'/lcg.bin")
+  python3 -c "import json,sys
+d=json.load(sys.stdin)
+assert d[\"conditional_entropy\"] is not None and d[\"mutual_information\"] is not None" <<< "$out"
+'
+
+check "-ee all-zeros: cond 0, MI 0" bash -c '
+  out=$('"${FASTENT}"' -ee --json "'"${FIX}"'/all-zeros.bin")
+  python3 -c "import json,sys
+d=json.load(sys.stdin)
+assert d[\"conditional_entropy\"]==0.0 and d[\"mutual_information\"]==0.0" <<< "$out"
 '
 
 check "uniform -e: bit balance perfect" bash -c '

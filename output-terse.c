@@ -23,7 +23,8 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
     printf(",Min-Entropy,Collision-Entropy,IC,Poker,Poker-p,Variance,Stddev,"
            "Redundancy,Distinct,Mode,Mode-Count,Rarest,Rarest-Count,"
            "Bit0,Bit1,Bit2,Bit3,Bit4,Bit5,Bit6,Bit7,"
-           "Bit-Bias-Max,Bit-Bias-Worst");
+           "Bit-Bias-Max,Bit-Bias-Worst,"
+           "Conditional-Entropy,Mutual-Information");
   putchar('\n');
 
   const char * f = o->full_precision ? "%.17g" : "%f";
@@ -51,6 +52,8 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
     Fi(8, putchar(','); printf(f, r->bit_freq[i]))
     putchar(','); printf(f, r->bit_bias_max);
     printf(",%d", r->bit_bias_worst);
+    putchar(','); printf(f, r->conditional_entropy);
+    putchar(','); printf(f, r->mutual_information);
   }
   putchar('\n');
   if (o->counts) print_counts_(r, o->binary);

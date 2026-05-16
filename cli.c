@@ -49,6 +49,10 @@ void fastent_print_help(void) {
   printf("                                     collision entropy / IC, poker\n");
   printf("                                     test, variance, distinct,\n");
   printf("                                     per-bit-position bias, etc.\n");
+  printf("                                     Repeatable: -ee (level 2)\n");
+  printf("                                     adds the order-1 bigram\n");
+  printf("                                     H(cur|prev) + mutual info\n");
+  printf("                                     (scalar single pass).\n");
   printf("           -a,  --annotate           Interpretive pass/fail report\n");
   printf("                                     (implies --extended)\n");
   printf("           -i,  --io=MODE            auto (default), mmap, stream,\n");
@@ -114,15 +118,23 @@ static int parse_sort_by_(const char * arg, fastent_options * o) {
   else if (!strcmp(buf, "redundancy"))  col = FASTENT_SORT_REDUNDANCY;
   else if (!strcmp(buf, "distinct"))    col = FASTENT_SORT_DISTINCT;
   else if (!strcmp(buf, "bitbias"))     col = FASTENT_SORT_BIT_BIAS;
+  else if (!strcmp(buf, "cond-entropy")) col = FASTENT_SORT_COND_ENTROPY;
+  else if (!strcmp(buf, "mutual-info"))  col = FASTENT_SORT_MUTUAL_INFO;
   else {
     fprintf(stderr, "--sort-by column must be one of: path samples entropy "
                     "chisq mean pi scc min-entropy collision ic poker "
-                    "variance redundancy distinct bitbias\n");
+                    "variance redundancy distinct bitbias cond-entropy "
+                    "mutual-info\n");
     return -1;
   }
   o->sort_by = (int) col;
-  /*  Sorting by an extended column implies the columns are emitted.  */
-  if (col >= FASTENT_SORT_MIN_ENTROPY) o->extended = 1;
+  /*  Sorting by an extended column implies it is emitted; the bigram
+      columns need the -ee (level 2) analysis.  */
+  if (col >= FASTENT_SORT_COND_ENTROPY) {
+    if (o->extended < 2) o->extended = 2;
+  } else if (col >= FASTENT_SORT_MIN_ENTROPY) {
+    if (o->extended < 1) o->extended = 1;
+  }
   if (o->sort_desc == -1) o->sort_desc = (col == FASTENT_SORT_PATH) ? 0 : 1;
   return 0;
 }
@@ -191,8 +203,8 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
       case 'p': o->full_precision = 1; break;
       case 'H': o->histogram = 1; break;
       case 'l': o->histogram_log = 1; break;
-      case 'e': o->extended = 1; break;
-      case 'a': o->annotate = 1; o->extended = 1; break;
+      case 'e': o->extended++; break;   /*  -e level (repeatable; -ee = bigram)  */
+      case 'a': o->annotate = 1; if (o->extended < 1) o->extended = 1; break;
       case 'r': o->recursive = 1; break;
       case 'C':
         if      (v && !strcmp(v, "auto"))   o->color = 1;

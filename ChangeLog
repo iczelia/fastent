@@ -1,3 +1,57 @@
+2026-05-16  Kamila Szewczyk  <k@iczelia.net>
+
+	v1.2:  extended statistics, faithfully-rounded log2 family,
+	yarg argument parser, histogram axis fixes, order-1 bigram.
+
+	Extended statistics (-e / --extended), all derived at
+	finalisation from the histogram and running sums at no
+	per-byte cost, bit-identical across hosts and thread counts:
+	  - min-entropy (H-infinity), collision entropy (H2) and
+	    index of coincidence.
+	  - poker test: 16-bin nibble chi-square, df = 15, generalised
+	    from the byte histogram.
+	  - variance / standard deviation, redundancy, distinct-symbol
+	    count, most / least common symbol.
+	  - per-bit-position bias P(bit k = 1): exposes structured
+	    binary (dead high bits, ASCII bit 7) that order-0 entropy
+	    and chi-square miss.
+	  - surfaced in default / terse / JSON / recursive output;
+	    new --sort-by columns; --annotate interpretive PASS / WEAK
+	    / FAIL report with a headline verdict.
+
+	Order-1 bigram (-ee, repeat -e):
+	  - conditional entropy H(cur|prev) and adjacent mutual
+	    information I(prev;cur); exposes order-1 structure the
+	    order-0 measures and the linear SCC miss.
+	  - single scalar pass, deterministic, sum-mergeable; padded
+	    256x256 u64 shadow planes per thread (byte mode, ~1 MiB),
+	    2x2 in bit mode.
+
+	Numerics:
+	  - chi-square upper tail generalised to any odd df
+	    (fastent_chisq_tail_df); df = 1 / 255 paths unchanged and
+	    bit-identical.
+	  - faithfully-rounded, libm-free fastent_log2 family
+	    (fastent_log2, _ge1, _ratio, _fast) factored from the
+	    entropy core; min / collision entropy use it directly
+	    instead of the prior multiply-then-divide round trip.
+	    Shannon entropy stays bit-identical.
+
+	Command line:
+	  - argument parsing moved to the vendored single-header yarg
+	    (github.com/iczelia/yarg), fetched and SHA-256-pinned by
+	    ./bootstrap so the zero-dependency / tarball build is
+	    preserved.
+	  - new short aliases -J/--json, -a/--annotate, -i/--io,
+	    -l/--log, -C/--color.  -e/--extended is repeatable
+	    (-ee = order-1 bigram).  --no-mmap removed (use
+	    --io=stream); --color now requires an explicit mode.
+	  - -j / --threads present only in builds with a thread
+	    backend; rejected as unknown otherwise.
+	  - all non --full-precision output kept within 80 columns;
+	    histogram X-axis labels aligned under their ticks and a
+	    Y-axis scale added.
+
 2026-05-15  Kamila Szewczyk  <k@iczelia.net>
 
 	v1.1:  recursive mode, AArch64 NEON / SVE2, AVX-512 BITALG,

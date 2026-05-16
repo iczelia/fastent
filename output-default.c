@@ -146,4 +146,15 @@ void fastent_print_default(const fastent_result * r, const fastent_options * o) 
               : "Worst bit is %d (bias %.4f from 0.5).\n",
            r->bit_bias_worst, r->bit_bias_max);
   }
+
+  if (r->conditional_entropy != r->conditional_entropy) {
+    printf("Order-1 bigram stats: pass -ee to compute them.\n");
+  } else {
+    printf(fp ? "Conditional entropy H(cur|prev) is %.17g bits per %s.\n"
+              : "Conditional entropy H(cur|prev) is %f bits per %s.\n",
+           r->conditional_entropy, samp);
+    printf(fp ? "Adjacent mutual information I(prev;cur) is %.17g bits.\n"
+              : "Adjacent mutual information I(prev;cur) is %f bits.\n",
+           r->mutual_information);
+  }
 }

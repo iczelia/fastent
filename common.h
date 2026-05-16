@@ -119,7 +119,7 @@ typedef double   f64;
   #define FASTENT_MAJOR 1
 #endif
 #ifndef FASTENT_MINOR
-  #define FASTENT_MINOR 0
+  #define FASTENT_MINOR 2
 #endif
 
 #define FASTENT_STR_(x) #x

@@ -17,8 +17,12 @@ mean, Monte Carlo value of pi, and serial correlation coefficient.
 With `-e` it additionally reports min-entropy, collision entropy and
 index of coincidence, a poker test (16-bin nibble chi-square, df=15),
 variance and standard deviation, redundancy, the distinct-symbol count,
-the most/least common symbol, and the per-bit-position bias.  Byte mode by default; bit mode under
-`-b`.  Output formats: human-readable, CSV (`-t`), JSON (`-J`), and
+the most/least common symbol, and the per-bit-position bias.  Repeating
+the flag (`-ee`) adds the order-1 bigram conditional entropy
+`H(cur|prev)` and adjacent mutual information `I(prev;cur)`, which expose
+order-1 structure (text, code, many binary formats) that the order-0
+measures and the linear serial correlation miss.  Byte mode by default;
+bit mode under `-b`.  Output formats: human-readable, CSV (`-t`), JSON (`-J`), and
 an interpretive pass/fail report (`-a`/`--annotate`); add a per-value
 occurrence table with `-c` or a terminal block-plot of the histogram
 with `-H`.
@@ -49,9 +53,14 @@ with `-H`.
   ASCII bit 7) that order-0 entropy and chi-square miss.  `--annotate` turns
   them into a per-metric PASS / WEAK / FAIL report with a headline
   verdict
+- order-1 bigram (`-ee`): conditional entropy `H(cur|prev)` and adjacent
+  mutual information `I(prev;cur)`, a real second-order statistic
+  (single scalar pass, deterministic, bit-identical across thread
+  counts; ~1 MiB/thread byte table, 2x2 in bit mode)
 - recursive mode (`-r DIR`) walks a directory and emits one CSV / JSON
   row per file, with `--sort-by={path,samples,entropy,chisq,mean,pi,scc,`
-  `min-entropy,collision,ic,poker,variance,redundancy,distinct,bitbias}`
+  `min-entropy,collision,ic,poker,variance,redundancy,distinct,bitbias,`
+  `cond-entropy,mutual-info}`
 - terminal histogram visualisation (`-H`) with Unicode block glyphs,
   optional log Y axis (`--log`), and platform-native colouring
   (ANSI / `SetConsoleTextAttribute` / DJGPP `<conio.h>`)

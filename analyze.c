@@ -8,10 +8,21 @@
 #include "port-cpu.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 void fastent_chunk_state_init(fastent_chunk_state * st) {
   memset(st, 0, sizeof(*st));
+}
+
+/*  Order-1 bigram shadow planes (zeroed).  NULL return = OOM; caller
+    reports and exits.  Freed via fastent_bigram_free.  */
+u64 * fastent_bigram_alloc(void) {
+  return (u64 *) calloc((sz) FASTENT_BG_CELLS, sizeof(u64));
+}
+
+void fastent_bigram_free(u64 * bg) {
+  free(bg);
 }
 
 void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
@@ -147,6 +158,56 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
        if (d > worst) { worst = d; wk = i; })
     out->bit_bias_max   = worst;
     out->bit_bias_worst = wk;
+  }
+
+  /*  Order-1 bigram: conditional entropy H(cur|prev) and adjacent
+      mutual information I(prev;cur).  Byte mode (-ee) collapses the NB
+      256x256 shadow planes; bit mode (-ee -b) reads the tiny 2x2
+      bit_bigram.  Both reduce to H_joint - H_prev and
+      H_prev + H_cur - H_joint, all logs via fastent_entropy_term
+      (faithful, libm-free, bit-identical), as the order-0 entropy.
+      The loop is once-per-file and cheap.  */
+  out->conditional_entropy = out->mutual_information = NAN;
+  if (!binary && st->bigram && out->total_samples >= 2) {
+    u64 R[256], S[256];
+    memset(R, 0, sizeof R);
+    memset(S, 0, sizeof S);
+    f64 M = 0.0;
+    Fi(256, Fj(256,
+       const u64 c = FASTENT_BG_AT(st->bigram, 0, i, j)
+                   + FASTENT_BG_AT(st->bigram, 1, i, j);
+       if (c) { R[i] += c; S[j] += c; M += (f64) c; }))
+    if (M >= 1.0) {
+      f64 hj = 0.0, hp = 0.0, hc = 0.0;
+      Fi(256, Fj(256,
+         const u64 c = FASTENT_BG_AT(st->bigram, 0, i, j)
+                     + FASTENT_BG_AT(st->bigram, 1, i, j);
+         if (c) hj += fastent_entropy_term((f64) c / M)))
+      Fi(256,
+         if (R[i]) hp += fastent_entropy_term((f64) R[i] / M);
+         if (S[i]) hc += fastent_entropy_term((f64) S[i] / M))
+      out->conditional_entropy = hj - hp;          /*  H(cur|prev)  */
+      out->mutual_information  = hp + hc - hj;      /*  I(prev;cur)  */
+    }
+  } else if (binary) {
+    const u64 c00 = st->bit_bigram[0][0], c01 = st->bit_bigram[0][1];
+    const u64 c10 = st->bit_bigram[1][0], c11 = st->bit_bigram[1][1];
+    const f64 M = (f64) c00 + (f64) c01 + (f64) c10 + (f64) c11;
+    if (M >= 1.0) {          /*  all-zero => -ee bit mode did not run  */
+      const u64 R0 = c00 + c01, R1 = c10 + c11;   /*  prev marginal  */
+      const u64 S0 = c00 + c10, S1 = c01 + c11;   /*  cur  marginal  */
+      f64 hj = 0.0, hp = 0.0, hc = 0.0;
+      if (c00) hj += fastent_entropy_term((f64) c00 / M);
+      if (c01) hj += fastent_entropy_term((f64) c01 / M);
+      if (c10) hj += fastent_entropy_term((f64) c10 / M);
+      if (c11) hj += fastent_entropy_term((f64) c11 / M);
+      if (R0)  hp += fastent_entropy_term((f64) R0 / M);
+      if (R1)  hp += fastent_entropy_term((f64) R1 / M);
+      if (S0)  hc += fastent_entropy_term((f64) S0 / M);
+      if (S1)  hc += fastent_entropy_term((f64) S1 / M);
+      out->conditional_entropy = hj - hp;
+      out->mutual_information  = hp + hc - hj;
+    }
   }
 }
 

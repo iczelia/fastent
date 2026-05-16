@@ -21,7 +21,9 @@ typedef enum {
   FASTENT_SORT_VARIANCE,
   FASTENT_SORT_REDUNDANCY,
   FASTENT_SORT_DISTINCT,
-  FASTENT_SORT_BIT_BIAS
+  FASTENT_SORT_BIT_BIAS,
+  FASTENT_SORT_COND_ENTROPY,
+  FASTENT_SORT_MUTUAL_INFO
 } fastent_sort_by;
 
 typedef struct {
@@ -37,7 +39,9 @@ typedef struct {
   int color;          /*  --color={auto,always,never}, 0=never 1=auto 2=always  */
   int threads;        /*  -j / --threads  (0 = auto, 1 = default)  */
   int recursive;      /*  -r / --recursive  */
-  int extended;       /*  -e / --extended (emit the extended stats)  */
+  int extended;       /*  -e / --extended level (repeatable): >=1 emits
+                          the extended stats; >=2 (-ee) also computes the
+                          order-1 bigram H(cur|prev)+MI  */
   int annotate;       /*  --annotate (interpretive report; implies -e)  */
   int sort_by;        /*  --sort-by=COL, value from fastent_sort_by  */
   int sort_desc;      /*  1 = descending; 0 = ascending  */

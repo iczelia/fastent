@@ -5,7 +5,27 @@ This file contains user-visible changes for each release.  For a
 complete source-level history, see the ChangeLog.
 
 -------------------------------------------------------------------------------
-Unreleased
+v1.2 (May 2026)
+
+  Order-1 bigram statistics (-ee)
+  -------------------------------
+
+  -e / --extended is now repeatable.  Passing it twice (-ee, -e -e,
+  or --extended --extended) additionally computes the order-1 bigram
+  conditional entropy H(cur|prev) and adjacent mutual information
+  I(prev;cur), exposing order-1 structure (natural-language text,
+  source code, many binary formats) that the order-0 measures and the
+  linear serial-correlation coefficient miss.  Reported in the default,
+  terse, JSON, recursive and annotated output; sortable via
+  --sort-by=cond-entropy / mutual-info.  Unlike the level-1 stats this
+  is a genuine second statistic with a per-symbol cost: it runs a
+  scalar single pass (the 256x256 byte joint-count scatter does not
+  vectorise; bit mode uses a 2x2 table), so an -ee invocation forgoes
+  the SIMD analyser for that run only.  It stays single-pass,
+  deterministic and bit-identical across thread counts.  Byte mode
+  uses a padded 256x256 u64 table per worker thread (about 1 MiB);
+  bit mode is free.  All logarithms use the existing
+  faithfully-rounded, libm-free entropy term.
 
   Extended statistics (-e / --extended)
   -------------------------------------

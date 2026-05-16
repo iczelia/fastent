@@ -36,7 +36,8 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
     fputs(",min_entropy,collision_entropy,ic,poker,poker_p,variance,stddev,"
           "redundancy,distinct,mode,mode_count,rarest,rarest_count,"
           "bit0,bit1,bit2,bit3,bit4,bit5,bit6,bit7,"
-          "bit_bias_max,bit_bias_worst", stdout);
+          "bit_bias_max,bit_bias_worst,"
+          "conditional_entropy,mutual_information", stdout);
   putchar('\n');
   for (sz i = 0; i < n; i++) {
     const fastent_recursive_row * r = &rows[i];
@@ -67,6 +68,8 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
       Fi(8, putchar(','); printf(f, r->result.bit_freq[i]))
       putchar(','); printf(f, r->result.bit_bias_max);
       printf(",%d", r->result.bit_bias_worst);
+      putchar(','); printf(f, r->result.conditional_entropy);
+      putchar(','); printf(f, r->result.mutual_information);
     }
     putchar('\n');
   }
@@ -162,6 +165,10 @@ void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
         printf("{ \"max\": "); json_num_(f, r->result.bit_bias_max);
         printf(", \"worst_bit\": %d }", r->result.bit_bias_worst);
       }
+      fputs(", \"conditional_entropy\": ", stdout);
+      json_num_(f, r->result.conditional_entropy);
+      fputs(", \"mutual_information\": ", stdout);
+      json_num_(f, r->result.mutual_information);
     }
     fputs(" }", stdout);
     if (i + 1 < n) putchar(',');

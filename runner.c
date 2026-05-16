@@ -19,6 +19,7 @@ typedef struct {
   const u64 *    bounds;     /*  N+1 entries, multiples of 6 except last  */
   fastent_chunk_state * states;
   fastent_analyze_fn fn;
+  int            want_bigram;
 } mt_ctx;
 
 static void mt_worker_(sz k, void * vctx) {
@@ -26,6 +27,10 @@ static void mt_worker_(sz k, void * vctx) {
   u64 start = c->bounds[k];
   u64 end   = c->bounds[k + 1];
   fastent_chunk_state_init(&c->states[k]);
+  if (c->want_bigram) {
+    c->states[k].bigram = fastent_bigram_alloc();
+    if (!c->states[k].bigram) { fprintf(stderr, "out of memory\n"); exit(2); }
+  }
   c->fn(&c->states[k], c->data + start, (sz)(end - start));
 }
 
@@ -49,7 +54,8 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
   fastent_chunk_state * states = (fastent_chunk_state *) calloc((sz) N, sizeof(*states));
   if (!states) { fprintf(stderr, "out of memory\n"); exit(2); }
 
-  mt_ctx ctx = { data, bounds, states, fn };
+  mt_ctx ctx = { data, bounds, states, fn,
+                 out->bigram != NULL };
   fastent_parallel_for((sz) N, mt_worker_, &ctx);
 
   /*  Merge slabs: adjacent slab pairs contribute b[end-1] *
@@ -63,8 +69,25 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
      Fi(FASTENT_BANKS, Fj(256, out->bank[i][j] += s->bank[i][j]))
      out->bit_hist[0] += s->bit_hist[0];
      out->bit_hist[1] += s->bit_hist[1];
+     if (out->bigram && s->bigram) {
+       sz t;
+       for (t = 0; t < (sz) FASTENT_BG_CELLS; t++)
+         out->bigram[t] += s->bigram[t];
+     }
+     out->bit_bigram[0][0] += s->bit_bigram[0][0];
+     out->bit_bigram[0][1] += s->bit_bigram[0][1];
+     out->bit_bigram[1][0] += s->bit_bigram[1][0];
+     out->bit_bigram[1][1] += s->bit_bigram[1][1];
      if (out->have_carry) {
        out->cross_product += (i64) out->carry_byte * (i64) s->first_byte;
+       /*  Linear boundary pair (last symbol of prev slab, first of
+           this slab), once per adjacency, no wrap.  Byte mode: fixed
+           plane 0 of the 256x256 table.  Bit mode: the 2x2 table,
+           carry/first hold single bits.  */
+       if (out->bigram)
+         FASTENT_BG_AT(out->bigram, 0, out->carry_byte, s->first_byte)++;
+       if (o->binary)
+         out->bit_bigram[out->carry_byte & 1u][s->first_byte & 1u]++;
      } else {
        out->first_byte = s->first_byte;
        out->have_first = 1;
@@ -83,6 +106,7 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
        memcpy(out->mc_buf, s->mc_buf, sizeof(out->mc_buf));
      })
 
+  Fk(N, fastent_bigram_free(states[k].bigram))
   free(states);
   free(bounds);
 }
@@ -153,6 +177,10 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
 
   fastent_chunk_state st;
   fastent_chunk_state_init(&st);
+  if (c->o->extended >= 2 && !c->o->binary) {
+    st.bigram = fastent_bigram_alloc();
+    if (!st.bigram) { fprintf(stderr, "out of memory\n"); exit(2); }
+  }
   if (src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, c->o, c->fn_byte, c->fn_bits,
                      c->fn_byte_fold, c->fn_bits_fold,
@@ -165,6 +193,7 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
 
   fastent_result r;
   fastent_finalize(&st, c->o->binary, &r);
+  fastent_bigram_free(st.bigram);
 
   if (c->count == c->cap) {
     sz nc = c->cap ? c->cap * 2 : 32;
@@ -237,6 +266,8 @@ static double row_key_(const fastent_recursive_row * r) {
     case FASTENT_SORT_REDUNDANCY: return r->result.redundancy;
     case FASTENT_SORT_DISTINCT:   return (double) r->result.distinct;
     case FASTENT_SORT_BIT_BIAS:   return r->result.bit_bias_max;
+    case FASTENT_SORT_COND_ENTROPY: return r->result.conditional_entropy;
+    case FASTENT_SORT_MUTUAL_INFO:  return r->result.mutual_information;
     default:                      return 0.0;
   }
 }

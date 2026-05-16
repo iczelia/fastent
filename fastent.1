@@ -1,6 +1,6 @@
 .\" Manual page for fastent.
 .\" Copyright (C) 2026 Kamila Szewczyk.  GPLv3-only.
-.TH FASTENT 1 "May 2026" "fastent 1.1" "User Commands"
+.TH FASTENT 1 "May 2026" "fastent 1.2" "User Commands"
 
 .SH NAME
 fastent \- pseudorandom byte stream entropy and randomness tester
@@ -86,6 +86,26 @@ the output is byte-for-byte the classic format.  All extended
 quantities are derived at finalisation from the histogram and the
 running sums, so they add no per-byte cost and remain bit-identical
 across hosts and thread counts.
+.IP
+.B \-e
+is repeatable.  Passing it twice
+.RB ( \-ee ", " "or " \-e\~\-e ", or " \-\-extended\~\-\-extended )
+additionally computes the order-1 bigram statistics: the conditional
+entropy
+.RB H( cur | prev )
+and the adjacent mutual information
+.RB I( prev ; cur ).
+These expose order-1 structure (natural-language text, source code,
+many binary formats) that is invisible to the order-0 measures and to
+the linear serial-correlation coefficient.  Unlike the level-1 stats
+this is a real second statistic with a per-symbol cost: it runs a
+scalar single pass (the 256-by-256 byte joint-count scatter does not
+vectorise; bit mode uses a 2-by-2 table), so an
+.B \-ee
+run forgoes the SIMD analyser for that invocation.  It stays
+single-pass, deterministic and bit-identical across thread counts.
+Byte mode keeps a padded 256-by-256 u64 table per worker thread
+(about 1 MiB); bit mode is free.
 .TP
 .BR \-a ", " \-\-annotate
 Render an interpretive report instead of the plain text: every metric
@@ -196,9 +216,16 @@ Sort the rows in recursive mode.
 is one of
 .BR path ", " samples ", " entropy ", " chisq ", " mean ", " pi ", " scc ", "
 .BR min-entropy ", " collision ", " ic ", " poker ", " variance ", "
-.BR redundancy ", " distinct ", " bitbias .
+.BR redundancy ", " distinct ", " bitbias ", "
+.BR cond-entropy ", " mutual-info .
 Selecting any of the extended columns implies
-.BR \-e .
+.BR \-e ;
+the
+.B cond-entropy
+and
+.B mutual-info
+columns imply
+.BR \-ee .
 .I DIR
 is
 .B asc
@@ -307,7 +334,8 @@ recursive CSV rows gain, in order,
 .BR Min-Entropy ", " Collision-Entropy ", " IC ", " Poker ", " Poker-p ", "
 .BR Variance ", " Stddev ", " Redundancy ", " Distinct ", " Mode ", "
 .BR Mode-Count ", " Rarest ", " Rarest-Count ", "
-.BR Bit0 .. Bit7 ", " Bit-Bias-Max ", " Bit-Bias-Worst .
+.BR Bit0 .. Bit7 ", " Bit-Bias-Max ", " Bit-Bias-Worst ", "
+.BR Conditional-Entropy ", " Mutual-Information .
 The JSON object gains
 .BR min_entropy ", " collision_entropy ", " index_of_coincidence ", "
 a
@@ -326,6 +354,14 @@ in bit mode) and the
 .B bit_bias
 sub-object
 .RB ( max ", " worst_bit ).
+With
+.B \-ee
+the
+.B conditional_entropy
+and
+.B mutual_information
+fields are populated (otherwise
+.BR null ).
 In
 .BR \-\-annotate
 mode the plain text is replaced by an aligned table: one row per
@@ -474,7 +510,13 @@ Each worker thread under
 holds a small per-slab accumulator (a few KiB) plus the histogram
 bins; total resident overhead under
 .B "\-j auto"
-stays well under a megabyte on top of the mapped region.
+stays well under a megabyte on top of the mapped region.  The one
+exception is
+.B \-ee
+in byte mode, which adds a padded 256-by-256 u64 joint-count table
+(about 1 MiB) per worker thread plus one aggregate; bit-mode
+.B \-ee
+adds only a 2-by-2 table.
 
 .SH BUGS
 The optimum-compression figure derives from the first-order

@@ -42,6 +42,11 @@
 #elif defined(FASTENT_VARIANT_AVX512) || defined(FASTENT_VARIANT_AVX2) \
    || defined(FASTENT_VARIANT_SSE41)  || defined(FASTENT_VARIANT_SSSE3)
   #include "analyze-vec-x86.h"
+#elif defined(FASTENT_VARIANT_BIGRAM)
+  /*  Scalar-only path plus the order-1 joint-count scatter.  Unique
+      suffix so it links beside analyze-scalar.c; no FASTENT_HAVE_SIMD.  */
+  #define FASTENT_VAR_SUFFIX _bigram
+  #define FASTENT_BIGRAM 1
 #else
   #define FASTENT_VAR_SUFFIX _scalar
 #endif
@@ -125,6 +130,16 @@ static inline void FASTENT_FN(consume_byte)(fastent_chunk_state * st, u8 b,
   st->bank[bank_idx & (FASTENT_BANKS - 1)][b]++;
   if (st->have_carry) {
     st->cross_product += (i64) st->carry_byte * (i64) b;
+#ifdef FASTENT_BIGRAM
+    /*  Count the ordered pair (prev=carry_byte, cur=b).  Routing the
+        increment to a plane chosen by position parity breaks the
+        store-to-load-forward dependency between consecutive pairs
+        (the hist1_4 F0/F1 idea); planes are summed at finalize.  */
+    if (st->bigram)
+      FASTENT_BG_AT(st->bigram,
+                    (unsigned) st->total_bytes & (FASTENT_BG_NB - 1),
+                    st->carry_byte, b)++;
+#endif
   } else {
     st->first_byte = b;
     st->have_first = 1;
@@ -1843,10 +1858,23 @@ FASTENT_FN(bits_scalar_body_impl)(fastent_chunk_state * st,
       const unsigned prev_lsb = (unsigned)(st->carry_byte & 1u);
       const unsigned curr_msb = (unsigned)((byte >> 7) & 1u);
       st->cross_product += (i64)(prev_lsb & curr_msb);
+#ifdef FASTENT_BIGRAM
+      /*  Cross-byte adjacent bit pair (prev byte LSB, this byte MSB).  */
+      st->bit_bigram[prev_lsb][curr_msb]++;
+#endif
     } else {
       st->first_byte = (u8)((byte >> 7) & 1u);
       st->have_first = 1;
     }
+#ifdef FASTENT_BIGRAM
+    /*  7 within-byte ordered pairs, MSB->LSB stream order.  Only 4
+        cells, no cache hazard, so no shadow-plane trick needed.  */
+    {
+      int k;
+      for (k = 7; k >= 1; k--)
+        st->bit_bigram[(byte >> k) & 1u][(byte >> (k - 1)) & 1u]++;
+    }
+#endif
     st->carry_byte = (u8)(byte & 1u);
     st->last_byte  = (u8)(byte & 1u);
     st->have_carry = 1;

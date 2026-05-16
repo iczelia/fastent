@@ -79,6 +79,10 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
     if (r->bit_bias_worst < 0) fputs("null", stdout);
     else { printf("{ \"max\": "); jnum_(fmt_fp, r->bit_bias_max);
            printf(", \"worst_bit\": %d }", r->bit_bias_worst); }
+    printf(",\n  \"conditional_entropy\": ");
+    jnum_(fmt_fp, r->conditional_entropy);
+    printf(",\n  \"mutual_information\": ");
+    jnum_(fmt_fp, r->mutual_information);
   }
   if (o->counts) {
     printf(",\n  \"occurrences\": [\n");

@@ -245,6 +245,40 @@ void fastent_print_annotated(const fastent_result * r,
        :               "structured bit lane");
   }
 
+  /*  Order-1 bigram: informational only (core=0, never moves the
+      headline verdict, like Collision entropy).  redux = fraction of
+      order-0 entropy the previous byte explains: ~0 for random,
+      large for text/code.  NaN unless -ee ran in byte mode.  */
+  if (r->conditional_entropy != r->conditional_entropy) {
+    row_(o, color, &v, 0, "Cond. entropy", "pass -ee (byte only)",
+         B_NA, "");
+    row_(o, color, &v, 0, "Mutual info", "pass -ee (byte only)",
+         B_NA, "");
+  } else {
+    const f64 h0 = r->entropy;
+    const f64 redux = h0 > 0.0 ? 1.0 - r->conditional_entropy / h0 : 0.0;
+    int b = (h0 <= 0.0)    ? B_NA
+          : redux < 0.05   ? B_PASS
+          : redux < 0.20   ? B_WEAK : B_FAIL;
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "%.17g b/%s" : "%.4g bits/%s",
+             r->conditional_entropy, samp);
+    row_(o, color, &v, 0, "Cond. entropy", aux, b,
+         b == B_NA   ? ""
+       : b == B_PASS ? "no order-1 structure"
+       : b == B_WEAK ? "mild order-1 correlation"
+       :               "strong order-1 structure");
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "%.17g bits (%.0f%% H0)" : "%.4g bits (%.0f%% H0)",
+             r->mutual_information,
+             h0 > 0.0 ? 100.0 * r->mutual_information / h0 : 0.0);
+    row_(o, color, &v, 0, "Mutual info", aux, b,
+         b == B_NA   ? ""
+       : b == B_PASS ? "prev symbol uninformative"
+       : b == B_WEAK ? "prev mildly informative"
+       :               "prev highly informative");
+  }
+
   /*  Informational footer (no verdict).  */
   char d1[48], d2[48], d3[48];
   snprintf(d1, sizeof d1, "Distinct %u/%d", r->distinct, bins);

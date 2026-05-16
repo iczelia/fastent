@@ -14,6 +14,20 @@
 /*  incirc = (256^3 - 1)^2 = 281474943156225  (fits in 49 bits).  */
 #define FASTENT_INCIRC ((u64) 281474943156225ULL)
 
+/*  Order-1 bigram accumulator (opt-in, -ee).  FASTENT_BG_NB padded
+    shadow planes break the consecutive-pair store-to-load-forward
+    dependency on the 256x256 scatter; collapsed at finalize.  Counts
+    are u64 so a single cell can reach N-1 (all-same-byte input)
+    without overflow at any input size.  */
+#define FASTENT_BG_NB     2
+#define FASTENT_BG_PAD    3
+#define FASTENT_BG_STRIDE (256 + FASTENT_BG_PAD)
+#define FASTENT_BG_PLANE  (256 * FASTENT_BG_STRIDE)
+#define FASTENT_BG_CELLS  (FASTENT_BG_NB * FASTENT_BG_PLANE)
+#define FASTENT_BG_AT(bg, plane, a, b)                                  \
+  ((bg)[(sz)(plane) * FASTENT_BG_PLANE                                  \
+       + (sz)(unsigned)(a) * FASTENT_BG_STRIDE + (sz)(unsigned)(b)])
+
 /*  Per-thread chunk state. Accumulates histogram, SCC cross-product,
     Monte Carlo hits, and the first/last/carry bytes needed to stitch
     chunk boundaries at finalize.  */
@@ -47,6 +61,16 @@ typedef struct {
   /*  Monte Carlo 6-byte ring:  */
   u8  mc_buf[6];
   int mc_pos;
+
+  /*  Order-1 bigram shadow planes (FASTENT_BG_CELLS u64), NULL unless
+      -ee byte mode is active.  Allocated/freed by the runner; the
+      default and all SIMD paths leave it NULL and never touch it.  */
+  u64 * bigram;
+
+  /*  Bit-mode order-1 joint counts [prev_bit][cur_bit].  Tiny, always
+      present, zeroed at init; only the scalar bit bigram variant ever
+      writes it.  bit_bigram all-zero == "-ee bit mode did not run".  */
+  u64 bit_bigram[2][2];
 } fastent_chunk_state;
 
 /*  Final reduced results.  */
@@ -76,6 +100,8 @@ typedef struct {
   f64 bit_freq[8];        /*  P(bit k = 1), k=0 LSB..7 MSB; byte mode  */
   f64 bit_bias_max;       /*  max_k |bit_freq[k]-0.5|; NaN in bit mode */
   int bit_bias_worst;     /*  argmax k of that bias; -1 in bit mode    */
+  f64 conditional_entropy;/*  H(cur|prev); NaN if no bigram / bit mode */
+  f64 mutual_information; /*  I(prev;cur); NaN likewise                */
 
   u64 hist[256];     /*  For -c output. In bit mode, hist[0]/hist[1] are bit counts.  */
 } fastent_result;
@@ -96,6 +122,8 @@ typedef enum {
 typedef void (* fastent_analyze_fn)(fastent_chunk_state *, const u8 *, sz);
 
 void fastent_chunk_state_init(fastent_chunk_state * st);
+u64 * fastent_bigram_alloc(void);   /*  FASTENT_BG_CELLS u64, zeroed; NULL=OOM  */
+void  fastent_bigram_free(u64 * bg);
 void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
                       fastent_result * FASTENT_RESTRICT out);
 
@@ -155,6 +183,14 @@ void analyze_fold_sve2(fastent_chunk_state * st, const u8 * buf, sz len);
 #ifdef HAVE_WASM128
 void analyze_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
+
+/*  Scalar-only bigram-augmented analysers (opt-in, -ee).  Same
+    reductions as analyze_scalar plus the order-1 joint-count scatter;
+    never enters the CPU-variant dispatch table.  */
+void analyze_bigram(fastent_chunk_state * st, const u8 * buf, sz len);
+void analyze_fold_bigram(fastent_chunk_state * st, const u8 * buf, sz len);
+void analyze_bits_bigram(fastent_chunk_state * st, const u8 * buf, sz len);
+void analyze_bits_fold_bigram(fastent_chunk_state * st, const u8 * buf, sz len);
 
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which);
 fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which);
