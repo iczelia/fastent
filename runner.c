@@ -114,6 +114,12 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
   Fk(N, fastent_bigram_free(states[k].bigram))
   free(states);
   free(bounds);
+
+  /*  Runs / longest-run / cusum: one serial scan of the whole
+      resident buffer into the merged state (no cross-slab stitch in
+      this first cut; deterministic regardless of -j).  */
+  if (o->extended >= 2)
+    fastent_runs_count(out, data, (sz) size, o->binary);
 }
 #endif
 
@@ -135,8 +141,10 @@ void fastent_run_mmap(fastent_chunk_state * st, const fastent_options * o,
 #endif
 
   body(st, data, (sz) size);
-  if (o->extended >= 2)
+  if (o->extended >= 2) {
     fastent_digram_count(st, data, (sz) size, o->binary);
+    fastent_runs_count(st, data, (sz) size, o->binary);
+  }
 }
 
 void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
@@ -156,8 +164,10 @@ void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
     }
     if (n == 0) break;
     body(st, src->stream_buf, n);
-    if (o->extended >= 2)
+    if (o->extended >= 2) {
       fastent_digram_count(st, src->stream_buf, n, o->binary);
+      fastent_runs_count(st, src->stream_buf, n, o->binary);
+    }
   }
 }
 
@@ -198,10 +208,21 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
     fastent_run_stream(&st, c->o, c->fn_byte, c->fn_bits,
                        c->fn_byte_fold, c->fn_bits_fold, &src);
   }
-  fastent_src_close(&src);
-
   fastent_result r;
   fastent_finalize(&st, c->o->binary, &r);
+
+  if (!c->o->binary && c->o->extended >= 2
+      && src.kind == FASTENT_SRC_MMAP && r.total_samples > 0) {
+    u64 acc = 0;
+    const u64 half = (r.total_samples + 1) / 2;
+    int m = 0;
+    Fi(256, acc += r.hist[i];
+            if (acc >= half) { m = i; break; })
+    r.runs = (f64) fastent_byte_runs_median((const u8 *) src.map,
+                                            (sz) src.size, m);
+  }
+
+  fastent_src_close(&src);
   fastent_bigram_free(st.bigram);
 
   if (c->count == c->cap) {

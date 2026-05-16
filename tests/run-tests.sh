@@ -186,11 +186,45 @@ check "uniform -e: min-entropy = 8.000000" bash -c '
     grep -qE "Collision entropy is 8\.000000 bits per byte\." <<< "$out"
 '
 
-check "terse -e: 32 columns" bash -c '
+check "terse -e: 35 columns" bash -c '
   out=$('"${FASTENT}"' -e -t "'"${FIX}"'/lcg.bin")
   grep -q "Min-Entropy,Collision-Entropy,IC,Poker,Poker-p," <<< "$out" &&
-    grep -q "Bit-Bias-Max,Bit-Bias-Worst,Conditional-Entropy,Mutual-Information" <<< "$out" &&
-    [ "$(printf "%s\n" "$out" | sed -n 2p | tr , "\n" | wc -l)" -eq 32 ]
+    grep -q "Conditional-Entropy,Mutual-Information,Runs,Longest-Run,Cusum-Max" <<< "$out" &&
+    [ "$(printf "%s\n" "$out" | sed -n 2p | tr , "\n" | wc -l)" -eq 35 ]
+'
+
+check "no -ee: runs/longrun/cusum nan" bash -c '
+  out=$('"${FASTENT}"' -e -t "'"${FIX}"'/lcg.bin")
+  printf "%s\n" "$out" | sed -n 2p | awk -F, "{ exit !(\$33==\"nan\" && \$34==\"nan\" && \$35==\"nan\") }"
+'
+
+check "-ee byte: longest-run set, cusum nan, runs set (mmap median)" bash -c '
+  out=$('"${FASTENT}"' -ee --json "'"${FIX}"'/lcg.bin")
+  python3 -c "import json,sys
+d=json.load(sys.stdin)
+assert d[\"longest_run\"] is not None and d[\"longest_run\"] >= 1
+assert d[\"cusum_max\"] is None
+assert d[\"runs\"] is not None" <<< "$out"
+'
+
+check "-ee bit: runs/longest/cusum all set" bash -c '
+  out=$('"${FASTENT}"' -ee -b --json "'"${FIX}"'/lcg.bin")
+  python3 -c "import json,sys
+d=json.load(sys.stdin)
+assert d[\"runs\"] is not None and d[\"longest_run\"] is not None and d[\"cusum_max\"] is not None" <<< "$out"
+'
+
+check "-ee all-zeros: 1 run, longest = N" bash -c '
+  out=$('"${FASTENT}"' -ee --json "'"${FIX}"'/all-zeros.bin")
+  python3 -c "import json,sys
+d=json.load(sys.stdin)
+assert d[\"longest_run\"] == d[\"samples\"]" <<< "$out"
+'
+
+check "-ee runs determinism j1 vs j4" bash -c '
+  a=$('"${FASTENT}"' -ee -t -j 1 "'"${FIX}"'/lcg.bin" | sed -n 2p | cut -d, -f33,34,35)
+  b=$('"${FASTENT}"' -ee -t -j 4 "'"${FIX}"'/lcg.bin" | sed -n 2p | cut -d, -f33,34,35)
+  [ "$a" = "$b" ]
 '
 
 check "no -ee: bigram fields are nan" bash -c '

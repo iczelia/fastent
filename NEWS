@@ -27,6 +27,16 @@ v1.2 (May 2026)
   mode is free.  All logarithms use the existing faithfully-rounded,
   libm-free entropy term.
 
+  -ee also adds a runs test, a longest-run, and a bit-mode cusum
+  excursion.  longest_run is the longest identical-symbol run (bytes
+  or bits); runs is the number of 0/1 runs (bit mode) or
+  below/at-or-above-median runs (byte mode); cusum_max is the maximum
+  absolute excursion of the +-1 bit walk.  These are a simple scalar
+  pass for now (one serial scan; deterministic across thread counts).
+  Byte runs-vs-median needs the histogram median, so it is a
+  post-finalize rescan of the mapped file and is null for stream or
+  pipe input that cannot be rescanned.
+
   Extended statistics (-e / --extended)
   -------------------------------------
 

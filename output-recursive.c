@@ -37,7 +37,8 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
           "redundancy,distinct,mode,mode_count,rarest,rarest_count,"
           "bit0,bit1,bit2,bit3,bit4,bit5,bit6,bit7,"
           "bit_bias_max,bit_bias_worst,"
-          "conditional_entropy,mutual_information", stdout);
+          "conditional_entropy,mutual_information,"
+          "runs,longest_run,cusum_max", stdout);
   putchar('\n');
   for (sz i = 0; i < n; i++) {
     const fastent_recursive_row * r = &rows[i];
@@ -70,6 +71,17 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
       printf(",%d", r->result.bit_bias_worst);
       putchar(','); printf(f, r->result.conditional_entropy);
       putchar(','); printf(f, r->result.mutual_information);
+      putchar(',');
+      if (r->result.runs == r->result.runs) printf("%.0f", r->result.runs);
+      else fputs("nan", stdout);
+      putchar(',');
+      if (r->result.longest_run == r->result.longest_run)
+        printf("%.0f", r->result.longest_run);
+      else fputs("nan", stdout);
+      putchar(',');
+      if (r->result.cusum_max == r->result.cusum_max)
+        printf("%.0f", r->result.cusum_max);
+      else fputs("nan", stdout);
     }
     putchar('\n');
   }
@@ -98,6 +110,12 @@ static void json_escape_(const char * s) {
 static void json_num_(const char * fmt, double v) {
   if (!(v == v)) { fputs("null", stdout); return; }  /*  NaN -> null  */
   printf(fmt, v);
+}
+
+/*  Integer-valued counts: exact, never %g.  */
+static void json_int_(double v) {
+  if (!(v == v)) fputs("null", stdout);
+  else           printf("%.0f", v);
 }
 
 void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
@@ -170,6 +188,9 @@ void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
       json_num_(f, r->result.conditional_entropy);
       fputs(", \"mutual_information\": ", stdout);
       json_num_(f, r->result.mutual_information);
+      fputs(", \"runs\": ", stdout);         json_int_(r->result.runs);
+      fputs(", \"longest_run\": ", stdout);  json_int_(r->result.longest_run);
+      fputs(", \"cusum_max\": ", stdout);    json_int_(r->result.cusum_max);
     }
     fputs(" }", stdout);
     if (i + 1 < n) putchar(',');

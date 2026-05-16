@@ -68,6 +68,22 @@ typedef struct {
   u64   bit_bigram[2][2];
   u8    dg_prev;
   u8    dg_have;
+
+  /*  -ee level-2 sequential extras (runs / longest run / cusum),
+      filled by fastent_runs_count; zeroed at init.  Symbols are bits
+      in bit mode, byte values in byte mode.  Stream accumulates these
+      across chunks in one state; mmap does a single serial scan of
+      the whole buffer (no cross-slab stitch in this first cut).  */
+  u64 lr_max;        /*  longest completed identical-symbol run  */
+  u64 lr_cur;        /*  open run length                         */
+  u8  lr_sym;        /*  open run symbol                          */
+  u8  lr_have;
+  u64 rn_count;      /*  bit-runs (bit mode)                      */
+  u8  rn_last;       /*  most recent bit                          */
+  u8  rn_have;
+  i64 cs_sum;        /*  live +-1 walk position                   */
+  i64 cs_min;        /*  min of the walk (<= 0)                   */
+  i64 cs_max;        /*  max of the walk (>= 0)                   */
 } fastent_chunk_state;
 
 /*  Final reduced results.  */
@@ -99,6 +115,11 @@ typedef struct {
   int bit_bias_worst;       /*  argmax k of that bias; -1 in bit mode  */
   f64 conditional_entropy;  /*  H(cur|prev); NaN if no bigram / bits  */
   f64 mutual_information;   /*  I(prev;cur); NaN likewise  */
+  f64 runs;                 /*  bit: 0/1 runs; byte: below/>=median
+                                runs; NaN if not computed  */
+  f64 longest_run;          /*  longest identical-symbol run (bits or
+                                bytes); NaN if no samples  */
+  f64 cusum_max;            /*  max |S|, +-1 bit walk; bit mode only  */
 
   u64 hist[256];            /*  -c output; bits: hist[0]/hist[1]  */
 } fastent_result;
@@ -190,6 +211,16 @@ void analyze_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
     binary selects the mode; dg_prev/dg_have carry across calls.  */
 void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
                           sz len, int binary);
+
+/*  -ee sequential extras, same per-chunk pass model as the digram
+    counter: longest identical-symbol run (both modes), 0/1 runs and
+    the +-1 cusum walk (bit mode).  Byte runs-vs-median needs the
+    median, a finalize quantity, so it is a separate post-finalize
+    rescan; fastent_byte_runs_median counts below/>=median runs over
+    a resident buffer (mmap only) and returns the run count.  */
+void fastent_runs_count(fastent_chunk_state * st, const u8 * buf,
+                        sz len, int binary);
+u64 fastent_byte_runs_median(const u8 * buf, sz len, int median);
 
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which);
 fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which);

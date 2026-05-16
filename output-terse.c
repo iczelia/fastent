@@ -15,6 +15,13 @@ static void tnum_(const char * fmt, f64 x) {
   else        printf(fmt, x);
 }
 
+/*  Integer-valued counts (runs / longest run / cusum): exact, never
+    %g (which would render 1048576 as 1.04858e+06).  */
+static void tint_(f64 x) {
+  if (x != x) fputs("nan", stdout);
+  else        printf("%.0f", x);
+}
+
 static void print_counts_(const fastent_result * r, int binary) {
   const int bins = binary ? 2 : 256;
   printf("2,Value,Occurrences,Fraction\n");
@@ -32,7 +39,8 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
            "Redundancy,Distinct,Mode,Mode-Count,Rarest,Rarest-Count,"
            "Bit0,Bit1,Bit2,Bit3,Bit4,Bit5,Bit6,Bit7,"
            "Bit-Bias-Max,Bit-Bias-Worst,"
-           "Conditional-Entropy,Mutual-Information");
+           "Conditional-Entropy,Mutual-Information,"
+           "Runs,Longest-Run,Cusum-Max");
   putchar('\n');
 
   const char * f = o->full_precision ? "%.17g" : "%f";
@@ -62,6 +70,9 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
     printf(",%d", r->bit_bias_worst);
     putchar(','); tnum_(f, r->conditional_entropy);
     putchar(','); tnum_(f, r->mutual_information);
+    putchar(','); tint_(r->runs);
+    putchar(','); tint_(r->longest_run);
+    putchar(','); tint_(r->cusum_max);
   }
   putchar('\n');
   if (o->counts) print_counts_(r, o->binary);

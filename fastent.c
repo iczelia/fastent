@@ -124,10 +124,24 @@ int main(int argc, char ** argv) {
                        &src);
   }
 
-  fastent_src_close(&src);
-
   fastent_result result;
   fastent_finalize(&st, o.binary, &result);
+
+  /*  Byte runs-vs-median needs the histogram median (a finalize
+      quantity), so it is a separate rescan of the still-mapped
+      buffer.  Stream input cannot be rescanned, so it stays NaN.  */
+  if (!o.binary && o.extended >= 2 && src.kind == FASTENT_SRC_MMAP
+      && result.total_samples > 0) {
+    u64 acc = 0;
+    const u64 half = (result.total_samples + 1) / 2;
+    int m = 0;
+    Fi(256, acc += result.hist[i];
+            if (acc >= half) { m = i; break; })
+    result.runs = (f64) fastent_byte_runs_median(
+                    (const u8 *) src.map, (sz) src.size, m);
+  }
+
+  fastent_src_close(&src);
   fastent_bigram_free(st.bigram);
 
   if      (o.json)     fastent_print_json(&result, &o);

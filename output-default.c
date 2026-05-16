@@ -158,4 +158,12 @@ void fastent_print_default(const fastent_result * r,
               : "Adjacent mutual information I(prev;cur) is %f bits.\n",
            r->mutual_information);
   }
+
+  if (r->longest_run == r->longest_run) {
+    printf("Longest run is %.0f %ss.\n", r->longest_run, samp);
+    if (r->runs == r->runs)
+      printf("Runs is %.0f.\n", r->runs);
+    if (r->cusum_max == r->cusum_max)
+      printf("Cusum max excursion is %.0f.\n", r->cusum_max);
+  }
 }

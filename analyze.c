@@ -201,6 +201,23 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
       out->mutual_information  = hp + hc - hj;
     }
   }
+
+  /*  Runs / longest run / cusum, derived from the single (stream) or
+      whole-buffer (mmap) runs pass.  st->lr_have is set iff that pass
+      ran with >= 1 symbol, so it doubles as the -ee gate.  Byte
+      runs-vs-median is filled post-finalize (median needs the
+      histogram); it stays NaN here and for stream input.  */
+  out->runs = out->longest_run = out->cusum_max = NAN;
+  if (st->lr_have) {
+    const u64 lr = st->lr_cur > st->lr_max ? st->lr_cur : st->lr_max;
+    out->longest_run = (f64) lr;
+    if (binary) {
+      out->runs = (f64) st->rn_count;
+      const i64 lo = st->cs_min < 0 ? -st->cs_min : st->cs_min;
+      const i64 hi = st->cs_max < 0 ? -st->cs_max : st->cs_max;
+      out->cusum_max = (f64) (lo > hi ? lo : hi);
+    }
+  }
 }
 
 /*  Variant table.  Order matters: dispatcher picks the LAST entry whose

@@ -106,6 +106,14 @@ not profitably vectorise; bit mode uses a 2-by-2 table).
 Deterministic and bit-identical across thread counts.  Byte mode
 keeps four 64K u64 tables per worker thread (2 MiB); bit mode is
 free.
+.IP
+.B \-ee
+also reports a longest identical-symbol run, a runs test, and a
+bit-mode cusum max excursion.  These are a simple scalar serial scan
+for now.  The byte runs test counts below / at-or-above-median runs
+and so needs the histogram median; it is a post-finalize rescan of
+the mapped file and is reported as not-a-number for stream or pipe
+input, which cannot be rescanned.
 .TP
 .BR \-a ", " \-\-annotate
 Render an interpretive report instead of the plain text: every metric
@@ -336,7 +344,8 @@ recursive CSV rows gain, in order,
 .BR Variance ", " Stddev ", " Redundancy ", " Distinct ", " Mode ", "
 .BR Mode-Count ", " Rarest ", " Rarest-Count ", "
 .BR Bit0 .. Bit7 ", " Bit-Bias-Max ", " Bit-Bias-Worst ", "
-.BR Conditional-Entropy ", " Mutual-Information .
+.BR Conditional-Entropy ", " Mutual-Information ", "
+.BR Runs ", " Longest-Run ", " Cusum-Max .
 The JSON object gains
 .BR min_entropy ", " collision_entropy ", " index_of_coincidence ", "
 a
@@ -358,9 +367,8 @@ sub-object
 With
 .B \-ee
 the
-.B conditional_entropy
-and
-.B mutual_information
+.BR conditional_entropy ", " mutual_information ", " runs ", "
+.BR longest_run " and " cusum_max
 fields are populated (otherwise
 .BR null ).
 In

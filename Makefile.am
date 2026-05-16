@@ -12,7 +12,7 @@ noinst_HEADERS = analyze.h analyze-impl.h chisq.h \
                  port-thread.h port-walk.h
 
 fastent_SOURCES = fastent.c cli.c runner.c \
-                  analyze.c analyze-scalar.c digram.c chisq.c \
+                  analyze.c analyze-scalar.c digram.c runs.c chisq.c \
                   fastent-math.c \
                   output-default.c output-terse.c output-json.c \
                   output-histogram.c output-recursive.c \

@@ -17,6 +17,12 @@ static void jnum_(const char * fmt, double v) {
   printf(fmt, v);
 }
 
+/*  Integer-valued counts: exact, never %g.  */
+static void jint_(double v) {
+  if (!(v == v)) fputs("null", stdout);
+  else           printf("%.0f", v);
+}
+
 void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   const char * samp = o->binary ? "bit" : "byte";
   const int fp = o->full_precision;
@@ -85,6 +91,9 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
     jnum_(fmt_fp, r->conditional_entropy);
     printf(",\n  \"mutual_information\": ");
     jnum_(fmt_fp, r->mutual_information);
+    printf(",\n  \"runs\": ");          jint_(r->runs);
+    printf(",\n  \"longest_run\": ");   jint_(r->longest_run);
+    printf(",\n  \"cusum_max\": ");     jint_(r->cusum_max);
   }
   if (o->counts) {
     printf(",\n  \"occurrences\": [\n");
