@@ -24,11 +24,8 @@
 #define FASTENT_BG_TABLE 65536
 #define FASTENT_BG_CELLS (FASTENT_BG_NB * FASTENT_BG_TABLE)
 
-/*  Canonical scalar case fold: ASCII A-Z and Latin-1 0xC0-0xDE
-    (excluding 0xD7) mapped to lower-case, every other byte unchanged.
-    Same rule as the per-variant SIMD/scalar fold helpers in
-    analyze-impl.h; shared here so the -ee digram pass folds with
-    identical semantics to the order-0 analyser under -f.  */
+/*  Scalar case fold: ASCII A-Z and Latin-1 0xC0-0xDE (not 0xD7) to
+    lower-case, other bytes unchanged. Same rule as the SIMD fold.  */
 static inline u8 fastent_fold_byte(u8 b) {
   unsigned c = b;
   if (((unsigned)(c - 'A') < 26u) ||
@@ -232,8 +229,7 @@ void analyze_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
     dg_prev/dg_have carry across calls (a byte, or the last bit in
     bit mode).  Byte runs-vs-median is derived in fastent_finalize
     from the digram joint counts, so it needs no buffer rescan.
-    When fold is set each input byte is case-folded before use, so
-    the order-1 stats match the order-0 analyser under -f.  */
+    fold case-folds the input first (matches the -f order-0 path).  */
 void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
                           sz len, int binary, int fold);
 

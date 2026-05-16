@@ -505,6 +505,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   u64 mc_inside  = st->mc_inside;
 
   const __m512i ones16_sum = _mm512_set1_epi16(1);
+  (void) ones16_sum;  /*  unused in the BITALG/VNNI sub-variant  */
 
   #define FASTENT_PREFETCH_DIST 512
   for (sz i = 0; i < body_end; i += 128) {

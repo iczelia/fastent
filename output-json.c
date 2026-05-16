@@ -30,8 +30,8 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   const int fp = o->full_precision;
   const char * fmt_fp = fp ? "%.17g" : "%g";
   const f64 per = o->binary ? 1.0 : 8.0;
-  /*  Clamped to [0, 100]; non-finite entropy (e.g. empty input) -> 0,
-      never an out-of-range or NaN cast (undefined behaviour).  */
+  /*  Clamp to [0, 100]; non-finite -> 0 (cast of NaN/out-of-range
+      to int is UB).  */
   const f64 comp_raw = 100.0 * (per - r->entropy) / per;
   const int comp_pct = !isfinite(comp_raw) ? 0
                      : comp_raw < 0.0      ? 0

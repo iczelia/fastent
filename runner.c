@@ -132,8 +132,7 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
          out->bit_bigram[1][1] += s->bit_bigram[1][1];
        }
        if (seen && start > 0) {     /*  pair straddling this boundary  */
-         /*  Fold the boundary bytes to match the (folded) per-slab
-             digram pass under -f.  */
+         /*  Fold to match the per-slab digram pass under -f.  */
          const unsigned bp = o->fold ? fastent_fold_byte(data[start - 1])
                                       : data[start - 1];
          const unsigned bc = o->fold ? fastent_fold_byte(data[start])
@@ -285,8 +284,7 @@ static void stream_consumer_(sz k, void * vctx) {
 
     stream_edge e;
     e.seq = myseq;  e.n = got;
-    /*  Boundary bytes for the digram / bit stitch; folded under -f so
-        they match the (folded) per-block digram pass.  */
+    /*  Stitch boundary bytes; folded under -f to match the scan.  */
     e.raw_first = c->fold ? fastent_fold_byte(buf[0]) : buf[0];
     e.raw_last  = c->fold ? fastent_fold_byte(buf[got - 1]) : buf[got - 1];
     e.o0_first = blk.first_byte;  e.o0_last = blk.last_byte;

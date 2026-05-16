@@ -38,9 +38,8 @@ void fastent_print_default(const fastent_result * r,
 
   printf("\nOptimum compression would reduce the size\n");
   const f64 per = o->binary ? 1.0 : 8.0;
-  /*  Percent the size could shrink by; clamped to [0, 100].  A non-
-      finite entropy (e.g. empty input) yields 0, never an out-of-range
-      or NaN cast (which would be undefined behaviour).  */
+  /*  Clamp to [0, 100]; non-finite -> 0 (cast of NaN/out-of-range
+      to int is UB).  */
   const f64 comp_raw = 100.0 * (per - r->entropy) / per;
   const int comp_pct = !isfinite(comp_raw) ? 0
                      : comp_raw < 0.0      ? 0

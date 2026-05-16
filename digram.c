@@ -26,9 +26,23 @@
 
 #include "analyze.h"
 
+#include <string.h>
+
 #if FASTENT_BG_NB < 4
 #error "fastent_digram_count unrolls 4 shadow tables; FASTENT_BG_NB >= 4"
 #endif
+
+/*  -f scratch chunk; sized to stay L1/L2-resident across fold+scan.  */
+#define FASTENT_DG_FOLD_CHUNK 32768
+
+/*  Cached vectorised fold variant. Pick is process-stable, so the
+    lazy-init race stores the same pointer.  */
+static fastent_fold_fn dg_fold_fn_(void) {
+  static fastent_fold_fn ff = NULL;
+  fastent_fold_fn f = ff;
+  if (!f) { f = fastent_pick_fold_variant(NULL);  ff = f; }
+  return f;
+}
 
 /*  Longest identical-symbol run; symbol is a byte or a bit.  */
 static void lr_one_(fastent_chunk_state * st, unsigned s) {
@@ -46,30 +60,25 @@ static void lr_one_(fastent_chunk_state * st, unsigned s) {
 }
 
 static void digram_bytes_(fastent_chunk_state * st,
-                          const u8 * FASTENT_RESTRICT buf, sz len,
-                          int fold) {
+                          const u8 * FASTENT_RESTRICT buf, sz len) {
   u64 * FASTENT_RESTRICT t = st->bigram;
   unsigned prev;
   sz i = 0;
-
-  /*  fold is a compile-time constant at both call sites, so the
-      conditional dead-eliminates per trampoline.  */
-  #define DG_LD(IDX) (fold ? fastent_fold_byte(buf[IDX]) : buf[IDX])
 
   if (st->dg_have) {
     prev = st->dg_prev;
   } else {
     /*  First byte of the stream: no left neighbour for a pair, but
         it is still a symbol for the longest-run scan.  */
-    prev = DG_LD(0);
+    prev = buf[0];
     lr_one_(st, prev);
     i = 1;
     st->dg_have = 1;
   }
 
   for (; i + 4 <= len; i += 4) {
-    unsigned c0 = DG_LD(i),     c1 = DG_LD(i + 1);
-    unsigned c2 = DG_LD(i + 2), c3 = DG_LD(i + 3);
+    unsigned c0 = buf[i],     c1 = buf[i + 1];
+    unsigned c2 = buf[i + 2], c3 = buf[i + 3];
     t[0u * FASTENT_BG_TABLE + ((prev << 8) | c0)]++;  lr_one_(st, c0);
     t[1u * FASTENT_BG_TABLE + ((c0   << 8) | c1)]++;  lr_one_(st, c1);
     t[2u * FASTENT_BG_TABLE + ((c1   << 8) | c2)]++;  lr_one_(st, c2);
@@ -77,12 +86,11 @@ static void digram_bytes_(fastent_chunk_state * st,
     prev = c3;
   }
   for (; i < len; i++) {
-    unsigned c = DG_LD(i);
+    unsigned c = buf[i];
     t[(prev << 8) | c]++;  lr_one_(st, c);
     prev = c;
   }
   st->dg_prev = (u8) prev;
-  #undef DG_LD
 }
 
 /*  Bit mode: every adjacent bit pair (MSB->LSB, across byte and chunk
@@ -90,12 +98,11 @@ static void digram_bytes_(fastent_chunk_state * st,
     longest run, 0/1 run count and the +-1 cusum walk.  dg_prev holds
     the previous bit (0/1) here.  */
 static void digram_bits_(fastent_chunk_state * st,
-                         const u8 * FASTENT_RESTRICT buf, sz len,
-                         int fold) {
+                         const u8 * FASTENT_RESTRICT buf, sz len) {
   u64 (* bb)[2] = st->bit_bigram;
   sz i;
   for (i = 0; i < len; i++) {
-    const unsigned byte = fold ? fastent_fold_byte(buf[i]) : buf[i];
+    const unsigned byte = buf[i];
     int k;
     for (k = 7; k >= 0; k--) {
       const unsigned bit = (byte >> k) & 1u;
@@ -116,11 +123,25 @@ static void digram_bits_(fastent_chunk_state * st,
 void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
                           sz len, int binary, int fold) {
   if (len == 0) return;
-  if (binary) {
-    if (fold) digram_bits_(st, buf, len, 1);
-    else      digram_bits_(st, buf, len, 0);
-  } else if (st->bigram) {
-    if (fold) digram_bytes_(st, buf, len, 1);
-    else      digram_bytes_(st, buf, len, 0);
+  if (!binary && !st->bigram) return;   /*  byte mode without -ee table  */
+
+  if (!fold) {
+    if (binary) digram_bits_(st, buf, len);
+    else        digram_bytes_(st, buf, len);
+    return;
+  }
+
+  /*  -f: prefold per chunk (mmap is read-only and shared, so no
+      in-place fold), then fold-free scan. st->dg_* and the lr/rn/cs
+      accumulators carry across chunks, so boundaries do not matter.  */
+  fastent_fold_fn ff = dg_fold_fn_();
+  u8 scratch[FASTENT_DG_FOLD_CHUNK];
+  for (sz off = 0; off < len; off += FASTENT_DG_FOLD_CHUNK) {
+    sz cl = len - off;
+    if (cl > FASTENT_DG_FOLD_CHUNK) cl = FASTENT_DG_FOLD_CHUNK;
+    memcpy(scratch, buf + off, cl);
+    ff(scratch, cl);
+    if (binary) digram_bits_(st, scratch, cl);
+    else        digram_bytes_(st, scratch, cl);
   }
 }
