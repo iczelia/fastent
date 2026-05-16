@@ -6,13 +6,13 @@ bin_PROGRAMS  = fastent
 noinst_HEADERS = analyze.h analyze-impl.h chisq.h \
                  analyze-vec-x86.h analyze-vec-neon.h analyze-vec-wasm.h \
                  common.h fastent-win32.h \
-                 fastent-math.h log2_tables.h \
+                 fastent-math.h log2_tables.h fips1402.h \
                  fastent-options.h output.h cli.h runner.h yarg.h \
                  port-cpu.h port-io.h port-term.h port-os.h \
                  port-thread.h port-walk.h
 
 fastent_SOURCES = fastent.c cli.c runner.c \
-                  analyze.c analyze-scalar.c digram.c chisq.c \
+                  analyze.c analyze-scalar.c digram.c chisq.c fips1402.c \
                   fastent-math.c \
                   output-default.c output-terse.c output-json.c \
                   output-histogram.c output-recursive.c \

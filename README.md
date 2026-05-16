@@ -45,6 +45,9 @@ with `-H`.
   bias; derived at finalisation, no per-byte cost, bit-identical
   across hosts and thread counts.  `--annotate` turns them into a
   per-metric PASS / WEAK / FAIL report with a headline verdict
+- `--fips-140-2`: the FIPS 140-2 4.9.1 RNG power-up tests (monobit,
+  poker, runs, long run) per 20000-bit block; pass/fail report,
+  exit 1 on failure, parallel and bit-identical across thread counts
 - order-1 bigram (`-ee`): conditional entropy `H(cur|prev)`, adjacent
   mutual information `I(prev;cur)`, runs / longest-run / cusum; split
   across the `-j` workers and merged with a boundary stitch,

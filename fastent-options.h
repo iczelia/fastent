@@ -43,6 +43,7 @@ typedef struct {
                           the extended stats; >=2 (-ee) also computes the
                           order-1 bigram H(cur|prev)+MI  */
   int annotate;       /*  --annotate (interpretive report; implies -e)  */
+  int fips140;        /*  --fips-140-2 (RNG power-up self-tests)  */
   int sort_by;        /*  --sort-by=COL, value from fastent_sort_by  */
   int sort_desc;      /*  1 = descending; 0 = ascending  */
   const char * path;  /*  positional (NULL = stdin)  */

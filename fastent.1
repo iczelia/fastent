@@ -228,6 +228,23 @@ or
 default is descending for the numeric columns and ascending for
 .BR path .
 .TP
+.B \-\-fips\-140\-2
+Run the FIPS 140-2 RNG power-up self-tests (4.9.1) instead of the
+normal analysis: monobit, poker, runs and long run, applied
+independently to each 20000-bit (2500-byte) block.  Bits are taken
+most-significant first; the poker groups are the high then the low
+nibble of each byte.  The acceptance constants are the FIPS 140-2
+values (monobit 9725 < ones < 10275; poker 2.16 < X < 46.17; the runs
+intervals; long run a run of 34 or more; the rng-tools
+.B rngtest
+utility historically uses 26).  Trailing bytes that do not fill a
+block are not tested.  A pass/fail report is printed and the exit
+status is 0 if every block passed all four tests, 1 otherwise; other
+output options are ignored.  The independent blocks are split across
+the
+.B \-j
+workers and the result is bit-identical regardless of thread count.
+.TP
 .BR \-h ", " \-\-help
 Print a short usage message and exit.
 .TP

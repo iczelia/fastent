@@ -52,6 +52,16 @@ v1.2 (May 2026)
   closing with a headline verdict that names the weakest signal.
   Badge colour follows --color.  Not supported with -r.
 
+  FIPS 140-2 RNG self-tests (--fips-140-2)
+  ----------------------------------------
+
+  --fips-140-2 runs the FIPS 140-2 4.9.1 power-up tests (monobit,
+  poker, runs, long run) over each independent 20000-bit block and
+  prints a pass/fail report; the exit status is 0 if every block
+  passed, 1 otherwise.  Blocks are split across the -j workers and
+  the verdict is bit-identical regardless of thread count.  Not
+  supported with -r.
+
   Command line
   ------------
 

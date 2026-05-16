@@ -24,6 +24,7 @@
 #include "analyze.h"
 #include "cli.h"
 #include "fastent-options.h"
+#include "fips1402.h"
 #include "output.h"
 #include "port-io.h"
 #include "port-os.h"
@@ -103,6 +104,44 @@ int main(int argc, char ** argv) {
     perror("pledge");
     free((void *) o.path);
     return 2;
+  }
+
+  if (o.fips140) {
+    const u8 * data;
+    sz dlen;
+    void * owned = NULL;
+    if (src.kind == FASTENT_SRC_MMAP) {
+      data = (const u8 *) src.map;  dlen = (sz) src.size;
+    } else {
+      u8 * acc = NULL;
+      sz cap = 0, used = 0;
+      for (;;) {
+        sz n = fastent_src_read(&src);
+        if (n == (sz) -1) {
+          perror("read");  free(acc);
+          fastent_src_close(&src);  free((void *) o.path);  return 2;
+        }
+        if (n == 0) break;
+        if (used + n > cap) {
+          sz nc = (used + n) * 2;
+          u8 * g = (u8 *) realloc(acc, nc ? nc : (used + n));
+          if (!g) {
+            fprintf(stderr, "out of memory\n");  free(acc);
+            fastent_src_close(&src);  free((void *) o.path);  return 2;
+          }
+          acc = g;  cap = nc ? nc : (used + n);
+        }
+        memcpy(acc + used, src.stream_buf, n);  used += n;
+      }
+      data = acc;  dlen = used;  owned = acc;
+    }
+    fastent_fips_report rep;
+    fastent_fips140_run(data, dlen, o.threads, &rep);
+    int ok = fastent_fips140_print(&rep, stdout);
+    free(owned);
+    fastent_src_close(&src);
+    free((void *) o.path);
+    return ok ? 0 : 1;
   }
 
   fastent_chunk_state st;

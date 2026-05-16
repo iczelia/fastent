@@ -73,6 +73,11 @@ void fastent_print_help(void) {
     "                                     collision, ic, poker, variance,\n"
     "                                     redundancy, distinct, bitbias.\n"
     "                                     dir = asc | desc\n"
+    "                --fips-140-2         Run the FIPS 140-2 RNG\n"
+    "                                     power-up self-tests; print a\n"
+    "                                     pass/fail report (exit 1 on\n"
+    "                                     failure) and ignore other\n"
+    "                                     output options\n"
     "           -V,  --version            Print version and exit\n"
     "           -h,  --help               Print this message\n",
     stdout);
@@ -148,7 +153,7 @@ static int parse_sort_by_(const char * arg, fastent_options * o) {
 }
 
 /*  Long-only options get a synthetic opt code (> any short letter).  */
-enum { OPT_SORT_BY = 256 };
+enum { OPT_SORT_BY = 256, OPT_FIPS140 };
 
 int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
   static yarg_options opts[] = {
@@ -168,7 +173,8 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
 #ifdef FASTENT_HAVE_THREADS
     { 'j',         required_argument, "threads"        },
 #endif
-    { OPT_SORT_BY, required_argument, "sort-by"        },
+    { OPT_SORT_BY,  required_argument, "sort-by"        },
+    { OPT_FIPS140,  no_argument,       "fips-140-2"     },
     { 'h',         no_argument,       "help"           },
     { 'V',         no_argument,       "version"        },
     { 0,           no_argument,       NULL             }
@@ -250,6 +256,7 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
       case OPT_SORT_BY:
         if (!v || parse_sort_by_(v, o) != 0) rc = -1;
         break;
+      case OPT_FIPS140: o->fips140 = 1; break;
       default: break;  /*  unreachable: yarg only yields known opts  */
     }
   }
@@ -271,6 +278,10 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
   if (o->annotate && o->recursive) {
     fprintf(stderr, "fastent: --annotate is not supported with -r "
                     "(recursive output is CSV/JSON)\n");
+    return -1;
+  }
+  if (o->fips140 && o->recursive) {
+    fprintf(stderr, "fastent: --fips-140-2 is not supported with -r\n");
     return -1;
   }
   return 0;

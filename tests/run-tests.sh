@@ -324,6 +324,35 @@ check "empty input: clean exit" bash -c '
   '"${FASTENT}"' -t "'"${FIX}"'/empty.bin" > /dev/null
 '
 
+check "fips-140-2: all-zeros fails, exit 1" bash -c '
+  out=$('"${FASTENT}"' --fips-140-2 "'"${FIX}"'/all-zeros.bin") && exit 1
+  grep -qE "overall +: FAIL" <<< "$out"
+'
+
+check "fips-140-2: uniform passes, exit 0" bash -c '
+  out=$('"${FASTENT}"' --fips-140-2 "'"${FIX}"'/uniform.bin")
+  grep -qE "overall +: PASS" <<< "$out"
+'
+
+check "fips-140-2: insufficient data, exit 1" bash -c '
+  : > "'"${FIX}"'/empty.bin"
+  out=$('"${FASTENT}"' --fips-140-2 < "'"${FIX}"'/empty.bin") && exit 1
+  grep -qE "insufficient data" <<< "$out"
+'
+
+check "fips-140-2: rejected with -r" bash -c '
+  '"${FASTENT}"' --fips-140-2 -r "'"${FIX}"'" 2>/dev/null && exit 1
+  exit 0
+'
+
+if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
+  check "fips-140-2 determinism j1 == j4" bash -c '
+    a=$('"${FASTENT}"' --fips-140-2 -j 1 "'"${FIX}"'/uniform.bin")
+    b=$('"${FASTENT}"' --fips-140-2 -j 4 "'"${FIX}"'/uniform.bin")
+    [ "$a" = "$b" ]
+  '
+fi
+
 check "version banner" bash -c '
   out=$('"${FASTENT}"' --version)
   grep -q "^fastent " <<< "$out"
