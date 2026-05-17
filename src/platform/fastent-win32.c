@@ -243,19 +243,19 @@ i64 fastent_win32_num_cpus(void) {
 }
 
 /*  GetFileSizeEx is Win2000+; FASTENT_WIN_LEGACY uses GetFileSize.
-    Returns 0 and sets *out on success, -1 on error or empty file.  */
+    Returns 0 and sets *out on success (a zero-length file is a
+    valid size 0, not an error: callers fall back to STREAM for it,
+    matching the POSIX backend); -1 only on a real query failure.  */
 static int fastent_win32_filesize_(HANDLE h, u64 * out) {
 #ifdef FASTENT_WIN_LEGACY
   DWORD hi = 0;
   DWORD lo = GetFileSize(h, &hi);
   if (lo == INVALID_FILE_SIZE && GetLastError() != NO_ERROR) return -1;
-  u64 total = ((u64) hi << 32) | (u64) lo;
-  if (total == 0) return -1;
-  *out = total;
+  *out = ((u64) hi << 32) | (u64) lo;
   return 0;
 #else
   LARGE_INTEGER li;
-  if (!GetFileSizeEx(h, &li) || li.QuadPart <= 0) return -1;
+  if (!GetFileSizeEx(h, &li) || li.QuadPart < 0) return -1;
   *out = (u64) li.QuadPart;
   return 0;
 #endif
@@ -274,6 +274,7 @@ int fastent_win32_mmap(int fd, void ** out_base,
   h = (HANDLE) raw;
   if (GetFileType(h) != FILE_TYPE_DISK) return -1;
   if (fastent_win32_filesize_(h, &fsz) != 0) return -1;
+  if (fsz == 0) return 1;   /*  empty: cannot map; caller streams  */
   /*  0,0 = current file size; NULL name = anonymous.  CreateFileMappingW
       is a stub on Win9x; with a NULL name the A entry is equivalent.  */
   hm = CreateFileMappingA(h, NULL, PAGE_READONLY, 0, 0, NULL);

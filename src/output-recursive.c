@@ -10,8 +10,14 @@
 #include <stdio.h>
 
 static void csv_escape_(const char * s) {
-  /*  Quote only if necessary, doubling embedded quotes per RFC 4180.  */
-  int need_quote = 0;
+  /*  RFC 4180 quoting (double embedded quotes), plus a spreadsheet
+      formula-injection guard: a leading = + - @ tab would be
+      evaluated as a formula, so such a field is quoted with a
+      leading apostrophe inside the quotes, keeping it literal text
+      and the CSV still RFC 4180.  */
+  int formula = (*s == '=' || *s == '+' || *s == '-'
+              || *s == '@' || *s == '\t');
+  int need_quote = formula;
   const char * p;
   for (p = s; *p; p++) {
     if (*p == ',' || *p == '"' || *p == '\n' || *p == '\r') {
@@ -21,6 +27,7 @@ static void csv_escape_(const char * s) {
   }
   if (!need_quote) { fputs(s, stdout); return; }
   putchar('"');
+  if (formula) putchar('\'');
   for (p = s; *p; p++) {
     if (*p == '"') putchar('"');
     putchar(*p);
@@ -109,8 +116,12 @@ static void json_escape_(const char * s) {
       case '\r': fputs("\\r",  stdout); break;
       case '\t': fputs("\\t",  stdout); break;
       default:
-        if (c < 0x20) printf("\\u%04x", c);
-        else          putchar((int) c);
+        /*  Escape controls and every non-ASCII byte: paths are
+            arbitrary byte strings, so a raw >= 0x80 byte would
+            produce invalid UTF-8 (and U+2028/U+2029) in the JSON.
+            \u00xx per byte keeps the document valid ASCII.  */
+        if (c < 0x20 || c >= 0x7F) printf("\\u%04x", c);
+        else                       putchar((int) c);
     }
   }
   putchar('"');

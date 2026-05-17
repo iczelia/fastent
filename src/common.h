@@ -143,6 +143,40 @@ typedef double   f64;
   #define FASTENT_CTZ64(x) fastent_ctz64_((u64)(x))
 #endif
 
+/*  64-bit count-leading-zeros, non-zero input only.  Builtin where
+    available; the fallback rounds the value up to a mask of all
+    bits at and below the top set bit, then 63 - popcount.  */
+#if defined(__GNUC__) && !defined(__TINYC__)
+  #define FASTENT_CLZ64(x) ((u32) __builtin_clzll((u64)(x)))
+#else
+  static inline u32 fastent_clz64_(u64 x) {
+    x |= x >> 1;  x |= x >> 2;  x |= x >> 4;
+    x |= x >> 8;  x |= x >> 16; x |= x >> 32;
+    return 64u - FASTENT_POPCOUNT64(x);
+  }
+  #define FASTENT_CLZ64(x) fastent_clz64_((u64)(x))
+#endif
+
+/*  64-bit byte swap.  Compiler builtin where available, portable
+    shift/mask fallback otherwise (TCC, MSVC, exotic targets).  */
+#if defined(__GNUC__) && !defined(__TINYC__)
+  #define FASTENT_BSWAP64(x) ((u64) __builtin_bswap64((u64)(x)))
+#elif defined(_MSC_VER)
+  #include <stdlib.h>
+  #define FASTENT_BSWAP64(x) ((u64) _byteswap_uint64((u64)(x)))
+#else
+  static inline u64 fastent_bswap64_(u64 x) {
+    x = ((x & 0x00000000FFFFFFFFull) << 32)
+      | ((x & 0xFFFFFFFF00000000ull) >> 32);
+    x = ((x & 0x0000FFFF0000FFFFull) << 16)
+      | ((x & 0xFFFF0000FFFF0000ull) >> 16);
+    x = ((x & 0x00FF00FF00FF00FFull) <<  8)
+      | ((x & 0xFF00FF00FF00FF00ull) >>  8);
+    return x;
+  }
+  #define FASTENT_BSWAP64(x) fastent_bswap64_((u64)(x))
+#endif
+
 /*  Reverse the 8 bits of a byte (no standard builtin).  */
 static inline u32 fastent_bitrev8_(u32 x) {
   u64 v = (u64)(x & 0xFFu);

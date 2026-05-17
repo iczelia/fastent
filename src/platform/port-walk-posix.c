@@ -26,7 +26,13 @@ static char * join_path_(const char * a, const char * b) {
   return out;
 }
 
-static int walk_dir_(const char * path, fastent_walk_fn fn, void * ctx) {
+/*  Recursion-depth backstop against pathologically deep trees
+    (symlinked dirs are already excluded by the lstat below).  */
+#define FASTENT_WALK_MAX_DEPTH 4096
+
+static int walk_dir_(const char * path, fastent_walk_fn fn, void * ctx,
+                     int depth) {
+  if (depth > FASTENT_WALK_MAX_DEPTH) return 0;
   DIR * d = opendir(path);
   if (!d) return 0;  /*  Skip unreadable directories.  */
   int rc = 0;
@@ -44,7 +50,7 @@ static int walk_dir_(const char * path, fastent_walk_fn fn, void * ctx) {
       free(full);
       if (rc != 0) break;
     } else if (S_ISDIR(st.st_mode)) {
-      rc = walk_dir_(full, fn, ctx);
+      rc = walk_dir_(full, fn, ctx, depth + 1);
       free(full);
       if (rc != 0) break;
     } else {
@@ -60,7 +66,7 @@ int fastent_walk(const char * root, fastent_walk_fn fn, void * ctx) {
   struct stat st;
   if (stat(root, &st) != 0) return -1;
   if (S_ISREG(st.st_mode)) return fn(root, ctx);
-  if (S_ISDIR(st.st_mode)) return walk_dir_(root, fn, ctx);
+  if (S_ISDIR(st.st_mode)) return walk_dir_(root, fn, ctx, 0);
   errno = EINVAL;
   return -1;
 }

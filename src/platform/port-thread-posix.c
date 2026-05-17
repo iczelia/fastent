@@ -62,12 +62,16 @@ static void lazy_init(void) {
   if (T > 1) {
     g_workers = (pthread_t *) malloc((sz) T * sizeof(pthread_t));
     if (!g_workers) { g_n_threads = 1; return; }
+    /*  Partial failure: keep the k workers already created and run
+        with that count so g_n_threads matches the live pool instead
+        of orphaning live workers behind a serial g_n_threads == 1
+        (k < 2 -> serial).  */
     Fk(T,
        struct worker_args * a = (struct worker_args *) malloc(sizeof(*a));
-       if (!a) { g_n_threads = 1;  return; }
+       if (!a) { g_n_threads = (k >= 2) ? k : 1;  return; }
        a->k = k;
        if (pthread_create(&g_workers[k], NULL, worker_main, a) != 0) {
-         free(a);  g_n_threads = 1;  return;
+         free(a);  g_n_threads = (k >= 2) ? k : 1;  return;
        })
   }
   g_n_threads = T;

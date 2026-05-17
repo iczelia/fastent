@@ -348,7 +348,13 @@ sz fastent_src_read(fastent_source * s) {
     while (off < s->stream_buf_cap) {
       i64 n = (i64) read(s->fd, s->stream_buf + off,
                          s->stream_buf_cap - off);
-      if (n < 0)  { if (errno == EINTR) continue;  return (sz) -1; }
+      if (n < 0) {
+        if (errno == EINTR) continue;
+        /*  Deliver the buffered prefix; the error resurfaces on the
+            next call (read fails again at off == 0).  */
+        if (off > 0) return off;
+        return (sz) -1;
+      }
       if (n == 0) break;
       off += (sz) n;
     }

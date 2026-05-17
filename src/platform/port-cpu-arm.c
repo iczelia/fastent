@@ -22,7 +22,16 @@ static int                  cache_done_ = 0;
     return (getauxval(AT_HWCAP) & HWCAP_NEON) != 0;
   }
 #else
-  static inline int probe_neon_(void) { return 1; }
+  /*  No HWCAP probe: trust only the compiler's NEON guarantee
+      (__ARM_NEON, set by -mfpu=neon or a mandatory-NEON target).
+      Assuming NEON otherwise would SIGILL on a NEON-less ARMv7.  */
+  static inline int probe_neon_(void) {
+  #if defined(__ARM_NEON) || defined(__ARM_NEON__)
+    return 1;
+  #else
+    return 0;
+  #endif
+  }
 #endif
 
 #if defined(__aarch64__) && defined(__linux__) \

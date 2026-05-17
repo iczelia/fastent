@@ -66,7 +66,12 @@ static wchar_t * make_pattern_(const wchar_t * dir) {
   return out;
 }
 
-static int walk_dir_w_(const wchar_t * dir, fastent_walk_fn fn, void * ctx) {
+/*  Recursion-depth backstop, matching the POSIX walker.  */
+#define FASTENT_WALK_MAX_DEPTH 4096
+
+static int walk_dir_w_(const wchar_t * dir, fastent_walk_fn fn, void * ctx,
+                       int depth) {
+  if (depth > FASTENT_WALK_MAX_DEPTH) return 0;
   wchar_t * pat = make_pattern_(dir);
   if (!pat) return -1;
   WIN32_FIND_DATAW fd;
@@ -80,10 +85,16 @@ static int walk_dir_w_(const wchar_t * dir, fastent_walk_fn fn, void * ctx) {
                        || (name[1] == L'.' && name[2] == L'\0'))) continue;
     wchar_t * full = join_path_w_(dir, name);
     if (!full) { rc = -1; break; }
-    if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-      rc = walk_dir_w_(full, fn, ctx);
+    /*  Skip reparse-point directories (junctions / symlinks): the
+        POSIX walker drops dir symlinks via lstat, and following them
+        risks an unbounded self-referential loop.  */
+    if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+        && !(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+      rc = walk_dir_w_(full, fn, ctx, depth + 1);
       free(full);
-    } else if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+    } else if (!(fd.dwFileAttributes
+                 & (FILE_ATTRIBUTE_DIRECTORY
+                    | FILE_ATTRIBUTE_REPARSE_POINT))) {
       char * u8 = wide_to_utf8_(full);
       free(full);
       if (!u8) { rc = -1; break; }
@@ -110,7 +121,7 @@ int fastent_walk(const char * root, fastent_walk_fn fn, void * ctx) {
     return -1;
   }
   if (attr & FILE_ATTRIBUTE_DIRECTORY) {
-    rc = walk_dir_w_(wroot, fn, ctx);
+    rc = walk_dir_w_(wroot, fn, ctx, 0);
   } else {
     rc = fn(root, ctx);
   }

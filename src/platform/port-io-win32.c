@@ -60,10 +60,14 @@ typedef struct {
 
 static void iocp_destroy(iocp_state * u) {
   if (!u) return;
-  /*  Cancel in-flight I/Os; otherwise CloseHandle strands a kernel
-      pending op still referencing our buffers.  */
+  /*  CancelIoEx is asynchronous: the kernel may still be writing a
+      slot buffer.  Wait for every op to actually drain before the
+      buffers are freed below, else use-after-free on this path.  */
   if (u->file && u->file != INVALID_HANDLE_VALUE) {
     CancelIoEx(u->file, NULL);
+    Fi((int) FASTENT_IOCP_SLOTS,
+       DWORD got;
+       GetOverlappedResult(u->file, &u->slot[i].ov, &got, TRUE))
     CloseHandle(u->file);
   }
   if (u->iocp) CloseHandle(u->iocp);
@@ -217,7 +221,8 @@ int fastent_src_open(fastent_source * s, const char * path,
     void * base   = NULL;
     void * handle = NULL;
     u64    sz_out = 0;
-    if (fastent_win32_mmap(fd, &base, &sz_out, &handle) == 0) {
+    int    mr     = fastent_win32_mmap(fd, &base, &sz_out, &handle);
+    if (mr == 0) {
       s->kind       = FASTENT_SRC_MMAP;
       s->map        = base;
       s->size       = sz_out;
@@ -225,7 +230,11 @@ int fastent_src_open(fastent_source * s, const char * path,
       fastent_win32_mmap_prefetch(base, sz_out);
       return 0;
     }
-    if (mode == FASTENT_IO_MMAP) goto close_fail;
+    /*  mr == 1: empty file, unmappable but valid; stream it (0 bytes,
+        clean EOF) exactly as the POSIX backend does, even under an
+        explicit --io=mmap.  Only a genuine failure (mr < 0) under
+        --io=mmap is fatal.  */
+    if (mr < 0 && mode == FASTENT_IO_MMAP) goto close_fail;
   }
 
   s->kind = FASTENT_SRC_STREAM;
@@ -249,7 +258,13 @@ sz fastent_src_read(fastent_source * s) {
     while (off < s->stream_buf_cap) {
       i64 n = fastent_win32_read(s->fd, s->stream_buf + off,
                                  s->stream_buf_cap - off);
-      if (n < 0)  { if (errno == EINTR) continue;  return (sz) -1; }
+      if (n < 0) {
+        if (errno == EINTR) continue;
+        /*  Deliver the buffered prefix; the error resurfaces on the
+            next call (read fails again at off == 0).  */
+        if (off > 0) return off;
+        return (sz) -1;
+      }
       if (n == 0) break;
       off += (sz) n;
     }

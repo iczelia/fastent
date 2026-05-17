@@ -1,4 +1,4 @@
-/*  fastent: FIPS 140-2 RNG power-up self-tests (4.9.1).
+/*  fastent: FIPS 140-2 RNG power-up self-tests (4.9.1) dispatcher.
 
     Four tests over each independent 20000-bit (2500-byte) block:
     monobit, poker, runs and long run.  Bits are taken MSB first
@@ -6,13 +6,22 @@
     then the low nibble of each byte.  Constants are the FIPS 140-2
     values (the long-run threshold is 34; the rng-tools rngtest
     utility historically uses 26).  Blocks are independent, so the
-    work parallelises with no boundary stitch.
+    work parallelises with no boundary stitch and the result is a
+    pure integer reduction: byte-identical across thread count, IO
+    mode, and ISA.
+
+    The per-block kernel lives in fips1402-impl.h, instantiated once
+    per ISA TU (fips1402-scalar.c .. fips1402-wasm128simd.c, plus the
+    self-contained fips1402-sve2.c).  This file picks the best
+    available variant once and drives the (block-granular) threaded
+    split, mirroring analyze.c's variant dispatcher.
 
     Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "common.h"
 #include "fips1402.h"
 
+#include "port-cpu.h"
 #include "port-thread.h"
 
 #include <inttypes.h>
@@ -20,103 +29,103 @@
 #include <string.h>
 
 #define FIPS_BLOCK_BYTES 2500u
-#define FIPS_BLOCK_BITS  20000u
-#define FIPS_LONGRUN     34u
-#define FIPS_NW          ((FIPS_BLOCK_BITS + 63u) / 64u)   /*  313 words  */
-/*  Valid bits in the final word: 20000 - 64*(FIPS_NW-1) = 32.  */
-#define FIPS_LAST_MASK   0x00000000FFFFFFFFull
 
+/*  Variant table.  Order matters: the dispatcher picks the LAST
+    entry whose `available` returns true, so place narrower
+    (preferred) variants after their wider supersets, exactly like
+    analyze.c.  AVX-512 has two tiers: base (F+BW, PSHUFB-LUT
+    popcount) and bitalg (+VPOPCNTB).  */
 
-/*  One run polarity.  ge[k] = number of maximal runs of length >= k;
-    *lr34 = 1 iff some run reaches FIPS_LONGRUN.  A_k[p] holds "bits
-    p..p+k-1 are all set" via the recurrence A_k = V & succ(A_{k-1});
-    out-of-block positions are zero, so the block end terminates a
-    run.  S marks run starts, so popcount(S & A_k) counts runs >= k.
-    Fully branchless and word-parallel.  */
-static void fips_runs_side_(const u64 * V, u32 ge[7], int * lr34) {
-  u64 A[FIPS_NW], S[FIPS_NW], nx[FIPS_NW];
-  i32 w;
-  u32 k;
-  for (w = 0; w < (i32) FIPS_NW; w++) {
-    const u64 pred = (V[w] << 1) | (w > 0 ? V[w - 1] >> 63 : 0ull);
-    S[w] = V[w] & ~pred;
-    A[w] = V[w];
-  }
-  Fi0(7, 1, ge[i] = 0)
-  *lr34 = 0;
-  for (k = 1; ; k++) {
-    u64 orA = 0;
-    if (k >= 2) {
-      for (w = 0; w < (i32) FIPS_NW; w++)
-        nx[w] = (A[w] >> 1)
-              | (w + 1 < (i32) FIPS_NW ? A[w + 1] << 63 : 0ull);
-      for (w = 0; w < (i32) FIPS_NW; w++) A[w] = V[w] & nx[w];
-    }
-    if (k <= 6) {
-      u64 g = 0;
-      for (w = 0; w < (i32) FIPS_NW; w++) {
-        orA |= A[w];  g += FASTENT_POPCOUNT64(S[w] & A[w]);
-      }
-      ge[k] = (u32) g;
-    } else {
-      for (w = 0; w < (i32) FIPS_NW; w++) orA |= A[w];
-    }
-    if (k == FIPS_LONGRUN) { *lr34 = (orA != 0);  break; }
-    if (orA == 0) break;        /*  no run >= k; longer ge stay 0  */
-  }
+#define CPU_HAS(name)      (fastent_cpu_get()->name)
+
+typedef struct {
+  fastent_variant      variant;
+  const char *         name;
+  int                (*available)(void);
+  fastent_fips_run_fn  run;
+} fips_variant_entry;
+
+static int favail_scalar_(void)  { return 1; }
+#ifdef HAVE_SSSE3
+static int favail_ssse3_(void)   { return CPU_HAS(ssse3); }
+#endif
+#ifdef HAVE_SSE41
+static int favail_sse41_(void)   { return CPU_HAS(sse42); }
+#endif
+#ifdef HAVE_AVX2
+static int favail_avx2_(void)    { return CPU_HAS(avx2); }
+#endif
+#ifdef HAVE_AVX512
+static int favail_avx512_(void) {
+  return CPU_HAS(avx512f) && CPU_HAS(avx512bw);
+}
+#endif
+#ifdef HAVE_AVX512_BITALG
+static int favail_avx512b_(void) {
+  return CPU_HAS(avx512f) && CPU_HAS(avx512bw) && CPU_HAS(avx512bitalg);
+}
+#endif
+#ifdef HAVE_NEON
+static int favail_neon_(void)    { return CPU_HAS(neon); }
+#endif
+#ifdef HAVE_SVE2
+static int favail_sve2_(void)    { return CPU_HAS(sve2); }
+#endif
+#ifdef HAVE_WASM128
+static int favail_wasm128_(void) { return CPU_HAS(wasm128); }
+#endif
+
+static const fips_variant_entry fips_variants_[] = {
+  { FASTENT_VAR_SCALAR, "scalar", favail_scalar_,
+    fastent_fips_run_blocks_scalar },
+#ifdef HAVE_SSSE3
+  { FASTENT_VAR_SSSE3_, "ssse3", favail_ssse3_,
+    fastent_fips_run_blocks_ssse3 },
+#endif
+#ifdef HAVE_SSE41
+  { FASTENT_VAR_SSE41_, "sse4.1", favail_sse41_,
+    fastent_fips_run_blocks_sse41 },
+#endif
+#ifdef HAVE_AVX2
+  { FASTENT_VAR_AVX2_, "avx2", favail_avx2_,
+    fastent_fips_run_blocks_avx2 },
+#endif
+#ifdef HAVE_AVX512
+  { FASTENT_VAR_AVX512_, "avx512", favail_avx512_,
+    fastent_fips_run_blocks_avx512 },
+#endif
+#ifdef HAVE_AVX512_BITALG
+  { FASTENT_VAR_AVX512_BITALG, "avx512+bitalg", favail_avx512b_,
+    fastent_fips_run_blocks_avx512_bitalg },
+#endif
+#ifdef HAVE_NEON
+  { FASTENT_VAR_NEON_, "neon", favail_neon_,
+    fastent_fips_run_blocks_neon },
+#endif
+#ifdef HAVE_SVE2
+  { FASTENT_VAR_SVE2_, "sve2", favail_sve2_,
+    fastent_fips_run_blocks_sve2 },
+#endif
+#ifdef HAVE_WASM128
+  { FASTENT_VAR_WASM128_, "wasm-simd128", favail_wasm128_,
+    fastent_fips_run_blocks_wasm128 },
+#endif
+};
+
+#define FIPS_VARIANTS_N \
+  (sizeof fips_variants_ / sizeof fips_variants_[0])
+
+static const fips_variant_entry * fips_pick_(void) {
+  const fips_variant_entry * best = &fips_variants_[0];
+  Fi0((int) FIPS_VARIANTS_N, 1,
+      if (fips_variants_[i].available()) best = &fips_variants_[i])
+  return best;
 }
 
-/*  Test one 2500-byte block and fold the verdict into r.  */
-static void fips_block_(const u8 * b, fastent_fips_report * r) {
-  u64 W[FIPS_NW], C[FIPS_NW];
-  i32 w;
-
-  /*  Pack the MSB-first bit stream into words; trailing bits stay
-      zero.  C is the complement, masked to the valid 20000 bits so a
-      0-run cannot run off the block end.  */
-  memset(W, 0, sizeof W);
-  Fi((int) FIPS_BLOCK_BYTES,
-     W[i >> 3] |= (u64) fastent_bitrev8_(b[i]) << ((u32)(i & 7) * 8u))
-  for (w = 0; w < (i32) FIPS_NW; w++) C[w] = ~W[w];
-  C[FIPS_NW - 1] &= FIPS_LAST_MASK;
-
-  /*  Monobit: total set bits (popcount is bit-position invariant).  */
-  u64 ones = 0;
-  for (w = 0; w < (i32) FIPS_NW; w++) ones += FASTENT_POPCOUNT64(W[w]);
-  const int mono_ok = (ones > 9725ull && ones < 10275ull);
-
-  /*  Poker: 5000 4-bit groups, high then low nibble.  */
-  u32 f[16];
-  memset(f, 0, sizeof f);
-  Fi((int) FIPS_BLOCK_BYTES, f[b[i] >> 4]++;  f[b[i] & 0x0Fu]++)
-  u64 ssq = 0;
-  Fi(16, ssq += (u64) f[i] * (u64) f[i])
-  const f64 X = (16.0 / 5000.0) * (f64) ssq - 5000.0;
-  const int poker_ok = (X > 2.16 && X < 46.17);
-
-  /*  Runs / long run.  Exact-length bucket L = ge[L]-ge[L+1] for
-      L=1..5; bucket 6 = ge[6] (length >= 6).  */
-  u32 ge1[7], ge0[7];
-  int lr1, lr0;
-  fips_runs_side_(W, ge1, &lr1);
-  fips_runs_side_(C, ge0, &lr0);
-
-  static const u32 lo_[7] = { 0, 2315, 1114, 527, 240, 103, 103 };
-  static const u32 hi_[7] = { 0, 2685, 1386, 723, 384, 209, 209 };
-  int runs_ok = 1;
-  Fi0(7, 1,
-      const u32 c1 = (i < 6) ? ge1[i] - ge1[i + 1] : ge1[6];
-      const u32 c0 = (i < 6) ? ge0[i] - ge0[i + 1] : ge0[6];
-      if (c1 < lo_[i] || c1 > hi_[i]) runs_ok = 0;
-      if (c0 < lo_[i] || c0 > hi_[i]) runs_ok = 0)
-  const int long_ok = !(lr1 || lr0);
-
-  r->blocks++;
-  if (!mono_ok)  r->monobit_fail++;
-  if (!poker_ok) r->poker_fail++;
-  if (!runs_ok)  r->runs_fail++;
-  if (!long_ok)  r->longrun_fail++;
-  if (mono_ok && poker_ok && runs_ok && long_ok) r->blocks_pass++;
+fastent_fips_run_fn fastent_pick_fips_variant(fastent_variant * which) {
+  const fips_variant_entry * e = fips_pick_();
+  if (which) *which = e->variant;
+  return e->run;
 }
 
 #ifdef FASTENT_HAVE_THREADS
@@ -125,16 +134,14 @@ typedef struct {
   u64                   nblocks;
   i32                   T;
   fastent_fips_report * shards;
+  fastent_fips_run_fn   run;
 } fips_ctx;
 
 static void fips_worker_(sz k, void * vctx) {
   fips_ctx * c = (fips_ctx *) vctx;
   u64 lo = (u64) k * c->nblocks / (u64) c->T;
   u64 hi = (u64)(k + 1) * c->nblocks / (u64) c->T;
-  fastent_fips_report * r = &c->shards[k];
-  u64 i;
-  for (i = lo; i < hi; i++)
-    fips_block_(c->buf + i * FIPS_BLOCK_BYTES, r);
+  c->run(c->buf + lo * FIPS_BLOCK_BYTES, hi - lo, &c->shards[k]);
 }
 #endif
 
@@ -145,13 +152,15 @@ void fastent_fips140_run(const u8 * buf, sz len, int threads,
   out->leftover = (u64) len - nblocks * FIPS_BLOCK_BYTES;
   if (nblocks == 0) return;
 
+  fastent_fips_run_fn run = fastent_pick_fips_variant(NULL);
+
 #ifdef FASTENT_HAVE_THREADS
   if (threads > 1) {
     i32 T = threads;
     if ((u64) T > nblocks) T = (i32) nblocks;
     fastent_set_num_threads(T);
     fips_ctx c;
-    c.buf = buf;  c.nblocks = nblocks;  c.T = T;
+    c.buf = buf;  c.nblocks = nblocks;  c.T = T;  c.run = run;
     c.shards =
       (fastent_fips_report *) calloc((sz) T, sizeof(*c.shards));
     if (c.shards) {
@@ -171,8 +180,7 @@ void fastent_fips140_run(const u8 * buf, sz len, int threads,
 #else
   (void) threads;
 #endif
-  { u64 i;  for (i = 0; i < nblocks; i++)
-      fips_block_(buf + i * FIPS_BLOCK_BYTES, out); }
+  run(buf, nblocks, out);
 }
 
 int fastent_fips140_print(const fastent_fips_report * r, FILE * fp) {

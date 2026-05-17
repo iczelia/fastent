@@ -39,8 +39,12 @@ static inline u8 fastent_fold_byte(u8 b) {
     chunk boundaries at finalize.  */
 typedef struct {
   /*  Banked histogram: bank[k][v] counts value v at stream positions
-      p with (p mod FASTENT_BANKS) == k.  Merged at finalize.  */
-  u32 bank[FASTENT_BANKS][256];
+      p with (p mod FASTENT_BANKS) == k.  Merged at finalize.  u64,
+      not u32: a single-symbol stream through one state (single-thread
+      mmap, or stream -j1 accumulating across chunks) drives one cell
+      to ~N/4, which overflows u32 near 17 GiB and silently corrupts
+      entropy/chi/mode.  */
+  u64 bank[FASTENT_BANKS][256];
 
   /*  Sum of x[i] * x[i+1] over bytes seen so far, MINUS the wrap term
       (added globally at finalize).  The SIMD body applies its sign

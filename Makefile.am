@@ -15,7 +15,7 @@ noinst_HEADERS = src/kernel/analyze.h src/kernel/analyze-impl.h \
                  src/kernel/analyze-vec-x86.h src/kernel/analyze-vec-neon.h \
                  src/kernel/analyze-vec-wasm.h \
                  src/kernel/fastent-math.h src/kernel/log2_tables.h \
-                 src/kernel/fips1402.h \
+                 src/kernel/fips1402.h src/kernel/fips1402-impl.h \
                  src/common.h src/fastent-options.h src/output.h \
                  src/cli.h src/runner.h src/yarg.h \
                  src/platform/fastent-win32.h \
@@ -26,7 +26,8 @@ noinst_HEADERS = src/kernel/analyze.h src/kernel/analyze-impl.h \
 fastent_SOURCES = src/fastent.c src/cli.c src/runner.c \
                   src/kernel/analyze.c src/kernel/analyze-scalar.c \
                   src/kernel/digram.c src/kernel/chisq.c \
-                  src/kernel/fips1402.c src/kernel/fastent-math.c \
+                  src/kernel/fips1402.c src/kernel/fips1402-scalar.c \
+                  src/kernel/fastent-math.c \
                   src/output-default.c src/output-terse.c src/output-json.c \
                   src/output-histogram.c src/output-recursive.c \
                   src/output-annotated.c \
@@ -55,56 +56,64 @@ noinst_LIBRARIES =
 
 if HAVE_SSSE3
 noinst_LIBRARIES           += libfastent_ssse3.a
-libfastent_ssse3_a_SOURCES  = src/kernel/analyze-ssse3.c
+libfastent_ssse3_a_SOURCES  = src/kernel/analyze-ssse3.c \
+                              src/kernel/fips1402-ssse3.c
 libfastent_ssse3_a_CFLAGS   = $(AM_CFLAGS) $(SSSE3_CFLAGS)
 fastent_LDADD              += libfastent_ssse3.a
 endif
 
 if HAVE_SSE41
 noinst_LIBRARIES           += libfastent_sse41.a
-libfastent_sse41_a_SOURCES  = src/kernel/analyze-sse41.c
+libfastent_sse41_a_SOURCES  = src/kernel/analyze-sse41.c \
+                              src/kernel/fips1402-sse41.c
 libfastent_sse41_a_CFLAGS   = $(AM_CFLAGS) $(SSE41_CFLAGS)
 fastent_LDADD              += libfastent_sse41.a
 endif
 
 if HAVE_AVX2
 noinst_LIBRARIES           += libfastent_avx2.a
-libfastent_avx2_a_SOURCES   = src/kernel/analyze-avx2.c
+libfastent_avx2_a_SOURCES   = src/kernel/analyze-avx2.c \
+                              src/kernel/fips1402-avx2.c
 libfastent_avx2_a_CFLAGS    = $(AM_CFLAGS) $(AVX2_CFLAGS)
 fastent_LDADD              += libfastent_avx2.a
 endif
 
 if HAVE_AVX512
 noinst_LIBRARIES            += libfastent_avx512.a
-libfastent_avx512_a_SOURCES  = src/kernel/analyze-avx512.c
+libfastent_avx512_a_SOURCES  = src/kernel/analyze-avx512.c \
+                               src/kernel/fips1402-avx512.c
 libfastent_avx512_a_CFLAGS   = $(AM_CFLAGS) $(AVX512_CFLAGS)
 fastent_LDADD               += libfastent_avx512.a
 endif
 
 if HAVE_AVX512_BITALG
 noinst_LIBRARIES                   += libfastent_avx512_bitalg.a
-libfastent_avx512_bitalg_a_SOURCES  = src/kernel/analyze-avx512-bitalg.c
+libfastent_avx512_bitalg_a_SOURCES  = src/kernel/analyze-avx512-bitalg.c \
+                                      src/kernel/fips1402-avx512-bitalg.c
 libfastent_avx512_bitalg_a_CFLAGS   = $(AM_CFLAGS) $(AVX512_BITALG_CFLAGS)
 fastent_LDADD                      += libfastent_avx512_bitalg.a
 endif
 
 if HAVE_NEON
 noinst_LIBRARIES           += libfastent_neon.a
-libfastent_neon_a_SOURCES   = src/kernel/analyze-neon.c
+libfastent_neon_a_SOURCES   = src/kernel/analyze-neon.c \
+                              src/kernel/fips1402-neon.c
 libfastent_neon_a_CFLAGS    = $(AM_CFLAGS) $(NEON_CFLAGS)
 fastent_LDADD              += libfastent_neon.a
 endif
 
 if HAVE_SVE2
 noinst_LIBRARIES           += libfastent_sve2.a
-libfastent_sve2_a_SOURCES   = src/kernel/analyze-sve2.c
+libfastent_sve2_a_SOURCES   = src/kernel/analyze-sve2.c \
+                              src/kernel/fips1402-sve2.c
 libfastent_sve2_a_CFLAGS    = $(AM_CFLAGS) $(SVE2_CFLAGS)
 fastent_LDADD              += libfastent_sve2.a
 endif
 
 if HAVE_WASM128
 noinst_LIBRARIES               += libfastent_wasm128.a
-libfastent_wasm128_a_SOURCES    = src/kernel/analyze-wasm128simd.c
+libfastent_wasm128_a_SOURCES    = src/kernel/analyze-wasm128simd.c \
+                                  src/kernel/fips1402-wasm128simd.c
 libfastent_wasm128_a_CFLAGS     = $(AM_CFLAGS) $(WASM128_CFLAGS)
 fastent_LDADD                  += libfastent_wasm128.a
 endif
