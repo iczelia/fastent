@@ -181,6 +181,29 @@ static inline u32 fastent_bitrev8_(u32 x) {
   return (u32)(v & 0xFFu);
 }
 
+/*  SWAR per-byte bit reverse of a u64 (8 lanes, 3 mask-swap steps),
+    bit-identical to fastent_bitrev8_ per byte.  The bit -ee packer
+    pairs it with an explicit LE 8-byte load (FASTENT_RB64_LD) so the
+    packed word is endian-invariant.  */
+static inline u64 fastent_rb64_(u64 v) {
+  v = ((v & 0x5555555555555555ull) << 1) | ((v >> 1) & 0x5555555555555555ull);
+  v = ((v & 0x3333333333333333ull) << 2) | ((v >> 2) & 0x3333333333333333ull);
+  v = ((v & 0x0F0F0F0F0F0F0F0Full) << 4) | ((v >> 4) & 0x0F0F0F0F0F0F0F0Full);
+  return v;
+}
+#define FASTENT_RB64(v) fastent_rb64_((u64)(v))
+
+/*  Load 8 bytes as a little-endian u64 then per-byte bit-reverse: the
+    exact MSB-first-per-byte packed word the bit -ee scan consumes,
+    identical on big- and little-endian (explicit byte assembly).  */
+static inline u64 fastent_rb64_ld_(const u8 * p) {
+  u64 v = (u64) p[0]        | ((u64) p[1] <<  8)
+        | ((u64) p[2] << 16) | ((u64) p[3] << 24)
+        | ((u64) p[4] << 32) | ((u64) p[5] << 40)
+        | ((u64) p[6] << 48) | ((u64) p[7] << 56);
+  return fastent_rb64_(v);
+}
+
 /*  Tight int-counter for-loop macros, C89-compliant.  */
 #define Fi(n, body)        { int i; for (i = 0; i < (n); i++) { body; } }
 #define Fj(n, body)        { int j; for (j = 0; j < (n); j++) { body; } }

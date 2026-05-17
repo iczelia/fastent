@@ -1973,3 +1973,216 @@ void FASTENT_FN(digram_bytes)(fastent_chunk_state * st,
   st->dg_prev = buf[len - 1];
 #endif
 }
+
+/*  Bit -ee level-2 fused block kernel, one per ISA.  Math identical to
+    the scalar reference (byte-identical for any -j); per-TU -m flags
+    give hardware popcount/clz and vectorise B1/B2.  AVX-512 BITALG
+    folds the four digram popcounts via _mm512_popcnt_epi64.  */
+
+/*  +8 padding words: the AVX-512 B1/B2 loop loads succ = W[w+1] one
+    vector wide, so reading W[NW..NW+7] must stay in bounds and read
+    zero (matches the scalar (w+1<NW)?W[w+1]:0 boundary).  */
+#define FASTENT_DG_BITS_WORDS_T ((65536u / 8u) + 8u)
+
+/*  Longest run of consecutive 0-bits of t strictly between its lowest
+    (lo) and highest (hi) set bit, +1 = the largest adjacent set-bit
+    distance inside this word.  Loop bounded by the result, not the bit
+    count.  0 when t has < 2 set bits (no internal gap).  */
+static FASTENT_ALWAYS_INLINE u64
+FASTENT_FN(maxgap_in_word)(u64 t, u32 lo, u32 hi) {
+  u64 lomask, himask, z, y;
+  u32 k;
+  if (hi <= lo) return 0;
+  lomask = ~(((u64) 1 << (lo + 1)) - 1ull);
+  himask = ((u64) 1 << hi) - 1ull;
+  z = (~t) & lomask & himask;
+  y = z;  k = 0;
+  while (y) { y &= y << 1; k++; }
+  return (u64) k + 1ull;
+}
+
+/*  Fold a block's run sequence into the longest-run machine without
+    enumerating internal runs; bit-identical to the per-run
+    fastent_lr_run sequence (the block's runs strictly alternate, so
+    completed runs only raise lr_max and the tail reopens).  */
+static FASTENT_ALWAYS_INLINE void
+FASTENT_FN(lr_runs_summary)(fastent_chunk_state * st,
+                            u32 head_sym, u64 head_len, u64 internal_max,
+                            u32 tail_sym, u64 tail_len, int multi) {
+  if (!multi) { FASTENT_FN(lr_run_i)(st, head_sym, head_len); return; }
+  FASTENT_FN(lr_run_i)(st, head_sym, head_len);
+  if (st->lr_cur > st->lr_max) st->lr_max = st->lr_cur;
+  if (internal_max > st->lr_max) st->lr_max = internal_max;
+  st->lr_head_open = 0;
+  st->lr_sym = (u8) tail_sym;
+  st->lr_cur = tail_len;
+}
+
+void FASTENT_FN(digram_bits_blk)(fastent_chunk_state * st,
+                                 const u8 * FASTENT_RESTRICT buf, sz cl,
+                                 const i32 * cs_mn, const i32 * cs_mx,
+                                 const i32 * cs_net) {
+  u64 W[FASTENT_DG_BITS_WORDS_T];
+  const sz M  = cl * 8;
+  const sz NW = (M + 63) / 64;
+  const sz cw = cl / 8;
+  sz w, i;
+
+  /*  B0: pack via RB64 (per-byte bit reverse of an explicit-LE 8-byte
+      load) over whole words; the <8-byte tail is packed byte-wise.  */
+  for (w = 0; w < cw; w++) W[w] = fastent_rb64_ld_(buf + w * 8);
+  if (NW > cw) {
+    u64 last = 0;
+    for (i = cw * 8; i < cl; i++)
+      last |= (u64) fastent_bitrev8_(buf[i]) << ((u32)(i & 7) * 8u);
+    W[cw] = last;
+  }
+  for (i = NW; i < NW + 8; i++) W[i] = 0ull;   /*  succ-load pad  */
+
+  const u32 b0    = (u32)(W[0] & 1u);
+  const sz  lbpos = M - 1;
+  const u32 lbit  = (u32)((W[lbpos >> 6] >> (lbpos & 63)) & 1u);
+  const sz  wl    = lbpos >> 6;
+  const u32 bl    = (u32)(lbpos & 63);
+  const u64 lmask = bl ? ((1ull << bl) - 1ull) : 0ull;
+
+  u64 n11 = 0, ntr = 0, n10 = 0;
+
+#if defined(FASTENT_VARIANT_AVX512) && defined(FASTENT_AVX512_HAVE_BITALG)
+  /*  B1/B2 via VPOPCNTB (_mm512_popcnt_epi8) + SAD horizontal sum:
+      8 words/instr for W&succ, W^succ, W&~succ; succ[w] =
+      (W[w]>>1)|(W[w+1]<<63).  BITALG has byte popcount, not _epi64.  */
+  {
+    sz wv = NW & ~(sz) 7;
+    __m512i z     = _mm512_setzero_si512();
+    __m512i acc11 = z, acctr = z, acc10 = z;
+    for (w = 0; w < wv; w += 8) {
+      __m512i a  = _mm512_loadu_si512((const void *)(W + w));
+      __m512i nx = _mm512_loadu_si512((const void *)(W + w + 1));
+      __m512i sa = _mm512_or_si512(_mm512_srli_epi64(a, 1),
+                                   _mm512_slli_epi64(nx, 63));
+      acc11 = _mm512_add_epi64(acc11, _mm512_sad_epu8(
+                _mm512_popcnt_epi8(_mm512_and_si512(a, sa)), z));
+      acctr = _mm512_add_epi64(acctr, _mm512_sad_epu8(
+                _mm512_popcnt_epi8(_mm512_xor_si512(a, sa)), z));
+      acc10 = _mm512_add_epi64(acc10, _mm512_sad_epu8(
+                _mm512_popcnt_epi8(_mm512_andnot_si512(sa, a)), z));
+    }
+    n11 += (u64) _mm512_reduce_add_epi64(acc11);
+    ntr += (u64) _mm512_reduce_add_epi64(acctr);
+    n10 += (u64) _mm512_reduce_add_epi64(acc10);
+    for (w = wv; w < NW; w++) {
+      const u64 a  = W[w];
+      const u64 nx = (w + 1 < NW) ? W[w + 1] : 0ull;
+      const u64 sa = (a >> 1) | (nx << 63);
+      n11 += FASTENT_POPCOUNT64(a & sa);
+      ntr += FASTENT_POPCOUNT64(a ^ sa);
+      n10 += FASTENT_POPCOUNT64(a & ~sa);
+    }
+  }
+#else
+  /*  Portable B1/B2: compiler vectorises this with the TU -m flags.  */
+  for (w = 0; w < NW; w++) {
+    const u64 a  = W[w];
+    const u64 nx = (w + 1 < NW) ? W[w + 1] : 0ull;
+    const u64 sa = (a >> 1) | (nx << 63);
+    n11 += FASTENT_POPCOUNT64(a & sa);
+    ntr += FASTENT_POPCOUNT64(a ^ sa);
+    n10 += FASTENT_POPCOUNT64(a & ~sa);
+  }
+#endif
+
+  /*  B3 longest run + B4 cusum: closed-form scalar residue on the
+      already-loaded words (proven byte-identical to the old per-
+      transition loop via lr_runs_summary).  */
+  i64 o = 0, gmn = ((i64) 1 << 60), gmx = -((i64) 1 << 60);
+  i64 first_p = -1, last_p = -1;
+  u64 gapmax  = 0;
+  int have_tr = 0;
+  for (w = 0; w < NW; w++) {
+    const u64 a  = W[w];
+    const u64 nx = (w + 1 < NW) ? W[w + 1] : 0ull;
+    const u64 sa = (a >> 1) | (nx << 63);
+    u64 tw = a ^ sa;
+    if (w == wl) tw &= lmask;
+    if (tw) {
+      const u32 lo = FASTENT_CTZ64(tw);
+      const u32 hi = 63u - FASTENT_CLZ64(tw);
+      const i64 fp = (i64) w * 64 + (i64) lo;
+      const i64 lp = (i64) w * 64 + (i64) hi;
+      if (have_tr) {
+        const u64 g = (u64)(fp - last_p);
+        if (g > gapmax) gapmax = g;
+      } else {
+        first_p = fp;  have_tr = 1;
+      }
+      {
+        const u64 gw = FASTENT_FN(maxgap_in_word)(tw, lo, hi);
+        if (gw > gapmax) gapmax = gw;
+      }
+      last_p = lp;
+    }
+    /*  B4: word-local LUT extremes off offset o; o jumps by the
+        closed-form whole-word net 2*POP-64 (a word's byte-net sum is
+        exactly that) instead of the serial cs_net chain.  The final
+        partial word still chains cs_net for its bytes.  */
+    {
+      const int full = (w + 1 != NW) || (cl - w * 8 == 8);
+      if (full) {
+        i64 r = 0;
+        u32 j;
+        for (j = 0; j < 8; j++) {
+          const u32 v = (u32)((a >> (j * 8)) & 0xFFu);
+          const i64 base = o + r;
+          if (base + cs_mn[v] < gmn) gmn = base + cs_mn[v];
+          if (base + cs_mx[v] > gmx) gmx = base + cs_mx[v];
+          r += cs_net[v];
+        }
+        o += 2 * (i64) FASTENT_POPCOUNT64(a) - 64;
+      } else {
+        const u32 jb = (u32)(cl - w * 8);
+        u32 j;
+        for (j = 0; j < jb; j++) {
+          const u32 v = (u32)((a >> (j * 8)) & 0xFFu);
+          if (o + cs_mn[v] < gmn) gmn = o + cs_mn[v];
+          if (o + cs_mx[v] > gmx) gmx = o + cs_mx[v];
+          o += cs_net[v];
+        }
+      }
+    }
+  }
+
+  ntr -= lbit;  n10 -= lbit;
+  const u64 n01 = ntr - n10;
+  const u64 n00 = (u64)(M - 1) - ntr - n11;
+
+  if (st->dg_have) st->bit_bigram[st->dg_prev & 1u][b0]++;
+  st->bit_bigram[0][0] += n00;  st->bit_bigram[0][1] += n01;
+  st->bit_bigram[1][0] += n10;  st->bit_bigram[1][1] += n11;
+  st->dg_prev = (u8) lbit;  st->dg_have = 1;
+
+  if (!st->rn_have) { st->rn_have = 1;  st->rn_count = 1 + ntr; }
+  else {
+    if (b0 != st->rn_last) st->rn_count++;
+    st->rn_count += ntr;
+  }
+  st->rn_last = (u8) lbit;
+
+  {
+    const i64 cs0 = st->cs_sum;
+    if (cs0 + gmn < st->cs_min) st->cs_min = cs0 + gmn;
+    if (cs0 + gmx > st->cs_max) st->cs_max = cs0 + gmx;
+    st->cs_sum = cs0 + o;
+  }
+
+  if (!have_tr) {
+    FASTENT_FN(lr_runs_summary)(st, b0, (u64)(lbpos + 1), 0, b0,
+                                (u64)(lbpos + 1), 0);
+  } else {
+    const u64 head_len = (u64)(first_p + 1);
+    const u64 tail_len = (u64)((i64) lbpos - last_p);
+    const u32 tail_sym = b0 ^ (u32)(ntr & 1u);
+    FASTENT_FN(lr_runs_summary)(st, b0, head_len, gapmax,
+                                tail_sym, tail_len, 1);
+  }
+}

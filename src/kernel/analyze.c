@@ -314,6 +314,7 @@ typedef struct {
   fastent_analyze_fn  fold_bits;
   fastent_fold_fn     fold;
   fastent_digram_byte_fn digram_byte;
+  fastent_digram_bits_fn digram_bits;
 } variant_entry;
 
 static int avail_scalar_(void)  { return 1; }
@@ -350,7 +351,19 @@ static int avail_wasm128_(void) { return CPU_HAS(wasm128); }
   { FASTENT_VAR_##VARIANT, NAME, AVAIL,                               \
     analyze_##SUFFIX,           analyze_bits_##SUFFIX,                \
     analyze_fold_##SUFFIX,      analyze_bits_fold_##SUFFIX,           \
-    fold_##SUFFIX,             digram_bytes_##SUFFIX }
+    fold_##SUFFIX,             digram_bytes_##SUFFIX,                 \
+    digram_bits_blk_##SUFFIX }
+
+/*  analyze-sve2.c is self-contained (no analyze-impl.h), so it emits
+    no digram_bits_blk_sve2.  Bind that slot to the always-built scalar
+    reference (still byte-identical, just no SVE2 acceleration) so an
+    aarch64-SVE2 build links; everything else stays the SVE2 variant.  */
+#define ENTRY_DGSCALAR(VARIANT, NAME, AVAIL, SUFFIX)                  \
+  { FASTENT_VAR_##VARIANT, NAME, AVAIL,                               \
+    analyze_##SUFFIX,           analyze_bits_##SUFFIX,                \
+    analyze_fold_##SUFFIX,      analyze_bits_fold_##SUFFIX,           \
+    fold_##SUFFIX,             digram_bytes_##SUFFIX,                 \
+    digram_bits_blk_scalar }
 
 static const variant_entry variants_[] = {
   ENTRY(SCALAR,           "scalar",        avail_scalar_,  scalar),
@@ -373,7 +386,7 @@ static const variant_entry variants_[] = {
   ENTRY(NEON_,            "neon",          avail_neon_,    neon),
 #endif
 #ifdef HAVE_SVE2
-  ENTRY(SVE2_,            "sve2",          avail_sve2_,    sve2),
+  ENTRY_DGSCALAR(SVE2_,   "sve2",          avail_sve2_,    sve2),
 #endif
 #ifdef HAVE_WASM128
   ENTRY(WASM128_,         "wasm-simd128",  avail_wasm128_, wasm128),
@@ -381,6 +394,7 @@ static const variant_entry variants_[] = {
 };
 
 #undef ENTRY
+#undef ENTRY_DGSCALAR
 
 #define VARIANTS_N (sizeof variants_ / sizeof variants_[0])
 
@@ -426,6 +440,13 @@ fastent_pick_digram_byte_variant(fastent_variant * which) {
   const variant_entry * e = pick_();
   if (which) *which = e->variant;
   return e->digram_byte;
+}
+
+fastent_digram_bits_fn
+fastent_pick_digram_bits_variant(fastent_variant * which) {
+  const variant_entry * e = pick_();
+  if (which) *which = e->variant;
+  return e->digram_bits;
 }
 
 const char * fastent_variant_name(fastent_variant v) {

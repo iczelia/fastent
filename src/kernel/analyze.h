@@ -291,6 +291,47 @@ void digram_bytes_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 
 fastent_digram_byte_fn fastent_pick_digram_byte_variant(fastent_variant * w);
 
+/*  Bit-mode -ee level-2 fused block kernel (B0 pack + B1/B2 digram +
+    B3 closed-form longest run + B4 cusum LUT), one per ISA.  Scalar
+    variant is the reference; SIMD reproduces its counters bit-for-bit
+    for any -j.  cl <= 64 KiB; state threads across calls.  */
+typedef void (* fastent_digram_bits_fn)(fastent_chunk_state *,
+                                        const u8 *, sz,
+                                        const i32 *, const i32 *,
+                                        const i32 *);
+void digram_bits_blk_scalar(fastent_chunk_state * st, const u8 * buf,
+                            sz cl, const i32 *, const i32 *, const i32 *);
+#ifdef HAVE_SSSE3
+void digram_bits_blk_ssse3(fastent_chunk_state * st, const u8 * buf,
+                           sz cl, const i32 *, const i32 *, const i32 *);
+#endif
+#ifdef HAVE_SSE41
+void digram_bits_blk_sse41(fastent_chunk_state * st, const u8 * buf,
+                           sz cl, const i32 *, const i32 *, const i32 *);
+#endif
+#ifdef HAVE_AVX2
+void digram_bits_blk_avx2(fastent_chunk_state * st, const u8 * buf,
+                          sz cl, const i32 *, const i32 *, const i32 *);
+#endif
+#ifdef HAVE_AVX512
+void digram_bits_blk_avx512(fastent_chunk_state * st, const u8 * buf,
+                            sz cl, const i32 *, const i32 *, const i32 *);
+#endif
+#ifdef HAVE_AVX512_BITALG
+void digram_bits_blk_avx512_bitalg(fastent_chunk_state * st, const u8 * buf,
+                                   sz cl, const i32 *, const i32 *,
+                                   const i32 *);
+#endif
+#ifdef HAVE_NEON
+void digram_bits_blk_neon(fastent_chunk_state * st, const u8 * buf,
+                          sz cl, const i32 *, const i32 *, const i32 *);
+#endif
+#ifdef HAVE_WASM128
+void digram_bits_blk_wasm128(fastent_chunk_state * st, const u8 * buf,
+                             sz cl, const i32 *, const i32 *, const i32 *);
+#endif
+fastent_digram_bits_fn fastent_pick_digram_bits_variant(fastent_variant * w);
+
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which);
 fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which);
 const char *   fastent_variant_name(fastent_variant v);

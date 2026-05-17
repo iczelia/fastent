@@ -58,10 +58,24 @@ static fastent_digram_byte_fn dg_byte_fn_(void) {
 #define FASTENT_DG_BITS_CHUNK 65536u                   /*  bytes  */
 #define FASTENT_DG_BITS_WORDS (FASTENT_DG_BITS_CHUNK / 8u)
 
-/*  One <= 64 KiB sub-block; state carries across calls so a sub-block
-    is a contiguous continuation (boundary pair, run, cusum offset,
-    rn_last all thread through st as the per-bit scan).  cs LUT holds
-    min/max prefix offset and net of a byte's MSB-first +-1 walk.  */
+
+/*  Cached per-ISA bit -ee fused block kernel.  Process-stable pick so
+    the lazy-init race stores the same pointer (as dg_byte_fn_).  The
+    always-built scalar variant is the reference; the chosen SIMD
+    variant reproduces its counters bit-for-bit.  */
+#ifndef FASTENT_DG_BITS_REF
+static fastent_digram_bits_fn dg_bits_fn_(void) {
+  static fastent_digram_bits_fn bf = NULL;
+  fastent_digram_bits_fn f = bf;
+  if (!f) { f = fastent_pick_digram_bits_variant(NULL);  bf = f; }
+  return f;
+}
+#endif
+
+#ifdef FASTENT_DG_BITS_REF
+/*  Reference (oracle) block: per-byte pack + per-transition
+    fastent_lr_run loop.  Compiled only for the differential gate; the
+    default build dispatches to the templated per-ISA kernel.  */
 static void digram_bits_blk_(fastent_chunk_state * st,
                              const u8 * FASTENT_RESTRICT buf, sz cl,
                              const i32 * cs_mn, const i32 * cs_mx,
@@ -79,9 +93,6 @@ static void digram_bits_blk_(fastent_chunk_state * st,
   const sz  lbpos = M - 1;
   const u32 lbit  = (u32)((W[lbpos >> 6] >> (lbpos & 63)) & 1u);
 
-  /*  bit_bigram: n11 / transitions / n10 over the M-1 internal
-      pairs.  succ(W)[p] = W[p+1]; out-of-block bits are zero, so
-      only the spurious p == M-1 term (= lbit) needs correcting.  */
   u64 n11 = 0, ntr = 0, n10 = 0;
   for (w = 0; w < NW; w++) {
     const u64 a  = W[w];
@@ -100,7 +111,6 @@ static void digram_bits_blk_(fastent_chunk_state * st,
   st->bit_bigram[1][0] += n10;  st->bit_bigram[1][1] += n11;
   st->dg_prev = (u8) lbit;  st->dg_have = 1;
 
-  /*  0/1 run count = prior runs + boundary flip + internal flips.  */
   if (!st->rn_have) { st->rn_have = 1;  st->rn_count = 1 + ntr; }
   else {
     if (b0 != st->rn_last) st->rn_count++;
@@ -108,8 +118,6 @@ static void digram_bits_blk_(fastent_chunk_state * st,
   }
   st->rn_last = (u8) lbit;
 
-  /*  cusum: per-byte LUT, running offset, fold into the carried
-      walk.  */
   {
     i64 o = 0, gmn = ((i64) 1 << 60), gmx = -((i64) 1 << 60);
     for (i = 0; i < cl; i++) {
@@ -124,8 +132,6 @@ static void digram_bits_blk_(fastent_chunk_state * st,
     st->cs_sum = cs0 + o;
   }
 
-  /*  Longest run: enumerate runs via the transition bitmap and feed
-      each to fastent_lr_run (exactly the scalar run sequence).  */
   {
     const sz  wl = lbpos >> 6;
     const u32 bl = (u32)(lbpos & 63);
@@ -147,6 +153,8 @@ static void digram_bits_blk_(fastent_chunk_state * st,
     fastent_lr_run(st, sym, (u64)((i64) lbpos - lastp));
   }
 }
+#endif
+
 
 /*  Bit mode: every adjacent bit pair (MSB->LSB, across byte and
     chunk boundaries via the carried previous bit) feeds the 2x2
@@ -158,18 +166,32 @@ static void digram_bits_(fastent_chunk_state * st,
   i32 v, k;
   for (v = 0; v < 256; v++) {
     i32 s = 0, mn = 0, mx = 0;
+#ifdef FASTENT_DG_BITS_REF
+    /*  REF walks raw bytes MSB-first.  */
     for (k = 7; k >= 0; k--) {
+#else
+    /*  Fused path indexes the packed (bit-reversed) word byte; its
+        LSB-first walk equals the raw byte's MSB-first +-1 walk.  */
+    for (k = 0; k <= 7; k++) {
+#endif
       s += ((v >> k) & 1) ? 1 : -1;
       if (s < mn) mn = s;
       if (s > mx) mx = s;
     }
     cs_mn[v] = mn;  cs_mx[v] = mx;  cs_net[v] = s;
   }
+#ifndef FASTENT_DG_BITS_REF
+  fastent_digram_bits_fn blk = dg_bits_fn_();
+#endif
   { sz off;
     for (off = 0; off < len; off += FASTENT_DG_BITS_CHUNK) {
       sz cl = len - off;
       if (cl > FASTENT_DG_BITS_CHUNK) cl = FASTENT_DG_BITS_CHUNK;
+#ifdef FASTENT_DG_BITS_REF
       digram_bits_blk_(st, buf + off, cl, cs_mn, cs_mx, cs_net);
+#else
+      blk(st, buf + off, cl, cs_mn, cs_mx, cs_net);
+#endif
     }
   }
 }
