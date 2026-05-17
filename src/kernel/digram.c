@@ -40,7 +40,7 @@ static fastent_fold_fn dg_fold_fn_(void) {
 }
 
 /*  Longest identical-symbol run; symbol is a byte or a bit.  */
-static void lr_one_(fastent_chunk_state * st, unsigned s) {
+static void lr_one_(fastent_chunk_state * st, u32 s) {
   if (!st->lr_have) {
     st->lr_have = 1;  st->lr_sym = (u8) s;  st->lr_cur = 1;
     st->lr_head_sym = (u8) s;  st->lr_head_len = 1;  st->lr_head_open = 1;
@@ -57,7 +57,7 @@ static void lr_one_(fastent_chunk_state * st, unsigned s) {
 static void digram_bytes_(fastent_chunk_state * st,
                           const u8 * FASTENT_RESTRICT buf, sz len) {
   u64 * FASTENT_RESTRICT t = st->bigram;
-  unsigned prev;
+  u32 prev;
   sz i = 0;
 
   if (st->dg_have) {
@@ -89,7 +89,7 @@ static void digram_bytes_(fastent_chunk_state * st,
     machine; bit-for-bit equivalent to n lr_one_(q) calls, so the
     head / open-run / lr_max bookkeeping the mmap and SPMC merges
     rely on is preserved exactly.  */
-static void lr_run_(fastent_chunk_state * st, unsigned q, u64 n) {
+static void lr_run_(fastent_chunk_state * st, u32 q, u64 n) {
   if (!st->lr_have) {
     st->lr_have = 1;  st->lr_sym = (u8) q;  st->lr_cur = n;
     st->lr_head_sym = (u8) q;  st->lr_head_len = n;  st->lr_head_open = 1;
@@ -121,11 +121,11 @@ static void digram_bits_blk_(fastent_chunk_state * st,
 
   memset(W, 0, NW * sizeof(u64));
   for (i = 0; i < cl; i++)
-    W[i >> 3] |= (u64) fastent_bitrev8_(buf[i]) << ((unsigned)(i & 7) * 8u);
+    W[i >> 3] |= (u64) fastent_bitrev8_(buf[i]) << ((u32)(i & 7) * 8u);
 
-  const unsigned b0   = (unsigned)(W[0] & 1u);
-  const sz       lbpos = M - 1;
-  const unsigned lbit = (unsigned)((W[lbpos >> 6] >> (lbpos & 63)) & 1u);
+  const u32 b0    = (u32)(W[0] & 1u);
+  const sz  lbpos = M - 1;
+  const u32 lbit  = (u32)((W[lbpos >> 6] >> (lbpos & 63)) & 1u);
 
   /*  bit_bigram: n11 / transitions / n10 over the M-1 internal
       pairs.  succ(W)[p] = W[p+1]; out-of-block bits are zero, so
@@ -161,7 +161,7 @@ static void digram_bits_blk_(fastent_chunk_state * st,
   {
     i64 o = 0, gmn = ((i64) 1 << 60), gmx = -((i64) 1 << 60);
     for (i = 0; i < cl; i++) {
-      const unsigned v = buf[i];
+      const u32 v = buf[i];
       if (o + cs_mn[v] < gmn) gmn = o + cs_mn[v];
       if (o + cs_mx[v] > gmx) gmx = o + cs_mx[v];
       o += cs_net[v];
@@ -175,18 +175,18 @@ static void digram_bits_blk_(fastent_chunk_state * st,
   /*  Longest run: enumerate runs via the transition bitmap and feed
       each to lr_run_ (exactly the scalar run sequence).  */
   {
-    const sz      wl = lbpos >> 6;
-    const unsigned bl = (unsigned)(lbpos & 63);
-    const u64     lmask = bl ? ((1ull << bl) - 1ull) : 0ull;
+    const sz  wl = lbpos >> 6;
+    const u32 bl = (u32)(lbpos & 63);
+    const u64 lmask = bl ? ((1ull << bl) - 1ull) : 0ull;
     i64 lastp = -1;
-    unsigned sym = b0;
+    u32 sym = b0;
     for (w = 0; w < NW; w++) {
       const u64 a  = W[w];
       const u64 nx = (w + 1 < NW) ? W[w + 1] : 0ull;
       u64 tw = a ^ ((a >> 1) | (nx << 63));
       if (w == wl) tw &= lmask;
       while (tw) {
-        const i64 p = (i64) w * 64 + (int) FASTENT_CTZ64(tw);
+        const i64 p = (i64) w * 64 + (i64) FASTENT_CTZ64(tw);
         lr_run_(st, sym, (u64)(p - lastp));
         lastp = p;  sym ^= 1u;
         tw &= tw - 1;
@@ -203,9 +203,9 @@ static void digram_bits_blk_(fastent_chunk_state * st,
 static void digram_bits_(fastent_chunk_state * st,
                          const u8 * FASTENT_RESTRICT buf, sz len) {
   i32 cs_mn[256], cs_mx[256], cs_net[256];
-  int v, k;
+  i32 v, k;
   for (v = 0; v < 256; v++) {
-    int s = 0, mn = 0, mx = 0;
+    i32 s = 0, mn = 0, mx = 0;
     for (k = 7; k >= 0; k--) {
       s += ((v >> k) & 1) ? 1 : -1;
       if (s < mn) mn = s;

@@ -75,7 +75,7 @@ static void fips_block_(const u8 * b, fastent_fips_report * r) {
       0-run cannot run off the block end.  */
   memset(W, 0, sizeof W);
   Fi((int) FIPS_BLOCK_BYTES,
-     W[i >> 3] |= (u64) fastent_bitrev8_(b[i]) << ((unsigned)(i & 7) * 8u))
+     W[i >> 3] |= (u64) fastent_bitrev8_(b[i]) << ((u32)(i & 7) * 8u))
   for (w = 0; w < (int) FIPS_NW; w++) C[w] = ~W[w];
   C[FIPS_NW - 1] &= FIPS_LAST_MASK;
 
