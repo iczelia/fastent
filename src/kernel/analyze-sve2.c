@@ -151,6 +151,7 @@ static inline void sve2_consume_bit_byte(fastent_chunk_state * st, u8 b) {
   }
   st->carry_byte = (u8)(b & 1u);
   st->last_byte  = (u8)(b & 1u);
+  st->have_carry = 1;
   st->mc_buf[st->mc_pos++] = b;
   if (st->mc_pos == 6) SVE2_MC_COMMIT(st);
   st->total_bytes += 8;
@@ -237,4 +238,197 @@ void fold_sve2(u8 * buf, sz len) {
     svst1_u8(pg, buf + i, v);
   }
   for (; i < (u64) len; i++) buf[i] = sve2_fold_byte(buf[i]);
+}
+
+/*  Byte-mode order-1 digram + longest-run kernel (the -ee level-2 byte
+    pass).  Self-contained SVE2 analogue of the templated
+    FASTENT_FN(digram_bytes) in analyze-impl.h; bit-for-bit identical to
+    digram_bytes_scalar for any -j and any vector length.
+
+    Never folds: -f is applied once upstream (analyze_fused_) so the
+    exact byte stream the scalar reference saw flows through unchanged.
+
+    Reductions (state threads across calls exactly as the scalar
+    reference's per-byte loop did):
+
+      digram : FASTENT_BG_CELLS u32 cells, key = (left<<8)|cur, left =
+               previous byte (st->dg_prev across calls).  Plane of the
+               pair at absolute byte index p is p & 1 (the templated
+               kernel's NB round-robin reduces to absolute-index parity:
+               main loop ((i ^ (k&1)) & 1) == (k+i)&1, prologue index 0
+               -> plane 0, scalar tail (k&1); the NB planes are summed
+               at finalize so any once-per-pair assignment is
+               equivalent).  Block width is irrelevant to the result:
+               fastent_lr_run is order-preserving and the plane is a
+               pure function of absolute index, so a VL-sized scan
+               yields the identical dg_u32 / lr state as the scalar
+               per-byte loop or the fixed-64 x86 template.
+      longest run : maximal stretch of equal adjacent bytes.  Derived
+               from the equality bitmap (a run boundary is buf[p] !=
+               buf[p-1]); boundary bits are iterated low-offset-first
+               via FASTENT_CTZ64 feeding fastent_lr_run, which is
+               bit-for-bit equivalent to the scalar per-byte
+               fastent_lr_one sequence (the same proof as the bit-mode
+               digram_bits scan and the x86 template).
+
+    SVE2 specifics: svcmpne_u8 produces the boundary predicate; it is
+    materialised to a u8 0/1 lane vector (svdup under predicate) and
+    stored, then packed into u64 boundary words arithmetically
+    (endian-independent).  Keys are produced VL-wide as
+    (vprev << 8) | v in the u16 domain, staged via the launder pattern,
+    then scattered with a scalar inc-mem loop (no SVE2 scatter; the
+    project_avx512_scatter_zen4 "scatter loses to inc-mem" reasoning
+    applies) with one-ahead prefetch and absolute-index parity round-
+    robin.  The dense-boundary fast path (whole VL block all-distinct)
+    collapses the singleton runs in O(1), exactly as the x86 template.  */
+
+#define SVE2_DG_MAXVL 256u   /*  SVE max VL is 2048 bits = 256 bytes  */
+
+void digram_bytes_sve2(fastent_chunk_state * st,
+                       const u8 * FASTENT_RESTRICT buf, sz len) {
+  if (len == 0) return;
+  u32 * FASTENT_RESTRICT t = st->dg_u32;
+
+  sz i0;
+  if (st->dg_have) {
+    i0 = 0;
+  } else {
+    fastent_lr_one(st, buf[0]);   /*  bootstrap: buf[0], no left pair  */
+    st->dg_prev = buf[0];
+    st->dg_have = 1;
+    i0 = 1;
+  }
+  if (i0 >= (sz) len) { st->dg_prev = buf[len - 1]; return; }
+
+  /*  Run scan state: the run currently open starts at runstart with
+      symbol runsym; closed runs are flushed to fastent_lr_run.  */
+  sz  runstart = i0;
+  u32 runsym   = buf[i0];
+
+  /*  Scalar prologue: the SVE window needs buf[base-1] in bounds, so
+      it starts at index >= 1.  i0 is 0 or 1; when i0 == 0 emit the
+      single pair at index 0 (left = carried st->dg_prev) here so the
+      window can start at index 1.  Index 0 has no run boundary (the
+      run scan opens at runstart = i0 = 0).  When i0 == 1 nothing is
+      emitted here (the window starts at 1 directly).  */
+  sz k = i0;
+  if (k == 0) {
+    u32 c = buf[0];
+    t[((u32)(0u & 1u)) * FASTENT_BG_TABLE
+      + (((u32) st->dg_prev << 8) | c)]++;
+    k = 1;
+  }
+
+  const u64 W = svcntb();
+  svbool_t pg = svptrue_b8();
+
+  /*  Boundary words: W bits, bit j set iff buf[k+j] != buf[k+j-1].
+      Materialised from the not-equal predicate as 0/1 bytes then
+      packed arithmetically (no memory reinterpret -> endian-safe).  */
+  FASTENT_ALIGN(64) u8  neq[SVE2_DG_MAXVL];
+  FASTENT_ALIGN(64) u16 keys[SVE2_DG_MAXVL];
+
+  while (k >= 1 && (u64) k + W <= (u64) len) {
+    svuint8_t v  = svld1_u8(pg, buf + k);
+    svuint8_t vp = svld1_u8(pg, buf + k - 1);
+
+    /*  P1: equality bitmap.  ne predicate -> 0/1 lane bytes.  */
+    svbool_t  ne   = svcmpne_u8(pg, v, vp);
+    svuint8_t nev  = svdup_n_u8_z(ne, 1u);
+    svst1_u8(pg, neq, nev);
+
+    /*  P2: 16-bit digram keys (vprev << 8) | v, VL-wide.  Zipping the
+        byte vectors gives interleaved lanes v[j], vp[j]; reinterpreted
+        u16 that is v[j] | (vp[j] << 8) == (left << 8) | cur on little-
+        endian (this TU is little-endian only; see the #error guard),
+        matching the scalar reference's arithmetic key exactly.  */
+    {
+      svuint16_t lo = svreinterpret_u16_u8(svzip1_u8(v, vp));
+      svuint16_t hi = svreinterpret_u16_u8(svzip2_u8(v, vp));
+      svbool_t pg16 = svptrue_b16();
+      svst1_u16(pg16, keys,                 lo);
+      svst1_u16(pg16, keys + svcnth(),      hi);
+    }
+
+    /*  Scalar inc-mem scatter from the staged keys with one-ahead
+        prefetch and absolute-index parity round-robin.  The launder
+        defeats any FP/predicate -> GP extract chain on the staged
+        buffer (same intent as the x86 template's FASTENT_LAUNDER).  */
+    {
+      const u16 * FASTENT_RESTRICT sp = keys;
+      __asm__("" : "+r"(sp) :: "memory");
+      u32 * FASTENT_RESTRICT t0 = t;
+      u32 * FASTENT_RESTRICT t1 = t + FASTENT_BG_TABLE;
+      const u32 par = (u32)(k & 1u);
+      u64 j;
+      for (j = 0; j < W; j++) {
+        u32 key = sp[j];
+        if (j + 8 < W) FASTENT_PREFETCH(&t0[sp[j + 8]]);
+        if (((u32) j ^ par) & 1u) t1[key]++;
+        else                      t0[key]++;
+      }
+    }
+
+    /*  Boundaries in this window are absolute indices k .. k+W-1; bit
+        j set => buf[k+j] != buf[k+j-1] => a run closes at k+j-1 and a
+        new run starts at k+j.  Emit low-offset-first via fastent_lr_run.
+
+        Dense fast path: every byte differs from its predecessor, so
+        the carried run closes and the window is W singleton runs.  The
+        general loop would emit lr_run(runsym, k-runstart); lr_run(
+        buf[k],1); then W-2 length-1 runs of distinct symbols.  Each of
+        those W-2 takes the "different symbol" branch (so lr_cur stays
+        1 <= lr_max and lr_head_open stays 0 after the first), leaving
+        only lr_sym = buf[k+W-2].  Bit-for-bit identical to the per-
+        boundary loop and removes the W-iteration CTZ chain on near-
+        random input.  W = svcntb() >= 16 so W >= 2 holds.  */
+    {
+      int dense = 1;
+      u64 j;
+      for (j = 0; j < W; j++) if (!neq[j]) { dense = 0; break; }
+      if (dense) {
+        fastent_lr_run(st, runsym, (u64)((sz) k - (sz) runstart));
+        fastent_lr_run(st, buf[k], 1u);
+        st->lr_sym = buf[k + W - 2];      /*  collapse singletons  */
+        runstart = (sz)((u64) k + W - 1);
+        runsym   = buf[runstart];
+      } else {
+        /*  Pack neq into W-bit boundary words and iterate via CTZ.  */
+        u64 base = 0;
+        while (base < W) {
+          u64 chunk = W - base;
+          if (chunk > 64u) chunk = 64u;
+          u64 bw = 0, bit;
+          for (bit = 0; bit < chunk; bit++)
+            if (neq[base + bit]) bw |= (u64) 1u << bit;
+          while (bw) {
+            const sz bpos = (sz)((u64) k + base + FASTENT_CTZ64(bw));
+            fastent_lr_run(st, runsym,
+                           (u64)((sz) bpos - (sz) runstart));
+            runstart = bpos;
+            runsym   = buf[bpos];
+            bw &= bw - 1;
+          }
+          base += chunk;
+        }
+      }
+    }
+    k = (sz)((u64) k + W);
+  }
+
+  /*  Scalar tail: remaining pairs + remaining boundaries.  */
+  for (; (sz) k < (sz) len; k++) {
+    u32 c = buf[k];
+    t[(u32)(k & 1u) * FASTENT_BG_TABLE
+      + (((u32) buf[k - 1] << 8) | c)]++;
+    if (buf[k] != buf[k - 1]) {
+      fastent_lr_run(st, runsym, (u64)((sz) k - (sz) runstart));
+      runstart = k;
+      runsym   = buf[k];
+    }
+  }
+
+  /*  Close the final open run [runstart .. len-1].  */
+  fastent_lr_run(st, runsym, (u64)((sz) len - (sz) runstart));
+  st->dg_prev = buf[len - 1];
 }

@@ -354,16 +354,6 @@ static int avail_wasm128_(void) { return CPU_HAS(wasm128); }
     analyze_fold_##SUFFIX,      analyze_bits_fold_##SUFFIX,           \
     fold_##SUFFIX,             digram_bytes_##SUFFIX }
 
-/*  The SVE2 analyze TU is self-contained and does not emit the
-    templated byte digram kernel, so its digram_byte uses the always
-    built scalar reference (correct and deterministic; the SVE2 path
-    keeps its own order-0 fold SIMD).  */
-#define ENTRY_DGSCALAR(VARIANT, NAME, AVAIL, SUFFIX)                   \
-  { FASTENT_VAR_##VARIANT, NAME, AVAIL,                               \
-    analyze_##SUFFIX,           analyze_bits_##SUFFIX,                \
-    analyze_fold_##SUFFIX,      analyze_bits_fold_##SUFFIX,           \
-    fold_##SUFFIX,             digram_bytes_scalar }
-
 static const variant_entry variants_[] = {
   ENTRY(SCALAR,           "scalar",        avail_scalar_,  scalar),
 #ifdef HAVE_SSSE3
@@ -385,7 +375,7 @@ static const variant_entry variants_[] = {
   ENTRY(NEON_,            "neon",          avail_neon_,    neon),
 #endif
 #ifdef HAVE_SVE2
-  ENTRY_DGSCALAR(SVE2_,   "sve2",          avail_sve2_,    sve2),
+  ENTRY(SVE2_,            "sve2",          avail_sve2_,    sve2),
 #endif
 #ifdef HAVE_WASM128
   ENTRY(WASM128_,         "wasm-simd128",  avail_wasm128_, wasm128),
@@ -393,7 +383,6 @@ static const variant_entry variants_[] = {
 };
 
 #undef ENTRY
-#undef ENTRY_DGSCALAR
 
 #define VARIANTS_N (sizeof variants_ / sizeof variants_[0])
 

@@ -13,6 +13,15 @@
   #define M_PI 3.14159265358979323846
 #endif
 
+/*  Emit literal "nan" regardless of the NaN sign bit: glibc x86 prints
+    a sign-set qNaN as "-nan" while aarch64 / musl print "nan", which
+    would otherwise vary the byte-exact output across hosts.  Same
+    convention as output-terse.c's tnum_.  Finite values use fmt.  */
+static void dnum_(const char * fmt, f64 x) {
+  if (x != x) fputs("nan", stdout);
+  else        printf(fmt, x);
+}
+
 static void print_counts_(const fastent_result * r, int binary) {
   const i32 bins = binary ? 2 : 256;
   printf("Value Char Occurrences Fraction\n");
@@ -48,40 +57,30 @@ void fastent_print_default(const fastent_result * r,
   printf("of this %" PRIu64 " %s file by %d percent.\n\n",
          (u64) r->total_samples, samp, comp_pct);
 
-  if (fp) {
-    printf("Chi square distribution for %" PRIu64
-           " samples is %.17g, and randomly\n",
-           (u64) r->total_samples, r->chi_square);
-  } else {
-    printf("Chi square distribution for %" PRIu64
-           " samples is %1.2f, and randomly\n",
-           (u64) r->total_samples, r->chi_square);
-  }
+  printf("Chi square distribution for %" PRIu64 " samples is ",
+         (u64) r->total_samples);
+  dnum_(fp ? "%.17g" : "%1.2f", r->chi_square);
+  printf(", and randomly\n");
   if      (r->chi_probability < 0.0001)
     printf("would exceed this value less than 0.01 percent of the times.\n\n");
   else if (r->chi_probability > 0.9999)
     printf("would exceed this value more than 99.99 percent of the times.\n\n");
-  else if (fp)
-    printf("would exceed this value %.17g percent of the times.\n\n",
-           r->chi_probability * 100);
-  else
-    printf("would exceed this value %1.2f percent of the times.\n\n",
-           r->chi_probability * 100);
+  else {
+    printf("would exceed this value ");
+    dnum_(fp ? "%.17g" : "%1.2f", r->chi_probability * 100);
+    printf(" percent of the times.\n\n");
+  }
 
-  if (fp) {
-    printf("Arithmetic mean value of data %ss is %.17g (%.17g = random).\n",
-           samp, r->mean, o->binary ? 0.5 : 127.5);
-  } else {
-    printf("Arithmetic mean value of data %ss is %1.4f (%.1f = random).\n",
-           samp, r->mean, o->binary ? 0.5 : 127.5);
-  }
-  if (fp) {
-    printf("Monte Carlo value for Pi is %.17g (error %.17g percent).\n",
-           r->monte_pi, 100.0 * (fabs(M_PI - r->monte_pi) / M_PI));
-  } else {
-    printf("Monte Carlo value for Pi is %1.9f (error %1.2f percent).\n",
-           r->monte_pi, 100.0 * (fabs(M_PI - r->monte_pi) / M_PI));
-  }
+  printf("Arithmetic mean value of data %ss is ", samp);
+  dnum_(fp ? "%.17g" : "%1.4f", r->mean);
+  if (fp) printf(" (%.17g = random).\n", o->binary ? 0.5 : 127.5);
+  else    printf(" (%.1f = random).\n",  o->binary ? 0.5 : 127.5);
+
+  printf("Monte Carlo value for Pi is ");
+  dnum_(fp ? "%.17g" : "%1.9f", r->monte_pi);
+  printf(" (error ");
+  dnum_(fp ? "%.17g" : "%1.2f", 100.0 * (fabs(M_PI - r->monte_pi) / M_PI));
+  printf(" percent).\n");
   printf("Serial correlation coefficient is ");
   if (FASTENT_SCC_DEFINED(r->scc)) {
     if (fp) printf("%.17g (totally uncorrelated = 0.0).\n", r->scc);

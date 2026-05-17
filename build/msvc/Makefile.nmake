@@ -22,11 +22,17 @@ CFLAGS  = /nologo /std:c17 /O2 /W3 /MD /D_CRT_SECURE_NO_WARNINGS \
 LDFLAGS = /link /SUBSYSTEM:CONSOLE
 
 # Scalar core + SSSE3/SSE4.1 (intrinsics available at SSE2 baseline).
+# Every analyze/FIPS tier TU has a matching fips1402-<tier>.c that the
+# FIPS dispatcher (fips1402.c) references one symbol per /DHAVE_ tier,
+# so the scalar/SSSE3/SSE4.1 FIPS TUs ride the SSE2 baseline here and
+# the AVX2/AVX-512 FIPS TUs are built in their /arch: tiers below.
 CORE = \
   src\fastent.c src\cli.c src\runner.c \
   src\kernel\analyze.c src\kernel\analyze-scalar.c \
   src\kernel\analyze-ssse3.c src\kernel\analyze-sse41.c \
   src\kernel\digram.c src\kernel\chisq.c src\kernel\fips1402.c \
+  src\kernel\fips1402-scalar.c src\kernel\fips1402-ssse3.c \
+  src\kernel\fips1402-sse41.c \
   src\kernel\fastent-math.c \
   src\output-default.c src\output-terse.c src\output-json.c \
   src\output-histogram.c src\output-recursive.c src\output-annotated.c \
@@ -46,11 +52,15 @@ all: fastent.exe
 # AVX2 / AVX-512 tiers compiled separately so /arch: only widens the
 # codegen licence for those TUs, then folded into the final link.
 fastent.exe: $(CORE)
-	$(CC) $(CFLAGS) /arch:AVX2 /c src\kernel\analyze-avx2.c
+	$(CC) $(CFLAGS) /arch:AVX2 /c src\kernel\analyze-avx2.c \
+	      src\kernel\fips1402-avx2.c
 	$(CC) $(CFLAGS) /arch:AVX512 /c src\kernel\analyze-avx512.c \
-	      src\kernel\analyze-avx512-bitalg.c
+	      src\kernel\analyze-avx512-bitalg.c \
+	      src\kernel\fips1402-avx512.c src\kernel\fips1402-avx512-bitalg.c
 	$(CC) $(CFLAGS) /Fe:fastent.exe $(CORE) \
-	      analyze-avx2.obj analyze-avx512.obj analyze-avx512-bitalg.obj \
+	      analyze-avx2.obj fips1402-avx2.obj \
+	      analyze-avx512.obj analyze-avx512-bitalg.obj \
+	      fips1402-avx512.obj fips1402-avx512-bitalg.obj \
 	      $(LDFLAGS)
 
 clean:
