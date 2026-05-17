@@ -13,6 +13,29 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define FASTENT_FUSE_BLOCK (64u * 1024u)
+
+/*  One cache-blocked traversal: the order-0 SIMD body then the -ee
+    extras on each L1/L2-resident sub-block, so the extras read the
+    data from cache instead of re-streaming the whole region from
+    DRAM (it is bandwidth-bound).  State threads across sub-blocks
+    exactly as the stream path's per-chunk calls do, so the result
+    is byte-identical to a single whole-region pass; -e (no extras)
+    stays a single pass.  */
+static void analyze_fused_(fastent_chunk_state * st, fastent_analyze_fn body,
+                           const u8 * data, sz len,
+                           int extended, int binary, int fold) {
+  if (extended < 2) { body(st, data, len);  return; }
+  sz off = 0;
+  while (off < len) {
+    sz n = len - off;
+    if (n > FASTENT_FUSE_BLOCK) n = FASTENT_FUSE_BLOCK;
+    body(st, data + off, n);
+    fastent_digram_count(st, data + off, n, binary, fold);
+    off += n;
+  }
+}
+
 #ifdef FASTENT_HAVE_THREADS
 typedef struct {
   const u8 *     data;
@@ -32,10 +55,8 @@ static void mt_worker_(sz k, void * vctx) {
   u64 end   = c->bounds[k + 1];
   fastent_chunk_state_init(&c->states[k]);
   if (c->bigrams) c->states[k].bigram = c->bigrams[k];
-  c->fn(&c->states[k], c->data + start, (sz)(end - start));
-  if (c->extended >= 2)
-    fastent_digram_count(&c->states[k], c->data + start,
-                         (sz)(end - start), c->binary, c->fold);
+  analyze_fused_(&c->states[k], c->fn, c->data + start,
+                 (sz)(end - start), c->extended, c->binary, c->fold);
 }
 
 static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
@@ -263,9 +284,8 @@ static void stream_consumer_(sz k, void * vctx) {
     fastent_chunk_state blk;
     fastent_chunk_state_init(&blk);
     blk.bigram = acc->bigram;           /*  byte -ee: accumulate here  */
-    c->fn(&blk, buf, got);
-    if (c->extended >= 2)
-      fastent_digram_count(&blk, buf, got, c->binary, c->fold);
+    analyze_fused_(&blk, c->fn, buf, got,
+                   c->extended, c->binary, c->fold);
 
     Fi(FASTENT_BANKS, Fj(256, acc->bank[i][j] += blk.bank[i][j]))
     acc->bit_hist[0] += blk.bit_hist[0];
@@ -326,9 +346,8 @@ static void run_stream_mt_(fastent_chunk_state * out,
       sz n = fastent_src_read(src);
       if (n == (sz) -1) { perror("read");  exit(2); }
       if (n == 0) break;
-      fn(out, src->stream_buf, n);
-      if (o->extended >= 2)
-        fastent_digram_count(out, src->stream_buf, n, o->binary, o->fold);
+      analyze_fused_(out, fn, src->stream_buf, n,
+                     o->extended, o->binary, o->fold);
     }
     return;
   }
@@ -474,9 +493,8 @@ void fastent_run_mmap(fastent_chunk_state * st, const fastent_options * o,
   }
 #endif
 
-  body(st, data, (sz) size);
-  if (o->extended >= 2)
-    fastent_digram_count(st, data, (sz) size, o->binary, o->fold);
+  analyze_fused_(st, body, data, (sz) size,
+                 o->extended, o->binary, o->fold);
 }
 
 void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
@@ -503,9 +521,8 @@ void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
       exit(2);
     }
     if (n == 0) break;
-    body(st, src->stream_buf, n);
-    if (o->extended >= 2)
-      fastent_digram_count(st, src->stream_buf, n, o->binary, o->fold);
+    analyze_fused_(st, body, src->stream_buf, n,
+                   o->extended, o->binary, o->fold);
   }
 }
 
