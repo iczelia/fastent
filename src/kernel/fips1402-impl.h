@@ -52,6 +52,14 @@
 #elif defined(FASTENT_VARIANT_AVX512) || defined(FASTENT_VARIANT_AVX2) \
    || defined(FASTENT_VARIANT_SSE41)  || defined(FASTENT_VARIANT_SSSE3)
   #include "analyze-vec-x86.h"
+  /*  The shared x86 vec header only knows the base and BITALG AVX-512
+      tiers, so it stamps _avx512 here.  The FIPS-only VPOPCNTDQ tier
+      needs a distinct symbol suffix so its TU does not collide with
+      the base AVX-512 FIPS body in the link.  */
+  #if defined(FASTENT_AVX512_HAVE_VPOPCNTDQ)
+    #undef  FASTENT_VAR_SUFFIX
+    #define FASTENT_VAR_SUFFIX _avx512_vpopcntdq
+  #endif
 #else
   #define FASTENT_VAR_SUFFIX _scalar
 #endif
@@ -136,6 +144,7 @@ FASTENT_FN(fips_succn)(const u64 src[FIPS_NW], u64 dst[FIPS_NW], u32 n) {
     exactly as the reference recurrence required.  Identical integer
     summaries to the transition / CTZ-gap form; this is the SIMD-
     friendly shape the wide variants instantiate.  */
+
 static void FASTENT_FN(fips_runs_side)(const u64 P[FIPS_NW],
                                        u32 ge[7], int * lr34) {
   u64 S[FIPS_NW], A[FIPS_NW], nx[FIPS_NW];
@@ -187,6 +196,7 @@ static void FASTENT_FN(fips_runs_side)(const u64 P[FIPS_NW],
     *lr34 = hit;
   }
 }
+
 
 /*  Run-length spectrum for both polarities.  cnt1/cnt0 hold exact-
     length buckets 1..5 and bucket 6 = length >= 6; *lr = 1 iff some
@@ -257,9 +267,26 @@ FASTENT_FN(fips_popcnt_bytes)(FASTENT_SIMD_VEC v) {
 }
 
 /*  Monobit: total set bits over the 2500 raw bytes.  Vector bulk
-    over floor(2500/VLEN)*VLEN bytes, scalar popcount tail.  */
+    over floor(2500/VLEN)*VLEN bytes, scalar popcount tail.  With
+    AVX-512 VPOPCNTDQ the per-vector reduction is a single
+    _mm512_popcnt_epi64 accumulated in 64-bit lanes, replacing the
+    PSHUFB-LUT + PSADBW ladder; the integer result is identical.  */
 static FASTENT_ALWAYS_INLINE u64
 FASTENT_FN(fips_monobit)(const u8 * b) {
+#if defined(FASTENT_VARIANT_AVX512) \
+ && defined(FASTENT_AVX512_HAVE_VPOPCNTDQ)
+  __m512i acc = _mm512_setzero_si512();
+  i32 i = 0;
+  for (; i + 64 <= (i32) FIPS_BLOCK_BYTES; i += 64)
+    acc = _mm512_add_epi64(
+            acc,
+            _mm512_popcnt_epi64(
+              _mm512_loadu_si512((const void *) (b + i))));
+  u64 ones = (u64) _mm512_reduce_add_epi64(acc);
+  for (; i < (i32) FIPS_BLOCK_BYTES; i++)
+    ones += FASTENT_POPCOUNT32(b[i]);
+  return ones;
+#else
   FASTENT_SIMD_VEC acc = V_SETZERO();
   i32 i = 0;
   for (; i + FASTENT_SIMD_VLEN <= (i32) FIPS_BLOCK_BYTES;
@@ -270,6 +297,7 @@ FASTENT_FN(fips_monobit)(const u8 * b) {
   for (; i < (i32) FIPS_BLOCK_BYTES; i++)
     ones += FASTENT_POPCOUNT32(b[i]);
   return ones;
+#endif
 }
 
 /*  Poker nibble histogram via per-value mask compare.  For nibble

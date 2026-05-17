@@ -497,6 +497,33 @@ if test "x$AVX512_CFLAGS" != "x"; then
     [AC_MSG_RESULT([no])])
 fi
 
+# AVX-512 VPOPCNTDQ augment.
+#   VPOPCNTDQ enables _mm512_popcnt_epi64 (VPOPCNTQ) for the FIPS
+#   monobit / run-start population counts.  Independent of BITALG:
+#   probe it on top of the F+BW base so a host with VPOPCNTDQ but
+#   without BITALG still gets the wide popcount tier.  Mirrors the
+#   HAVE_AVX512_BITALG machinery exactly; the resulting TU exports
+#   _avx512_vpopcntdq-suffixed FIPS symbols the dispatcher prefers.
+AVX512_VPOPCNTDQ_CFLAGS=""
+if test "x$AVX512_CFLAGS" != "x"; then
+  AVX512_VPOPCNTDQ_TRY="$AVX512_CFLAGS -mavx512vpopcntdq"
+  CFLAGS="$save_CFLAGS $AVX512_VPOPCNTDQ_TRY"
+  AC_MSG_CHECKING([for AVX-512 VPOPCNTDQ intrinsics with $CC])
+  AC_COMPILE_IFELSE(
+    [AC_LANG_PROGRAM([[
+      #include <immintrin.h>
+    ]], [[
+      __m512i a = _mm512_set1_epi8(1);
+      __m512i c = _mm512_popcnt_epi64(a);
+      return (int) _mm512_reduce_add_epi64(c);
+    ]])],
+    [AC_MSG_RESULT([yes])
+     AC_DEFINE([HAVE_AVX512_VPOPCNTDQ], [1],
+       [Define if AVX-512 VPOPCNTDQ intrinsics are available])
+     AVX512_VPOPCNTDQ_CFLAGS="$AVX512_VPOPCNTDQ_TRY"],
+    [AC_MSG_RESULT([no])])
+fi
+
 CFLAGS="$save_CFLAGS"
 
 fi  # end !fastent_skip_simd
@@ -548,6 +575,7 @@ AC_SUBST([SSE41_CFLAGS])
 AC_SUBST([AVX2_CFLAGS])
 AC_SUBST([AVX512_CFLAGS])
 AC_SUBST([AVX512_BITALG_CFLAGS])
+AC_SUBST([AVX512_VPOPCNTDQ_CFLAGS])
 AC_SUBST([NEON_CFLAGS])
 AC_SUBST([SVE2_CFLAGS])
 AC_SUBST([WASM128_CFLAGS])
@@ -556,6 +584,8 @@ AM_CONDITIONAL([HAVE_SSE41],         [test "x$SSE41_CFLAGS"         != "x"])
 AM_CONDITIONAL([HAVE_AVX2],          [test "x$AVX2_CFLAGS"          != "x"])
 AM_CONDITIONAL([HAVE_AVX512],        [test "x$AVX512_CFLAGS"        != "x"])
 AM_CONDITIONAL([HAVE_AVX512_BITALG], [test "x$AVX512_BITALG_CFLAGS" != "x"])
+AM_CONDITIONAL([HAVE_AVX512_VPOPCNTDQ],
+               [test "x$AVX512_VPOPCNTDQ_CFLAGS" != "x"])
 AM_CONDITIONAL([HAVE_NEON],          [test "x$fastent_have_neon"    = "xyes"])
 AM_CONDITIONAL([HAVE_SVE2],          [test "x$fastent_have_sve2"    = "xyes"])
 AM_CONDITIONAL([HAVE_WASM128],       [test "x$fastent_have_wasm128" = "xyes"])

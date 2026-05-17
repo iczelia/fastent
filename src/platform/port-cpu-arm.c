@@ -73,6 +73,7 @@ const fastent_cpu_features * fastent_cpu_get(void) {
     f.ssse3 = f.sse41 = f.sse42 = 0;
     f.avx = f.avx2 = 0;
     f.avx512f = f.avx512bw = f.avx512bitalg = 0;
+    f.avx512vpopcntdq = 0;
     f.wasm128 = 0;
     f.neon = probe_neon_() ? 1 : 0;
     f.sve2 = probe_sve2_() ? 1 : 0;

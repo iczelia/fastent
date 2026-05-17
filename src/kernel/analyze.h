@@ -159,7 +159,12 @@ typedef enum {
   FASTENT_VAR_AVX512_BITALG = 5,
   FASTENT_VAR_NEON_         = 6,
   FASTENT_VAR_WASM128_      = 7,
-  FASTENT_VAR_SVE2_         = 8
+  FASTENT_VAR_SVE2_         = 8,
+  /*  FIPS-only extra tier (no analyze body): AVX-512 + VPOPCNTDQ
+      (wide VPOPCNTQ monobit and run-start popcount).  The FIPS
+      dispatcher carries its own name strings; this value only needs
+      to be distinct.  */
+  FASTENT_VAR_AVX512_VPOPCNTDQ = 9
 } fastent_variant;
 
 typedef void (* fastent_analyze_fn)(fastent_chunk_state *, const u8 *, sz);

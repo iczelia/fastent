@@ -17,6 +17,7 @@ typedef struct {
   u32 avx512f      : 1;
   u32 avx512bw     : 1;
   u32 avx512bitalg : 1;
+  u32 avx512vpopcntdq : 1;
   /*  AArch64 / ARMv7-A  */
   u32 neon         : 1;
   u32 sve2         : 1;

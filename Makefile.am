@@ -94,6 +94,15 @@ libfastent_avx512_bitalg_a_CFLAGS   = $(AM_CFLAGS) $(AVX512_BITALG_CFLAGS)
 fastent_LDADD                      += libfastent_avx512_bitalg.a
 endif
 
+if HAVE_AVX512_VPOPCNTDQ
+noinst_LIBRARIES                      += libfastent_avx512_vpopcntdq.a
+libfastent_avx512_vpopcntdq_a_SOURCES  = \
+    src/kernel/fips1402-avx512-vpopcntdq.c
+libfastent_avx512_vpopcntdq_a_CFLAGS   = \
+    $(AM_CFLAGS) $(AVX512_VPOPCNTDQ_CFLAGS)
+fastent_LDADD                         += libfastent_avx512_vpopcntdq.a
+endif
+
 if HAVE_NEON
 noinst_LIBRARIES           += libfastent_neon.a
 libfastent_neon_a_SOURCES   = src/kernel/analyze-neon.c \

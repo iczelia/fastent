@@ -55,6 +55,8 @@ void fastent_fips_run_blocks_avx2(const u8 *, u64, fastent_fips_report *);
 void fastent_fips_run_blocks_avx512(const u8 *, u64, fastent_fips_report *);
 void fastent_fips_run_blocks_avx512_bitalg(const u8 *, u64,
                                            fastent_fips_report *);
+void fastent_fips_run_blocks_avx512_vpopcntdq(const u8 *, u64,
+                                              fastent_fips_report *);
 void fastent_fips_run_blocks_neon(const u8 *, u64, fastent_fips_report *);
 void fastent_fips_run_blocks_sve2(const u8 *, u64, fastent_fips_report *);
 void fastent_fips_run_blocks_wasm128(const u8 *, u64, fastent_fips_report *);

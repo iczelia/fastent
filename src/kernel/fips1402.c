@@ -65,6 +65,12 @@ static int favail_avx512b_(void) {
   return CPU_HAS(avx512f) && CPU_HAS(avx512bw) && CPU_HAS(avx512bitalg);
 }
 #endif
+#ifdef HAVE_AVX512_VPOPCNTDQ
+static int favail_avx512vp_(void) {
+  return CPU_HAS(avx512f) && CPU_HAS(avx512bw)
+      && CPU_HAS(avx512vpopcntdq);
+}
+#endif
 #ifdef HAVE_NEON
 static int favail_neon_(void)    { return CPU_HAS(neon); }
 #endif
@@ -97,6 +103,10 @@ static const fips_variant_entry fips_variants_[] = {
 #ifdef HAVE_AVX512_BITALG
   { FASTENT_VAR_AVX512_BITALG, "avx512+bitalg", favail_avx512b_,
     fastent_fips_run_blocks_avx512_bitalg },
+#endif
+#ifdef HAVE_AVX512_VPOPCNTDQ
+  { FASTENT_VAR_AVX512_VPOPCNTDQ, "avx512+vpopcntdq", favail_avx512vp_,
+    fastent_fips_run_blocks_avx512_vpopcntdq },
 #endif
 #ifdef HAVE_NEON
   { FASTENT_VAR_NEON_, "neon", favail_neon_,

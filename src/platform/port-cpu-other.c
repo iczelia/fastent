@@ -20,6 +20,7 @@ const fastent_cpu_features * fastent_cpu_get(void) {
     f.ssse3 = f.sse41 = f.sse42 = 0;
     f.avx = f.avx2 = 0;
     f.avx512f = f.avx512bw = f.avx512bitalg = 0;
+    f.avx512vpopcntdq = 0;
     f.neon = f.sve2 = 0;
 #if defined(HAVE_WASM128)
     f.wasm128 = 1;
