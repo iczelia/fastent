@@ -208,7 +208,7 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
      })
 
   int rc = 0;
-  for (int k = 0; k < r->argc && rc == 0; k++) {
+  for (i32 k = 0; k < r->argc && rc == 0; k++) {
     const yarg_option * a = &r->args[k];
     const char * v = a->arg;
     switch (a->opt) {

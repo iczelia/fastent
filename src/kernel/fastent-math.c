@@ -57,7 +57,7 @@ static inline f64 fastent_qnan_(void) {
     because the c_k alternate in sign.  */
 static inline dd_t log2_1pr_poly(f64 r) {
   dd_t poly = fastent_log2_1ps_coeff_dd[11];
-  int k;
+  i32 k;
   for (k = 10; k >= 0; k--) {
     poly = dd_mul_d_(poly, r);
     poly = dd_add_(poly, fastent_log2_1ps_coeff_dd[k]);
@@ -76,7 +76,7 @@ static dd_t log2_generic_dd_(f64 x) {
   u64 mant     = pb & 0x000fffffffffffffULL;
   i32 e;
   if (e_biased == 0) {
-    int sh = 0;
+    i32 sh = 0;
     while ((mant & (1ULL << 52)) == 0) {
       mant <<= 1;
       sh++;
@@ -90,7 +90,7 @@ static dd_t log2_generic_dd_(f64 x) {
   f64 m;
   memcpy(&m, &m_bits, 8);
 
-  int i = (int)((mant >> 45) & 0x7f);
+  i32 i = (i32)((mant >> 45) & 0x7f);
   f64 r = fma(m, fastent_inv_c[i], -1.0);
 
   dd_t log2_1ps = log2_1pr_poly(r);
@@ -102,7 +102,7 @@ static dd_t log2_generic_dd_(f64 x) {
     the result avoids the e + log2(m) cancellation near 1.  */
 static dd_t log2_near1_dd_(f64 x) {
   f64 q  = 1.0 - x;
-  int i  = (int)(q * 256.0);
+  i32 i  = (i32)(q * 256.0);
   f64 ci = (f64) i / 256.0;
   f64 s  = q - ci;
   f64 u  = s * fastent_inv_one_minus_c[i];
@@ -166,7 +166,7 @@ f64 fastent_log2_fast(f64 x) {
   u64 mb   = ((u64) 1023u << 52) | mant;
   f64 m;
   memcpy(&m, &mb, 8);
-  int i  = (int)((mant >> 45) & 0x7f);
+  i32 i  = (i32)((mant >> 45) & 0x7f);
   f64 r  = fma(m, fastent_inv_c[i], -1.0);
   /*  log2(1+r) ~ (r - r^2/2 + r^3/3) / ln2, |r| < 2^-7.  */
   f64 poly = r * (1.0 + r * (-0.5 + r * (1.0 / 3.0)));

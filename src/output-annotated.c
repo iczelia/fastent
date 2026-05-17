@@ -94,7 +94,7 @@ void fastent_print_annotated(const fastent_result * r,
   if (o->histogram) fastent_print_histogram(r, o);
 
   const char * samp = o->binary ? "bit" : "byte";
-  const int    bins = o->binary ? 2 : 256;
+  const i32    bins = o->binary ? 2 : 256;
   const f64    hmax = o->binary ? 1.0 : 8.0;
   const f64    totalc = (f64) r->total_samples;
   const int    color  = color_active_(o->color);

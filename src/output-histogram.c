@@ -19,7 +19,7 @@ static int color_active_(int color_opt) {
 
 void fastent_print_histogram(const fastent_result * r,
                              const fastent_options * o) {
-  const int bins = o->binary ? 2 : 256;
+  const i32 bins = o->binary ? 2 : 256;
   static const char * const glyphs_unicode[9] = {
     " ", "\xe2\x96\x81", "\xe2\x96\x82", "\xe2\x96\x83",
          "\xe2\x96\x84", "\xe2\x96\x85", "\xe2\x96\x86",
@@ -28,24 +28,24 @@ void fastent_print_histogram(const fastent_result * r,
   static const char * const glyphs_cp437[3] = { " ", "\xdc", "\xdb" };
   static const char * const glyphs_ascii[2] = { " ", "#" };
   const char * const * blocks;
-  int sub;
+  i32 sub;
   switch (fastent_term_glyphs()) {
     case FASTENT_GLYPHS_CP437:   blocks = glyphs_cp437;   sub = 2; break;
     case FASTENT_GLYPHS_ASCII:   blocks = glyphs_ascii;   sub = 1; break;
     case FASTENT_GLYPHS_UNICODE:
     default:                     blocks = glyphs_unicode; sub = 8; break;
   }
-  const int height = 8;
-  const int levels = height * sub;
+  const i32 height = 8;
+  const i32 levels = height * sub;
 
   /*  Downsample 256 bins to the smallest power-of-2 group that fits.  */
-  int group = 1;
+  i32 group = 1;
   if (!o->binary) {
-    int w = fastent_term_width();
+    i32 w = fastent_term_width();
     if (w < 1) w = 80;
     while (bins / group > w && group < bins) group <<= 1;
   }
-  const int cols = bins / group;
+  const i32 cols = bins / group;
 
   u64 grouped[256];
   Fi(cols,
@@ -68,13 +68,13 @@ void fastent_print_histogram(const fastent_result * r,
   /*  Left gutter: sample count at each row's top edge,
       right-justified to the peak's width.  */
   char gbuf[24];
-  int  gw = snprintf(gbuf, sizeof gbuf, "%llu", (unsigned long long) max);
+  i32  gw = snprintf(gbuf, sizeof gbuf, "%llu", (unsigned long long) max);
   if (gw < 1) gw = 1;
 
   Fi(height,
-     const int row_bot = (height - 1 - i) * sub;
-     const int row_top = row_bot + sub;
-     int last_class = -1;
+     const i32 row_bot = (height - 1 - i) * sub;
+     const i32 row_top = row_bot + sub;
+     i32 last_class = -1;
      const f64 yf = (f64)(height - i) / (f64) height;
      const u64 yval = o->histogram_log
                       ? (u64)(exp(yf * log_denom) - 1.0 + 0.5)
@@ -88,14 +88,14 @@ void fastent_print_histogram(const fastent_result * r,
         } else {
           frac = (f64) grouped[j] / (f64) max;
         }
-        int hh = (int)(frac * (f64) levels + 0.5);
+        i32 hh = (i32)(frac * (f64) levels + 0.5);
         if (hh > levels) hh = levels;
         const char * glyph;
         if (hh >= row_top)      glyph = blocks[sub];
         else if (hh <= row_bot) glyph = blocks[0];
         else                    glyph = blocks[hh - row_bot];
-        int first_byte = j * group;
-        int cls = (first_byte < 32 || first_byte == 127) ? 0
+        i32 first_byte = j * group;
+        i32 cls = (first_byte < 32 || first_byte == 127) ? 0
                 : (first_byte < 128 ? 1 : 2);
         if (use_color && cls != last_class) {
           fastent_term_set_fg(cls);
@@ -105,17 +105,17 @@ void fastent_print_histogram(const fastent_result * r,
      if (use_color) fastent_term_set_fg(-1);
      putchar('\n'))
   if (bins == 256) {
-    int tick_every = cols / 8;
+    i32 tick_every = cols / 8;
     if (tick_every < 1) tick_every = 1;
     Fi(gw + 1, putchar(' '))
     putchar('+');
     Fi(cols, putchar((i % tick_every == 0) ? '|' : '-'))
     putchar('\n');
     Fi(gw + 2, putchar(' '))
-    int c;
+    i32 c;
     for (c = 0; c < cols; c += tick_every) {
       char buf[8];
-      int n = snprintf(buf, sizeof(buf), "%d", c * group);
+      i32 n = snprintf(buf, sizeof(buf), "%d", c * group);
       if (n > tick_every) n = tick_every;
       if (c + tick_every >= cols) {
         /*  Last tick: no trailing padding.  */
@@ -132,7 +132,7 @@ void fastent_print_histogram(const fastent_result * r,
     printf("0 1\n");
   }
   u64 raw_peak = 0;
-  int peak_v   = 0;
+  i32 peak_v   = 0;
   Fi(bins, if (r->hist[i] > raw_peak) { raw_peak = r->hist[i]; peak_v = i; })
   printf("(peak %llu sample%s at byte %d",
          (unsigned long long) raw_peak,

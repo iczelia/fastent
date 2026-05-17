@@ -49,7 +49,7 @@ static int                  cache_done_ = 0;
   #include <stddef.h>
   static int probe_sve2_(void) {
     int    v   = 0;
-    size_t len = sizeof(v);
+    sz     len = sizeof(v);
     if (sysctlbyname("hw.optional.arm.FEAT_SVE2", &v, &len, NULL, 0) != 0)
       return 0;
     return v != 0;

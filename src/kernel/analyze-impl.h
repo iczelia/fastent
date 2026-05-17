@@ -193,7 +193,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   u32 * FASTENT_RESTRICT b3 = st->bank[3];
 
   /*  MC Pi state hoisted into locals for register residency.  */
-  int mc_pos     = st->mc_pos;
+  i32 mc_pos     = st->mc_pos;
   u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
   u8  m3 = st->mc_buf[3], m4 = st->mc_buf[4], m5 = st->mc_buf[5];
   u64 mc_count   = st->mc_count;
@@ -342,7 +342,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     /*  Stash trailing < 6 bytes.  */
     u32 stash_at    = p_idx + n_hexads * 6u;
     u32 stash_count = 64u - stash_at;
-    mc_pos = (int) stash_count;
+    mc_pos = (i32) stash_count;
     if (stash_count >= 1) m0 = p[stash_at + 0];
     if (stash_count >= 2) m1 = p[stash_at + 1];
     if (stash_count >= 3) m2 = p[stash_at + 2];
@@ -444,7 +444,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   u32 * FASTENT_RESTRICT b2 = st->bank[2];
   u32 * FASTENT_RESTRICT b3 = st->bank[3];
 
-  int mc_pos     = st->mc_pos;
+  i32 mc_pos     = st->mc_pos;
   u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
   u8  m3 = st->mc_buf[3], m4 = st->mc_buf[4], m5 = st->mc_buf[5];
   u64 mc_count   = st->mc_count;
@@ -628,7 +628,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
     u32 stash_at    = p_idx + n_hexads * 6u;
     u32 stash_count = 128u - stash_at;
-    mc_pos = (int) stash_count;
+    mc_pos = (i32) stash_count;
     if (stash_count >= 1) m0 = p[stash_at + 0];
     if (stash_count >= 2) m1 = p[stash_at + 1];
     if (stash_count >= 3) m2 = p[stash_at + 2];
@@ -710,7 +710,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   u32 * FASTENT_RESTRICT b3 = st->bank[3];
 
   /*  MC Pi state hoisted into locals.  */
-  int mc_pos     = st->mc_pos;
+  i32 mc_pos     = st->mc_pos;
   u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
   u8  m3 = st->mc_buf[3], m4 = st->mc_buf[4], m5 = st->mc_buf[5];
   u64 mc_count   = st->mc_count;
@@ -806,13 +806,13 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       default: m5=p[0];
               MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
     }
-    int n_hexads = (int)((32u - p_idx) / 6u);
+    i32 n_hexads = (i32)((32u - p_idx) / 6u);
     Fk(n_hexads,
        u32 o = p_idx + (u32) k * 6u;
        MC_HEXAD(p[o+0], p[o+1], p[o+2], p[o+3], p[o+4], p[o+5]))
     u32 stash_at    = p_idx + n_hexads * 6u;
     u32 stash_count = 32u - stash_at;
-    mc_pos = (int) stash_count;
+    mc_pos = (i32) stash_count;
     if (stash_count >= 1) m0 = p[stash_at + 0];
     if (stash_count >= 2) m1 = p[stash_at + 1];
     if (stash_count >= 3) m2 = p[stash_at + 2];
@@ -907,7 +907,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   u32 * FASTENT_RESTRICT b2 = st->bank[2];
   u32 * FASTENT_RESTRICT b3 = st->bank[3];
 
-  int mc_pos     = st->mc_pos;
+  i32 mc_pos     = st->mc_pos;
   u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
   u8  m3 = st->mc_buf[3], m4 = st->mc_buf[4], m5 = st->mc_buf[5];
   u64 mc_count   = st->mc_count;
@@ -1009,13 +1009,13 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       default: m5=p[0];
               MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
     }
-    int n_hexads = (int)((32u - p_idx) / 6u);
+    i32 n_hexads = (i32)((32u - p_idx) / 6u);
     Fk(n_hexads,
        u32 o = p_idx + (u32) k * 6u;
        MC_HEXAD(p[o+0], p[o+1], p[o+2], p[o+3], p[o+4], p[o+5]))
     u32 stash_at    = p_idx + (u32) n_hexads * 6u;
     u32 stash_count = 32u - stash_at;
-    mc_pos = (int) stash_count;
+    mc_pos = (i32) stash_count;
     if (stash_count >= 1) m0 = p[stash_at + 0];
     if (stash_count >= 2) m1 = p[stash_at + 1];
     if (stash_count >= 3) m2 = p[stash_at + 2];
@@ -1102,7 +1102,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   u32 * FASTENT_RESTRICT b2 = st->bank[2];
   u32 * FASTENT_RESTRICT b3 = st->bank[3];
 
-  int mc_pos     = st->mc_pos;
+  i32 mc_pos     = st->mc_pos;
   u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
   u8  m3 = st->mc_buf[3], m4 = st->mc_buf[4], m5 = st->mc_buf[5];
   u64 mc_count   = st->mc_count;
@@ -1203,13 +1203,13 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       default: m5=p[0];
               MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
     }
-    int n_hexads = (int)((32u - p_idx) / 6u);
+    i32 n_hexads = (i32)((32u - p_idx) / 6u);
     Fk(n_hexads,
        u32 o = p_idx + (u32) k * 6u;
        MC_HEXAD(p[o+0], p[o+1], p[o+2], p[o+3], p[o+4], p[o+5]))
     u32 stash_at    = p_idx + (u32) n_hexads * 6u;
     u32 stash_count = 32u - stash_at;
-    mc_pos = (int) stash_count;
+    mc_pos = (i32) stash_count;
     if (stash_count >= 1) m0 = p[stash_at + 0];
     if (stash_count >= 2) m1 = p[stash_at + 1];
     if (stash_count >= 3) m2 = p[stash_at + 2];
@@ -1442,7 +1442,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   FASTENT_SIMD_VEC acc_cross  = V_SETZERO();
 
   /*  MC Pi state hoisted into locals.  */
-  int mc_pos     = st->mc_pos;
+  i32 mc_pos     = st->mc_pos;
   u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
   u8  m3 = st->mc_buf[3], m4 = st->mc_buf[4], m5 = st->mc_buf[5];
   u64 mc_count   = st->mc_count;
@@ -1610,7 +1610,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
     mc_inside += mi_simd;
     u32 stash_at    = p_idx + n_hexads * 6u;
     u32 stash_count = (u32) FASTENT_SIMD_VLEN - stash_at;
-    mc_pos = (int) stash_count;
+    mc_pos = (i32) stash_count;
     if (stash_count >= 1) m0 = p[stash_at + 0];
     if (stash_count >= 2) m1 = p[stash_at + 1];
     if (stash_count >= 3) m2 = p[stash_at + 2];

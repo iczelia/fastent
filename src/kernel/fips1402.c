@@ -34,9 +34,9 @@
     Fully branchless and word-parallel.  */
 static void fips_runs_side_(const u64 * V, u32 ge[7], int * lr34) {
   u64 A[FIPS_NW], S[FIPS_NW], nx[FIPS_NW];
-  int w;
+  i32 w;
   u32 k;
-  for (w = 0; w < (int) FIPS_NW; w++) {
+  for (w = 0; w < (i32) FIPS_NW; w++) {
     const u64 pred = (V[w] << 1) | (w > 0 ? V[w - 1] >> 63 : 0ull);
     S[w] = V[w] & ~pred;
     A[w] = V[w];
@@ -46,19 +46,19 @@ static void fips_runs_side_(const u64 * V, u32 ge[7], int * lr34) {
   for (k = 1; ; k++) {
     u64 orA = 0;
     if (k >= 2) {
-      for (w = 0; w < (int) FIPS_NW; w++)
+      for (w = 0; w < (i32) FIPS_NW; w++)
         nx[w] = (A[w] >> 1)
-              | (w + 1 < (int) FIPS_NW ? A[w + 1] << 63 : 0ull);
-      for (w = 0; w < (int) FIPS_NW; w++) A[w] = V[w] & nx[w];
+              | (w + 1 < (i32) FIPS_NW ? A[w + 1] << 63 : 0ull);
+      for (w = 0; w < (i32) FIPS_NW; w++) A[w] = V[w] & nx[w];
     }
     if (k <= 6) {
       u64 g = 0;
-      for (w = 0; w < (int) FIPS_NW; w++) {
+      for (w = 0; w < (i32) FIPS_NW; w++) {
         orA |= A[w];  g += FASTENT_POPCOUNT64(S[w] & A[w]);
       }
       ge[k] = (u32) g;
     } else {
-      for (w = 0; w < (int) FIPS_NW; w++) orA |= A[w];
+      for (w = 0; w < (i32) FIPS_NW; w++) orA |= A[w];
     }
     if (k == FIPS_LONGRUN) { *lr34 = (orA != 0);  break; }
     if (orA == 0) break;        /*  no run >= k; longer ge stay 0  */
@@ -68,7 +68,7 @@ static void fips_runs_side_(const u64 * V, u32 ge[7], int * lr34) {
 /*  Test one 2500-byte block and fold the verdict into r.  */
 static void fips_block_(const u8 * b, fastent_fips_report * r) {
   u64 W[FIPS_NW], C[FIPS_NW];
-  int w;
+  i32 w;
 
   /*  Pack the MSB-first bit stream into words; trailing bits stay
       zero.  C is the complement, masked to the valid 20000 bits so a
@@ -76,12 +76,12 @@ static void fips_block_(const u8 * b, fastent_fips_report * r) {
   memset(W, 0, sizeof W);
   Fi((int) FIPS_BLOCK_BYTES,
      W[i >> 3] |= (u64) fastent_bitrev8_(b[i]) << ((u32)(i & 7) * 8u))
-  for (w = 0; w < (int) FIPS_NW; w++) C[w] = ~W[w];
+  for (w = 0; w < (i32) FIPS_NW; w++) C[w] = ~W[w];
   C[FIPS_NW - 1] &= FIPS_LAST_MASK;
 
   /*  Monobit: total set bits (popcount is bit-position invariant).  */
   u64 ones = 0;
-  for (w = 0; w < (int) FIPS_NW; w++) ones += FASTENT_POPCOUNT64(W[w]);
+  for (w = 0; w < (i32) FIPS_NW; w++) ones += FASTENT_POPCOUNT64(W[w]);
   const int mono_ok = (ones > 9725ull && ones < 10275ull);
 
   /*  Poker: 5000 4-bit groups, high then low nibble.  */
@@ -122,7 +122,7 @@ static void fips_block_(const u8 * b, fastent_fips_report * r) {
 typedef struct {
   const u8 *            buf;
   u64                   nblocks;
-  int                   T;
+  i32                   T;
   fastent_fips_report * shards;
 } fips_ctx;
 
@@ -146,8 +146,8 @@ void fastent_fips140_run(const u8 * buf, sz len, int threads,
 
 #ifdef FASTENT_HAVE_THREADS
   if (threads > 1) {
-    int T = threads;
-    if ((u64) T > nblocks) T = (int) nblocks;
+    i32 T = threads;
+    if ((u64) T > nblocks) T = (i32) nblocks;
     fastent_set_num_threads(T);
     fips_ctx c;
     c.buf = buf;  c.nblocks = nblocks;  c.T = T;

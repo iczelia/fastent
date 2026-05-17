@@ -27,7 +27,7 @@ void fastent_bigram_free(u64 * bg) {
 
 /*  Collapse the FASTENT_BG_NB round-robin planes for one 16-bit
     digram key into its total count.  */
-static u64 bg_cell_(const u64 * bg, int key) {
+static u64 bg_cell_(const u64 * bg, i32 key) {
   u64 c = 0;
   Fi(FASTENT_BG_NB, c += bg[i * FASTENT_BG_TABLE + key])
   return c;
@@ -49,7 +49,7 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
   }
   out->total_samples = st->total_bytes;
 
-  const int bins = binary ? 2 : 256;
+  const i32 bins = binary ? 2 : 256;
   const f64 totalc = (f64) out->total_samples;
 
   f64 sum_x  = 0.0;
@@ -147,7 +147,7 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
        const u64 c = out->hist[i];
        Fj(8, if (i & (1 << j)) ones[j] += c))
     f64 worst = -1.0;
-    int wk = 0;
+    i32 wk = 0;
     Fi(8,
        const f64 f = (f64) ones[i] / totalc;
        out->bit_freq[i] = f;
@@ -224,7 +224,7 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
       const u64 * bg = st->bigram;
       u64 acc = 0, chg = 0;
       const u64 half = (out->total_samples + 1) / 2;
-      int m = 0;
+      i32 m = 0;
       Fi(256, acc += out->hist[i];  if (acc >= half) { m = i; break; })
       Fi(FASTENT_BG_TABLE,
          const u64 c = bg_cell_(bg, i);

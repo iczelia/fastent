@@ -73,8 +73,8 @@ typedef struct {
   void *   slot_buf_raw[FASTENT_URING_SLOTS];
   int      slot_done[FASTENT_URING_SLOTS];
   i32      slot_result[FASTENT_URING_SLOTS];
-  int      next_consume;
-  int      prev_returned;
+  i32      next_consume;
+  i32      prev_returned;
   u64      next_submit_offset;
   u64      file_size;
 } uring_state;
@@ -88,7 +88,7 @@ static long io_uring_enter_sys(int fd, unsigned to_submit,
                  flags, NULL, (sz) 0);
 }
 
-static int uring_submit_read(uring_state * u, int src_fd, int slot) {
+static int uring_submit_read(uring_state * u, int src_fd, i32 slot) {
   u32 tail = *u->sq_ktail;
   u32 mask = *u->sq_ring_mask;
   u32 idx  = tail & mask;
@@ -122,7 +122,7 @@ static int uring_submit_read(uring_state * u, int src_fd, int slot) {
   }
 }
 
-static int uring_wait(uring_state * u, int target_slot) {
+static int uring_wait(uring_state * u, i32 target_slot) {
   while (!u->slot_done[target_slot]) {
     u32 head = *u->cq_khead;
     u32 tail = *u->cq_ktail;
@@ -130,7 +130,7 @@ static int uring_wait(uring_state * u, int target_slot) {
     while (head != tail) {
       u32 mask = *u->cq_ring_mask;
       struct io_uring_cqe * cqe = &u->cqes[head & mask];
-      int slot = (int) cqe->user_data;
+      i32 slot = (i32) cqe->user_data;
       u->slot_result[slot] = cqe->res;
       u->slot_done[slot]   = 1;
       head++;
@@ -362,7 +362,7 @@ sz fastent_src_read(fastent_source * s) {
       u->prev_returned = -1;
     }
 
-    int slot = u->next_consume;
+    i32 slot = u->next_consume;
     if (uring_wait(u, slot) < 0) return (sz) -1;
 
     i32 res = u->slot_result[slot];
@@ -370,7 +370,7 @@ sz fastent_src_read(fastent_source * s) {
 
     s->stream_buf    = u->slot_buf[slot];
     u->prev_returned = slot;
-    u->next_consume  = (slot + 1) % (int) FASTENT_URING_SLOTS;
+    u->next_consume  = (slot + 1) % (i32) FASTENT_URING_SLOTS;
 
     return (sz) res;
   }

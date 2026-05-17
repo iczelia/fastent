@@ -13,7 +13,7 @@
 #endif
 
 static void print_counts_(const fastent_result * r, int binary) {
-  const int bins = binary ? 2 : 256;
+  const i32 bins = binary ? 2 : 256;
   printf("Value Char Occurrences Fraction\n");
   Fi(bins,
      if (r->hist[i] == 0) continue;
@@ -40,10 +40,10 @@ void fastent_print_default(const fastent_result * r,
   const f64 per = o->binary ? 1.0 : 8.0;
   /*  Clamp to [0, 100]; non-finite -> 0 (int cast of NaN is UB).  */
   const f64 comp_raw = 100.0 * (per - r->entropy) / per;
-  const int comp_pct = !isfinite(comp_raw) ? 0
+  const i32 comp_pct = !isfinite(comp_raw) ? 0
                      : comp_raw < 0.0      ? 0
                      : comp_raw > 100.0    ? 100
-                                           : (int) comp_raw;
+                                           : (i32) comp_raw;
   printf("of this %llu %s file by %d percent.\n\n",
          (unsigned long long) r->total_samples, samp, comp_pct);
 
@@ -89,7 +89,7 @@ void fastent_print_default(const fastent_result * r,
 
   if (!o->extended) return;
 
-  const int bins = o->binary ? 2 : 256;
+  const i32 bins = o->binary ? 2 : 256;
   printf("\n");
   if (fp) {
     printf("Min-entropy is %.17g bits per %s.\n", r->min_entropy, samp);

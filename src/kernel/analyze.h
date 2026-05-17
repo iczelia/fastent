@@ -65,7 +65,7 @@ typedef struct {
 
   /*  Monte Carlo 6-byte ring:  */
   u8  mc_buf[6];
-  int mc_pos;
+  i32 mc_pos;
 
   /*  Order-1 digram: FASTENT_BG_CELLS u64 (NB flat 65536 tables),
       NULL unless -ee byte mode active; runner allocates/frees.

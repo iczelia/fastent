@@ -22,7 +22,7 @@ static void tint_(f64 x) {
 }
 
 static void print_counts_(const fastent_result * r, int binary) {
-  const int bins = binary ? 2 : 256;
+  const i32 bins = binary ? 2 : 256;
   printf("2,Value,Occurrences,Fraction\n");
   Fi(bins,
      printf("3,%d,%llu,%f\n", i,

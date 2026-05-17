@@ -41,7 +41,7 @@ static void mt_worker_(sz k, void * vctx) {
 static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
                          fastent_analyze_fn fn,
                          const u8 * data, u64 size) {
-  int N = o->threads;
+  i32 N = o->threads;
   fastent_set_num_threads(N);
 
   /*  6-byte-aligned slab boundaries so each thread's MC Pi state
@@ -215,7 +215,7 @@ typedef struct {
   sz                 stage_len;
   u8 **              bufs;
   void **            bufs_raw;
-  int *              freelist;  int free_n;
+  i32 *              freelist;  i32 free_n;
   stream_edge *      edges;  sz ne, ecap;
   fastent_chunk_state * accs;           /*  W, per-consumer  */
 } stream_ctx;
@@ -246,7 +246,7 @@ static void stream_consumer_(sz k, void * vctx) {
   for (;;) {
     fastent_mutex_lock(c->mtx);
     if (c->eof || c->err) { fastent_mutex_unlock(c->mtx);  break; }
-    int bi = c->freelist[--c->free_n];
+    i32 bi = c->freelist[--c->free_n];
     u8 * buf = c->bufs[bi];
     sz got = stream_fill_(c, buf);
     if (got == (sz) -1) {
@@ -319,7 +319,7 @@ static int stream_edge_cmp_(const void * a, const void * b) {
 static void run_stream_mt_(fastent_chunk_state * out,
                            const fastent_options * o,
                            fastent_analyze_fn fn, fastent_source * src) {
-  int W = o->threads;
+  i32 W = o->threads;
   fastent_set_num_threads(W);
   if (W < 2) {                          /*  no real pool: serial  */
     for (;;) {
@@ -341,10 +341,10 @@ static void run_stream_mt_(fastent_chunk_state * out,
   c.mtx = fastent_mutex_create();
   if (!c.mtx) { fprintf(stderr, "out of memory\n"); exit(2); }
 
-  int P = W + 1;
+  i32 P = W + 1;
   c.bufs     = (u8 **) calloc((sz) P, sizeof(*c.bufs));
   c.bufs_raw = (void **) calloc((sz) P, sizeof(*c.bufs_raw));
-  c.freelist = (int *) malloc((sz) P * sizeof(*c.freelist));
+  c.freelist = (i32 *) malloc((sz) P * sizeof(*c.freelist));
   c.accs = (fastent_chunk_state *) calloc((sz) W, sizeof(*c.accs));
   if (!c.bufs || !c.bufs_raw || !c.freelist || !c.accs) {
     fprintf(stderr, "out of memory\n"); exit(2);
