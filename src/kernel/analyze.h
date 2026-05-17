@@ -24,6 +24,11 @@
 #define FASTENT_BG_TABLE 65536
 #define FASTENT_BG_CELLS (FASTENT_BG_NB * FASTENT_BG_TABLE)
 
+/*  Drain the u32 digram shadow into the u64 master every this many
+    bytes.  (1u<<31) - 65536 leaves headroom below 2^31 so a single
+    u32 cell (< pairs seen < bytes seen) cannot wrap before a drain.  */
+#define FASTENT_DG_U32_CHUNK ((u64)((1u << 31) - 65536u))
+
 /*  Scalar case fold: ASCII A-Z and Latin-1 0xC0-0xDE (not 0xD7) to
     lower-case, other bytes unchanged. Same rule as the SIMD fold.  */
 static inline u8 fastent_fold_byte(u8 b) {
@@ -80,6 +85,18 @@ typedef struct {
   u64   bit_bigram[2][2];
   u8    dg_prev;
   u8    dg_have;
+
+  /*  u32 chunk shadow of `bigram`: the byte digram kernel increments
+      FASTENT_BG_CELLS u32 cells (half the u64 hot set), drained into
+      the u64 master every FASTENT_DG_U32_CHUNK bytes and once more
+      before any merge reads st->bigram.  A chunk of B <= 2^31 bytes
+      has < B adjacent pairs, so every u32 cell is < 2^31 and cannot
+      wrap even for all-same-byte input; the drain is an associativity
+      -only re-grouping of the same integer adds, so bigram[] is bit-
+      identical to direct u64 increments for any -j.  Allocated and
+      freed alongside `bigram` by the runner.  */
+  u32 * dg_u32;
+  u64   dg_chunk_bytes;
 
   /*  -ee level-2 sequential extras (runs / longest run / cusum),
       filled by fastent_digram_count; zeroed at init.  Symbols are
@@ -173,6 +190,12 @@ void fastent_chunk_state_init(fastent_chunk_state * st);
 /*  FASTENT_BG_CELLS u64, zeroed; NULL on OOM.  */
 u64 * fastent_bigram_alloc(void);
 void  fastent_bigram_free(u64 * bg);
+/*  FASTENT_BG_CELLS u32 chunk shadow, zeroed; NULL on OOM.  */
+u32 * fastent_dg_u32_alloc(void);
+void  fastent_dg_u32_free(u32 * s);
+/*  Stream the u32 chunk shadow into st->bigram (add + zero) and
+    reset st->dg_chunk_bytes.  No-op if either table is absent.  */
+void  fastent_dg_drain(fastent_chunk_state * st);
 void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
                       fastent_result * FASTENT_RESTRICT out);
 
@@ -243,6 +266,49 @@ void analyze_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
     rescan).  fold case-folds the input first (matches -f).  */
 void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
                           sz len, int binary, int fold);
+
+/*  Longest-run state machine, shared by the bit-mode scan and the
+    byte digram kernels (scalar reference and SIMD variants).
+    fastent_lr_run(st, q, n) == n calls of fastent_lr_one(st, q).  */
+void fastent_lr_one(fastent_chunk_state * st, u32 s);
+void fastent_lr_run(fastent_chunk_state * st, u32 q, u64 n);
+
+/*  Byte-mode order-1 digram + longest-run kernel, one per ISA.  Each
+    increments st->dg_u32 (NB round-robin planes) and threads the
+    longest-run / dg_prev state across calls exactly as the scalar
+    reference does, so the merged result is byte-identical for any -j.
+    The scalar variant is always built and is the reference; SIMD
+    variants must reproduce its counters bit-for-bit.  */
+typedef void (* fastent_digram_byte_fn)(fastent_chunk_state *,
+                                        const u8 *, sz);
+void digram_bytes_scalar(fastent_chunk_state * st, const u8 * buf, sz len);
+#ifdef HAVE_SSSE3
+void digram_bytes_ssse3(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_SSE41
+void digram_bytes_sse41(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_AVX2
+void digram_bytes_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_AVX512
+void digram_bytes_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_AVX512_BITALG
+void digram_bytes_avx512_bitalg(fastent_chunk_state * st,
+                                const u8 * buf, sz len);
+#endif
+#ifdef HAVE_NEON
+void digram_bytes_neon(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_SVE2
+void digram_bytes_sve2(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+#ifdef HAVE_WASM128
+void digram_bytes_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
+#endif
+
+fastent_digram_byte_fn fastent_pick_digram_byte_variant(fastent_variant * w);
 
 fastent_analyze_fn fastent_pick_variant(fastent_variant * which);
 fastent_analyze_fn fastent_pick_fold_byte_variant(fastent_variant * which);

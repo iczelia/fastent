@@ -152,7 +152,8 @@ int main(int argc, char ** argv) {
   fastent_chunk_state_init(&st);
   if (o.extended >= 2 && !o.binary) {
     st.bigram = fastent_bigram_alloc();
-    if (!st.bigram) {
+    st.dg_u32 = fastent_dg_u32_alloc();
+    if (!st.bigram || !st.dg_u32) {
       fprintf(stderr, "out of memory\n");
       free((void *) o.path);
       return 2;
@@ -172,6 +173,7 @@ int main(int argc, char ** argv) {
 
   fastent_src_close(&src);
   fastent_bigram_free(st.bigram);
+  fastent_dg_u32_free(st.dg_u32);
 
   if      (o.json)     fastent_print_json(&result, &o);
   else if (o.terse)    fastent_print_terse(&result, &o);

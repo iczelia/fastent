@@ -1789,3 +1789,246 @@ void FASTENT_FN(analyze_bits_fold)(fastent_chunk_state * st,
                                    const u8 * FASTENT_RESTRICT buf, sz len) {
   FASTENT_FN(analyze_bits_impl)(st, buf, len, 1);
 }
+
+/*  Byte-mode order-1 digram + longest-run kernel (the -ee level-2
+    pass).  Never folds: -f is handled once upstream (analyze_fused_)
+    and the raw / pre-folded bytes flow through unchanged, so this is
+    the exact same byte stream the scalar reference saw.
+
+    Reductions (state threads across calls exactly as the scalar
+    reference's per-byte loop did, so the merged result is byte-
+    identical for any -j):
+
+      digram : FASTENT_BG_CELLS u32 cells, key = (left<<8)|cur,
+               left = previous byte (st->dg_prev across calls).  The
+               NB planes are summed at finalize, so any plane
+               assignment that counts each pair exactly once is
+               equivalent; this kernel uses a fixed round-robin.
+      longest run : maximal stretch of equal adjacent bytes.  SIMD
+               variants derive it from the equality bitmap (a run
+               boundary is buf[k] != buf[k-1]); the boundary bits are
+               iterated MSB-low-offset-first via FASTENT_CTZ64 feeding
+               fastent_lr_run, which is bit-for-bit equivalent to the
+               scalar per-byte fastent_lr_one sequence (same proof as
+               the bit-mode digram_bits_blk_ run scan).  */
+
+/*  Inlined copy of fastent_lr_run (analyze.c).  Identical logic; the
+    hot SIMD path must not pay a non-inlined call per run boundary
+    (~99.6% boundary density on random input).  */
+static FASTENT_ALWAYS_INLINE void
+FASTENT_FN(lr_run_i)(fastent_chunk_state * st, u32 q, u64 n) {
+  if (!st->lr_have) {
+    st->lr_have = 1;  st->lr_sym = (u8) q;  st->lr_cur = n;
+    st->lr_head_sym = (u8) q;  st->lr_head_len = n;  st->lr_head_open = 1;
+  } else if (q == st->lr_sym) {
+    st->lr_cur += n;
+    if (st->lr_head_open) st->lr_head_len += n;
+  } else {
+    if (st->lr_cur > st->lr_max) st->lr_max = st->lr_cur;
+    st->lr_sym = (u8) q;  st->lr_cur = n;  st->lr_head_open = 0;
+  }
+}
+
+static FASTENT_ALWAYS_INLINE void
+FASTENT_FN(digram_scalar_run)(fastent_chunk_state * st,
+                              const u8 * FASTENT_RESTRICT buf, sz len) {
+  u32 * FASTENT_RESTRICT t = st->dg_u32;
+  u32 prev;
+  sz i = 0;
+  if (st->dg_have) {
+    prev = st->dg_prev;
+  } else {
+    prev = buf[0];
+    fastent_lr_one(st, prev);
+    i = 1;
+    st->dg_have = 1;
+  }
+  for (; i + 2 <= len; i += 2) {
+    u32 c0 = buf[i], c1 = buf[i + 1];
+    t[0u * FASTENT_BG_TABLE + ((prev << 8) | c0)]++;  fastent_lr_one(st, c0);
+    t[1u * FASTENT_BG_TABLE + ((c0   << 8) | c1)]++;  fastent_lr_one(st, c1);
+    prev = c1;
+  }
+  for (; i < len; i++) {
+    u32 c = buf[i];
+    t[(prev << 8) | c]++;  fastent_lr_one(st, c);
+    prev = c;
+  }
+  st->dg_prev = (u8) prev;
+}
+
+#ifdef FASTENT_HAVE_SIMD
+#if !defined(FASTENT_VARIANT_AVX512)
+/*  W-bit equality mask: bit j set iff buf[base+j] == buf[base+j-1].
+    base >= 1 and base+W <= len so both loads are in bounds.  AVX-512
+    produces the mask natively (k register) and is handled inline.  */
+static FASTENT_ALWAYS_INLINE u64
+FASTENT_FN(eq_mask)(const u8 * FASTENT_RESTRICT buf, sz base) {
+  FASTENT_SIMD_VEC v  = V_LOAD(buf + base);
+  FASTENT_SIMD_VEC vp = V_LOAD(buf + base - 1);
+  FASTENT_SIMD_VEC eq = V_CMPEQ_EPI8(v, vp);
+#if defined(FASTENT_VARIANT_NEON)
+  /*  No movemask on NEON: narrow each 16-bit lane to 4 bits via
+      shrn so a 128-bit compare result becomes a 64-bit value with
+      4 bits per byte; bit (4*j) is the per-byte equal flag.  */
+  uint8x8_t nn = vshrn_n_u16(vreinterpretq_u16_u8(eq), 4);
+  u64 packed = vget_lane_u64(vreinterpret_u64_u8(nn), 0);
+  u64 m = 0;
+  Fi(16, if ((packed >> (u32)(i * 4)) & 0xFu) m |= (u64) 1u << i)
+  return m;
+#elif defined(FASTENT_VARIANT_WASM128)
+  return (u64)(u16) wasm_i8x16_bitmask(eq);
+#else
+  return (u64) V_MOVEMASK_EPI8(eq);
+#endif
+}
+#endif
+#endif
+
+
+/*  Process bytes buf[i0 .. len-1] of this call: scatter every digram
+    pair into st->dg_u32 and feed the longest-run machine.  The run
+    scan starts at i0 (symbol buf[i0]); a run boundary is index i with
+    buf[i] != buf[i-1].  Emitting fastent_lr_run per maximal run is
+    bit-for-bit equivalent to the scalar fastent_lr_one per byte, and
+    fastent_lr_run merges a run that continues the carried open run by
+    symbol, so cross-call state threads exactly as the scalar loop.
+    left(i) = buf[i-1] for i >= 1, else st->dg_prev; for the bootstrap
+    case i0 == 1 and buf[0] == st->dg_prev, so the rule is uniform.  */
+void FASTENT_FN(digram_bytes)(fastent_chunk_state * st,
+                              const u8 * FASTENT_RESTRICT buf, sz len) {
+#ifndef FASTENT_HAVE_SIMD
+  FASTENT_FN(digram_scalar_run)(st, buf, len);
+#else
+  if (len == 0) return;
+  u32 * FASTENT_RESTRICT t = st->dg_u32;
+
+  sz i0;
+  if (st->dg_have) {
+    i0 = 0;
+  } else {
+    fastent_lr_one(st, buf[0]);   /*  bootstrap: buf[0], no left pair  */
+    st->dg_prev = buf[0];
+    st->dg_have = 1;
+    i0 = 1;
+  }
+  if (i0 >= len) { st->dg_prev = buf[len - 1]; return; }
+
+  /*  Run scan state: the run currently open starts at runstart with
+      symbol runsym; closed runs are flushed to fastent_lr_run.  */
+  sz  runstart = i0;
+  u32 runsym   = buf[i0];
+
+  /*  Scalar prologue: the SIMD window needs buf[base-1] in bounds, so
+      it starts at index >= 1.  i0 is 0 or 1; when i0 == 0 emit the
+      single pair at index 0 (left = carried st->dg_prev) here so the
+      window can start at index 1.  Index 0 has no run boundary (the
+      run scan opens at runstart = i0 = 0).  When i0 == 1 nothing is
+      emitted here (the window starts at 1 directly).  */
+  sz k = i0;
+  if (k == 0) {
+    u32 c = buf[0];
+    t[((u32)(0u & 1u)) * FASTENT_BG_TABLE
+      + (((u32) st->dg_prev << 8) | c)]++;
+    k = 1;
+  }
+
+  const sz NB_BLK = 64;
+  while (k >= 1 && k + NB_BLK <= len) {
+    u64 bnd;
+#if defined(FASTENT_VARIANT_AVX512)
+    {
+      __m512i v  = _mm512_loadu_si512((const void *)(buf + k));
+      __m512i vp = _mm512_loadu_si512((const void *)(buf + k - 1));
+      bnd = ~(u64) _mm512_cmpeq_epi8_mask(v, vp);
+    }
+#elif FASTENT_SIMD_VLEN == 64
+    bnd = ~FASTENT_FN(eq_mask)(buf, k);
+#elif FASTENT_SIMD_VLEN == 32
+    {
+      u64 m0 = FASTENT_FN(eq_mask)(buf, k) & 0xFFFFFFFFull;
+      u64 m1 = FASTENT_FN(eq_mask)(buf, k + 32) & 0xFFFFFFFFull;
+      bnd = ~(m0 | (m1 << 32));
+    }
+#else  /*  VLEN == 16  */
+    {
+      u64 m0 = FASTENT_FN(eq_mask)(buf, k)      & 0xFFFFull;
+      u64 m1 = FASTENT_FN(eq_mask)(buf, k + 16) & 0xFFFFull;
+      u64 m2 = FASTENT_FN(eq_mask)(buf, k + 32) & 0xFFFFull;
+      u64 m3 = FASTENT_FN(eq_mask)(buf, k + 48) & 0xFFFFull;
+      bnd = ~(m0 | (m1 << 16) | (m2 << 32) | (m3 << 48));
+    }
+#endif
+
+    /*  Digram keys for buf[k .. k+63]: vectorised index production,
+        scalar inc-mem scatter (microarch-neutral; the scatter stays
+        scalar per project_avx512_scatter_zen4).  NB round-robin by
+        absolute index parity so the merged plane sum is unchanged
+        and consecutive equal keys do not chain one SLF location.  */
+    {
+      FASTENT_ALIGN(64) u16 keys[64];
+      FASTENT_STAGE_PTR sp = buf + k;
+      FASTENT_LAUNDER(sp);
+      Fi(64, keys[i] = (u16)(((u32) sp[(sz) i - 1] << 8) | sp[i]))
+      {
+        u32 * FASTENT_RESTRICT t0 = t;
+        u32 * FASTENT_RESTRICT t1 = t + FASTENT_BG_TABLE;
+        const u32 par = (u32)(k & 1u);
+        Fi(64,
+           if (i + 8 < 64) FASTENT_PREFETCH(&t0[keys[i + 8]]);
+           if (((u32) i ^ par) & 1u) t1[keys[i]]++;
+           else                      t0[keys[i]]++)
+      }
+    }
+
+    /*  Boundaries inside this window are absolute indices k .. k+63;
+        bit j set => buf[k+j] != buf[k+j-1] => a run closes at k+j-1
+        and a new run starts at k+j.  Emit MSB-low-offset-first via
+        the inlined run machine.
+
+        Dense fast path: bnd == ~0 means every byte in the window
+        differs from its predecessor, so the carried run closes and
+        the window is 64 singleton runs.  The general loop would emit
+          lr_run(runsym, k - runstart);
+          lr_run(buf[k], 1); ...; lr_run(buf[k+62], 1);
+        All 63 singletons take the "different symbol" branch (each
+        byte != its predecessor != lr_sym), so only the first can
+        raise lr_max (lr_max >= 1 thereafter) and the rest collapse
+        to lr_sym = buf[k+62], lr_cur = 1, lr_head_open = 0.  This is
+        bit-for-bit identical to the per-boundary loop and removes the
+        64-iteration CTZ chain on near-random input.  */
+    if (bnd == ~(u64) 0) {
+      FASTENT_FN(lr_run_i)(st, runsym, (u64)(k - runstart));
+      FASTENT_FN(lr_run_i)(st, buf[k], 1u);
+      st->lr_sym = buf[k + 62];   /*  collapse singletons 2..63  */
+      runstart = k + 63;
+      runsym   = buf[k + 63];
+    } else {
+      u64 b = bnd;
+      while (b) {
+        const sz bpos = k + FASTENT_CTZ64(b);
+        FASTENT_FN(lr_run_i)(st, runsym, (u64)(bpos - runstart));
+        runstart = bpos;
+        runsym   = buf[bpos];
+        b &= b - 1;
+      }
+    }
+    k += NB_BLK;
+  }
+
+  /*  Scalar tail: remaining pairs + remaining boundaries.  */
+  for (; k < len; k++) {
+    u32 c = buf[k];
+    t[(u32)(k & 1u) * FASTENT_BG_TABLE + (((u32) buf[k - 1] << 8) | c)]++;
+    if (buf[k] != buf[k - 1]) {
+      FASTENT_FN(lr_run_i)(st, runsym, (u64)(k - runstart));
+      runstart = k;
+      runsym   = buf[k];
+    }
+  }
+
+  /*  Close the final open run [runstart .. len-1].  */
+  FASTENT_FN(lr_run_i)(st, runsym, (u64)(len - runstart));
+  st->dg_prev = buf[len - 1];
+#endif
+}

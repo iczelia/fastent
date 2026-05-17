@@ -39,67 +39,21 @@ static fastent_fold_fn dg_fold_fn_(void) {
   return f;
 }
 
-/*  Longest identical-symbol run; symbol is a byte or a bit.  */
-static void lr_one_(fastent_chunk_state * st, u32 s) {
-  if (!st->lr_have) {
-    st->lr_have = 1;  st->lr_sym = (u8) s;  st->lr_cur = 1;
-    st->lr_head_sym = (u8) s;  st->lr_head_len = 1;  st->lr_head_open = 1;
-  } else if (s == st->lr_sym) {
-    st->lr_cur++;
-    if (st->lr_head_open) st->lr_head_len++;
-  } else {
-    if (st->lr_cur > st->lr_max) st->lr_max = st->lr_cur;
-    st->lr_sym = (u8) s;  st->lr_cur = 1;
-    st->lr_head_open = 0;        /*  leading run closed; head frozen  */
-  }
-}
+/*  Longest-run helpers are shared (fastent_lr_one / fastent_lr_run in
+    analyze.c).  The bit-mode scan below uses fastent_lr_run; the byte
+    digram + run kernel is templatized per ISA (analyze-impl.h) and
+    dispatched via dg_byte_fn_().  */
 
-static void digram_bytes_(fastent_chunk_state * st,
-                          const u8 * FASTENT_RESTRICT buf, sz len) {
-  u64 * FASTENT_RESTRICT t = st->bigram;
-  u32 prev;
-  sz i = 0;
-
-  if (st->dg_have) {
-    prev = st->dg_prev;
-  } else {
-    /*  First byte of the stream: no left neighbour for a pair, but
-        it is still a symbol for the longest-run scan.  */
-    prev = buf[0];
-    lr_one_(st, prev);
-    i = 1;
-    st->dg_have = 1;
-  }
-
-  for (; i + 2 <= len; i += 2) {
-    u32 c0 = buf[i], c1 = buf[i + 1];
-    t[0u * FASTENT_BG_TABLE + ((prev << 8) | c0)]++;  lr_one_(st, c0);
-    t[1u * FASTENT_BG_TABLE + ((c0   << 8) | c1)]++;  lr_one_(st, c1);
-    prev = c1;
-  }
-  for (; i < len; i++) {
-    u32 c = buf[i];
-    t[(prev << 8) | c]++;  lr_one_(st, c);
-    prev = c;
-  }
-  st->dg_prev = (u8) prev;
-}
-
-/*  Feed one whole run (symbol q, length n) into the longest-run
-    machine; bit-for-bit equivalent to n lr_one_(q) calls, so the
-    head / open-run / lr_max bookkeeping the mmap and SPMC merges
-    rely on is preserved exactly.  */
-static void lr_run_(fastent_chunk_state * st, u32 q, u64 n) {
-  if (!st->lr_have) {
-    st->lr_have = 1;  st->lr_sym = (u8) q;  st->lr_cur = n;
-    st->lr_head_sym = (u8) q;  st->lr_head_len = n;  st->lr_head_open = 1;
-  } else if (q == st->lr_sym) {
-    st->lr_cur += n;
-    if (st->lr_head_open) st->lr_head_len += n;
-  } else {
-    if (st->lr_cur > st->lr_max) st->lr_max = st->lr_cur;
-    st->lr_sym = (u8) q;  st->lr_cur = n;  st->lr_head_open = 0;
-  }
+/*  Cached byte digram + longest-run kernel.  Process-stable pick, so
+    the lazy-init race stores the same pointer (same discipline as
+    dg_fold_fn_).  The scalar variant is always built and is the
+    reference; the chosen SIMD variant reproduces its counters bit-
+    for-bit.  */
+static fastent_digram_byte_fn dg_byte_fn_(void) {
+  static fastent_digram_byte_fn df = NULL;
+  fastent_digram_byte_fn f = df;
+  if (!f) { f = fastent_pick_digram_byte_variant(NULL);  df = f; }
+  return f;
 }
 
 #define FASTENT_DG_BITS_CHUNK 65536u                   /*  bytes  */
@@ -173,7 +127,7 @@ static void digram_bits_blk_(fastent_chunk_state * st,
   }
 
   /*  Longest run: enumerate runs via the transition bitmap and feed
-      each to lr_run_ (exactly the scalar run sequence).  */
+      each to fastent_lr_run (exactly the scalar run sequence).  */
   {
     const sz  wl = lbpos >> 6;
     const u32 bl = (u32)(lbpos & 63);
@@ -187,12 +141,12 @@ static void digram_bits_blk_(fastent_chunk_state * st,
       if (w == wl) tw &= lmask;
       while (tw) {
         const i64 p = (i64) w * 64 + (i64) FASTENT_CTZ64(tw);
-        lr_run_(st, sym, (u64)(p - lastp));
+        fastent_lr_run(st, sym, (u64)(p - lastp));
         lastp = p;  sym ^= 1u;
         tw &= tw - 1;
       }
     }
-    lr_run_(st, sym, (u64)((i64) lbpos - lastp));
+    fastent_lr_run(st, sym, (u64)((i64) lbpos - lastp));
   }
 }
 
@@ -222,6 +176,29 @@ static void digram_bits_(fastent_chunk_state * st,
   }
 }
 
+/*  Byte scan with deterministic u32 -> u64 drains.  dg_chunk_bytes
+    accumulates across calls; a drain fires whenever cumulative bytes
+    would cross FASTENT_DG_U32_CHUNK, splitting the scan at exactly
+    that byte.  Splitting a buffer into successive digram_bytes_ calls
+    is bit-identical to one call (dg_prev / lr state carry across), so
+    the drain point is a function of byte count only and identical for
+    any -j.  Draining BEFORE crossing keeps every u32 cell < 2^31.  */
+static void digram_bytes_drained_(fastent_chunk_state * st,
+                                  const u8 * FASTENT_RESTRICT buf, sz len) {
+  fastent_digram_byte_fn fn = dg_byte_fn_();
+  sz off = 0;
+  while (off < len) {
+    if (st->dg_chunk_bytes >= FASTENT_DG_U32_CHUNK)
+      fastent_dg_drain(st);
+    sz room = (sz)(FASTENT_DG_U32_CHUNK - st->dg_chunk_bytes);
+    sz n = len - off;
+    if (n > room) n = room;
+    fn(st, buf + off, n);
+    st->dg_chunk_bytes += n;
+    off += n;
+  }
+}
+
 void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
                           sz len, int binary, int fold) {
   if (len == 0) return;
@@ -229,7 +206,7 @@ void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
 
   if (!fold) {
     if (binary) digram_bits_(st, buf, len);
-    else        digram_bytes_(st, buf, len);
+    else        digram_bytes_drained_(st, buf, len);
     return;
   }
 
@@ -244,6 +221,6 @@ void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
     memcpy(scratch, buf + off, cl);
     ff(scratch, cl);
     if (binary) digram_bits_(st, scratch, cl);
-    else        digram_bytes_(st, scratch, cl);
+    else        digram_bytes_drained_(st, scratch, cl);
   }
 }

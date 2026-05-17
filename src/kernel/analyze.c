@@ -25,6 +25,61 @@ void fastent_bigram_free(u64 * bg) {
   free(bg);
 }
 
+/*  u32 digram chunk shadow (zeroed).  NULL = OOM.  */
+u32 * fastent_dg_u32_alloc(void) {
+  return (u32 *) calloc((sz) FASTENT_BG_CELLS, sizeof(u32));
+}
+
+void fastent_dg_u32_free(u32 * s) {
+  free(s);
+}
+
+/*  Stream the u32 chunk shadow into the u64 master and zero it.
+    Sequential add + clear over FASTENT_BG_CELLS cells; ~one L2 fill
+    per FASTENT_DG_U32_CHUNK bytes processed.  Pure associativity-only
+    re-grouping of the same integer adds, so st->bigram is bit-
+    identical to direct u64 increments for any thread count.  */
+void fastent_dg_drain(fastent_chunk_state * st) {
+  u32 * FASTENT_RESTRICT s = st->dg_u32;
+  u64 * FASTENT_RESTRICT d = st->bigram;
+  if (!s || !d) return;
+  Fi((int) FASTENT_BG_CELLS, d[i] += s[i];  s[i] = 0)
+  st->dg_chunk_bytes = 0;
+}
+
+/*  Longest identical-symbol run, one symbol.  Shared by the bit-mode
+    scan and the scalar byte digram reference.  */
+void fastent_lr_one(fastent_chunk_state * st, u32 s) {
+  if (!st->lr_have) {
+    st->lr_have = 1;  st->lr_sym = (u8) s;  st->lr_cur = 1;
+    st->lr_head_sym = (u8) s;  st->lr_head_len = 1;  st->lr_head_open = 1;
+  } else if (s == st->lr_sym) {
+    st->lr_cur++;
+    if (st->lr_head_open) st->lr_head_len++;
+  } else {
+    if (st->lr_cur > st->lr_max) st->lr_max = st->lr_cur;
+    st->lr_sym = (u8) s;  st->lr_cur = 1;
+    st->lr_head_open = 0;        /*  leading run closed; head frozen  */
+  }
+}
+
+/*  Feed one whole run (symbol q, length n) into the longest-run
+    machine; bit-for-bit equivalent to n fastent_lr_one(q) calls, so
+    the head / open-run / lr_max bookkeeping the mmap and SPMC merges
+    rely on is preserved exactly.  */
+void fastent_lr_run(fastent_chunk_state * st, u32 q, u64 n) {
+  if (!st->lr_have) {
+    st->lr_have = 1;  st->lr_sym = (u8) q;  st->lr_cur = n;
+    st->lr_head_sym = (u8) q;  st->lr_head_len = n;  st->lr_head_open = 1;
+  } else if (q == st->lr_sym) {
+    st->lr_cur += n;
+    if (st->lr_head_open) st->lr_head_len += n;
+  } else {
+    if (st->lr_cur > st->lr_max) st->lr_max = st->lr_cur;
+    st->lr_sym = (u8) q;  st->lr_cur = n;  st->lr_head_open = 0;
+  }
+}
+
 /*  Collapse the FASTENT_BG_NB round-robin planes for one 16-bit
     digram key into its total count.  */
 static u64 bg_cell_(const u64 * bg, i32 key) {
@@ -36,6 +91,11 @@ static u64 bg_cell_(const u64 * bg, i32 key) {
 void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
                       fastent_result * FASTENT_RESTRICT out) {
   memset(out, 0, sizeof(*out));
+
+  /*  Flush any pending u32 digram chunk into the u64 master before
+      the order-1 reduction reads st->bigram.  No-op when the chunk
+      shadow is absent (bit mode, no -ee, or the post-merge out).  */
+  fastent_dg_drain(st);
 
   if (st->have_first && st->have_carry)
     st->cross_product += (i64) st->last_byte * (i64) st->first_byte;
@@ -255,6 +315,7 @@ typedef struct {
   fastent_analyze_fn  fold_byte;
   fastent_analyze_fn  fold_bits;
   fastent_fold_fn     fold;
+  fastent_digram_byte_fn digram_byte;
 } variant_entry;
 
 static int avail_scalar_(void)  { return 1; }
@@ -291,7 +352,17 @@ static int avail_wasm128_(void) { return CPU_HAS(wasm128); }
   { FASTENT_VAR_##VARIANT, NAME, AVAIL,                               \
     analyze_##SUFFIX,           analyze_bits_##SUFFIX,                \
     analyze_fold_##SUFFIX,      analyze_bits_fold_##SUFFIX,           \
-    fold_##SUFFIX }
+    fold_##SUFFIX,             digram_bytes_##SUFFIX }
+
+/*  The SVE2 analyze TU is self-contained and does not emit the
+    templated byte digram kernel, so its digram_byte uses the always
+    built scalar reference (correct and deterministic; the SVE2 path
+    keeps its own order-0 fold SIMD).  */
+#define ENTRY_DGSCALAR(VARIANT, NAME, AVAIL, SUFFIX)                   \
+  { FASTENT_VAR_##VARIANT, NAME, AVAIL,                               \
+    analyze_##SUFFIX,           analyze_bits_##SUFFIX,                \
+    analyze_fold_##SUFFIX,      analyze_bits_fold_##SUFFIX,           \
+    fold_##SUFFIX,             digram_bytes_scalar }
 
 static const variant_entry variants_[] = {
   ENTRY(SCALAR,           "scalar",        avail_scalar_,  scalar),
@@ -314,7 +385,7 @@ static const variant_entry variants_[] = {
   ENTRY(NEON_,            "neon",          avail_neon_,    neon),
 #endif
 #ifdef HAVE_SVE2
-  ENTRY(SVE2_,            "sve2",          avail_sve2_,    sve2),
+  ENTRY_DGSCALAR(SVE2_,   "sve2",          avail_sve2_,    sve2),
 #endif
 #ifdef HAVE_WASM128
   ENTRY(WASM128_,         "wasm-simd128",  avail_wasm128_, wasm128),
@@ -322,6 +393,7 @@ static const variant_entry variants_[] = {
 };
 
 #undef ENTRY
+#undef ENTRY_DGSCALAR
 
 #define VARIANTS_N (sizeof variants_ / sizeof variants_[0])
 
@@ -360,6 +432,13 @@ fastent_fold_fn fastent_pick_fold_variant(fastent_variant * which) {
   const variant_entry * e = pick_();
   if (which) *which = e->variant;
   return e->fold;
+}
+
+fastent_digram_byte_fn
+fastent_pick_digram_byte_variant(fastent_variant * which) {
+  const variant_entry * e = pick_();
+  if (which) *which = e->variant;
+  return e->digram_byte;
 }
 
 const char * fastent_variant_name(fastent_variant v) {

@@ -15,17 +15,54 @@
 
 #define FASTENT_FUSE_BLOCK (64u * 1024u)
 
+/*  Cached vectorised fold variant for the fold-once -ee byte path.
+    Pick is process-stable, so the lazy-init race stores the same
+    pointer (same discipline as digram.c's dg_fold_fn_).  */
+static fastent_fold_fn fused_fold_fn_(void) {
+  static fastent_fold_fn ff = NULL;
+  fastent_fold_fn f = ff;
+  if (!f) { f = fastent_pick_fold_variant(NULL);  ff = f; }
+  return f;
+}
+
 /*  One cache-blocked traversal: the order-0 SIMD body then the -ee
     extras on each L1/L2-resident sub-block, so the extras read the
     data from cache instead of re-streaming the whole region from
     DRAM (it is bandwidth-bound).  State threads across sub-blocks
     exactly as the stream path's per-chunk calls do, so the result
     is byte-identical to a single whole-region pass; -e (no extras)
-    stays a single pass.  */
-static void analyze_fused_(fastent_chunk_state * st, fastent_analyze_fn body,
+    stays a single pass.
+
+    Byte -ee with -f: each sub-block is folded ONCE into a reusable
+    scratch with the SIMD fold LUT, then the non-fold order-0 body
+    and the non-fold digram scan both consume that folded scratch.
+    This drops the second (per-32 KiB) fold and its staging round-
+    trip; the folded bytes fed to both kernels are identical to the
+    in-register fold, so the result is byte-identical and the
+    boundary fold in the merges (still fastent_fold_byte) matches.  */
+static void analyze_fused_(fastent_chunk_state * st,
+                           fastent_analyze_fn body,
+                           fastent_analyze_fn body_plain,
                            const u8 * data, sz len,
                            int extended, int binary, int fold) {
   if (extended < 2) { body(st, data, len);  return; }
+
+  if (fold && !binary && body_plain) {
+    FASTENT_ALIGN(64) u8 fb[FASTENT_FUSE_BLOCK];
+    fastent_fold_fn ff = fused_fold_fn_();
+    sz off = 0;
+    while (off < len) {
+      sz n = len - off;
+      if (n > FASTENT_FUSE_BLOCK) n = FASTENT_FUSE_BLOCK;
+      memcpy(fb, data + off, n);
+      ff(fb, n);
+      body_plain(st, fb, n);
+      fastent_digram_count(st, fb, n, 0, 0);
+      off += n;
+    }
+    return;
+  }
+
   sz off = 0;
   while (off < len) {
     sz n = len - off;
@@ -43,7 +80,9 @@ typedef struct {
   fastent_chunk_state * states;
   /*  per-slab digram tables; NULL unless -ee byte mode  */
   u64 * const *  bigrams;
+  u32 * const *  dg_u32s;    /*  parallel u32 chunk shadows  */
   fastent_analyze_fn fn;
+  fastent_analyze_fn fn_plain;   /*  non-fold byte body (fold-once)  */
   int            extended;
   int            binary;
   int            fold;
@@ -55,12 +94,13 @@ static void mt_worker_(sz k, void * vctx) {
   u64 end   = c->bounds[k + 1];
   fastent_chunk_state_init(&c->states[k]);
   if (c->bigrams) c->states[k].bigram = c->bigrams[k];
-  analyze_fused_(&c->states[k], c->fn, c->data + start,
+  if (c->dg_u32s) c->states[k].dg_u32 = c->dg_u32s[k];
+  analyze_fused_(&c->states[k], c->fn, c->fn_plain, c->data + start,
                  (sz)(end - start), c->extended, c->binary, c->fold);
 }
 
 static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
-                         fastent_analyze_fn fn,
+                         fastent_analyze_fn fn, fastent_analyze_fn fn_plain,
                          const u8 * data, u64 size) {
   i32 N = o->threads;
   fastent_set_num_threads(N);
@@ -83,16 +123,21 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
   /*  Per-slab digram tables (byte -ee only), summed at merge.
       Allocated up front so OOM is handled serially.  */
   u64 ** bgs = NULL;
+  u32 ** dgs = NULL;
   if (o->extended >= 2 && !o->binary) {
     bgs = (u64 **) calloc((sz) N, sizeof(*bgs));
-    if (!bgs) { fprintf(stderr, "out of memory\n"); exit(2); }
+    dgs = (u32 **) calloc((sz) N, sizeof(*dgs));
+    if (!bgs || !dgs) { fprintf(stderr, "out of memory\n"); exit(2); }
     Fk(N, bgs[k] = fastent_bigram_alloc();
-          if (!bgs[k]) { fprintf(stderr, "out of memory\n"); exit(2); })
+          dgs[k] = fastent_dg_u32_alloc();
+          if (!bgs[k] || !dgs[k]) {
+            fprintf(stderr, "out of memory\n"); exit(2); })
   }
 
   mt_ctx ctx;
   ctx.data = data;  ctx.bounds = bounds;  ctx.states = states;
-  ctx.bigrams = bgs;  ctx.fn = fn;
+  ctx.bigrams = bgs;  ctx.dg_u32s = dgs;
+  ctx.fn = fn;  ctx.fn_plain = fn_plain;
   ctx.extended = o->extended;  ctx.binary = o->binary;
   ctx.fold = o->fold;
   fastent_parallel_for((sz) N, mt_worker_, &ctx);
@@ -141,6 +186,7 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
        fastent_chunk_state * s = &states[k];
        if (s->total_bytes == 0) continue;
        const u64 start = bounds[k];
+       fastent_dg_drain(s);   /*  flush this slab's u32 chunk first  */
        if (out->bigram && s->bigram)
          Fi((int) FASTENT_BG_CELLS, out->bigram[i] += s->bigram[i])
        if (o->binary) {
@@ -199,6 +245,7 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
   }
 
   if (bgs) { Fk(N, fastent_bigram_free(bgs[k])) free(bgs); }
+  if (dgs) { Fk(N, fastent_dg_u32_free(dgs[k])) free(dgs); }
   free(states);
   free(bounds);
 }
@@ -227,6 +274,7 @@ typedef struct {
   fastent_source *   src;
   fastent_mutex *    mtx;
   fastent_analyze_fn fn;
+  fastent_analyze_fn fn_plain;   /*  non-fold byte body (fold-once)  */
   int                extended, binary, fold;
   sz                 blocksz;
   u64                next_seq;          /*  guarded by mtx  */
@@ -283,8 +331,12 @@ static void stream_consumer_(sz k, void * vctx) {
     fastent_chunk_state blk;
     fastent_chunk_state_init(&blk);
     blk.bigram = acc->bigram;           /*  byte -ee: accumulate here  */
-    analyze_fused_(&blk, c->fn, buf, got,
+    blk.dg_u32 = acc->dg_u32;           /*  per-consumer u32 shadow    */
+    analyze_fused_(&blk, c->fn, c->fn_plain, buf, got,
                    c->extended, c->binary, c->fold);
+    /*  Flush this block's u32 chunk into acc->bigram before the
+        per-consumer accumulate; the shadow is zeroed for reuse.  */
+    fastent_dg_drain(&blk);
 
     Fi(FASTENT_BANKS, Fj(256, acc->bank[i][j] += blk.bank[i][j]))
     acc->bit_hist[0] += blk.bit_hist[0];
@@ -337,7 +389,9 @@ static int stream_edge_cmp_(const void * a, const void * b) {
 
 static void run_stream_mt_(fastent_chunk_state * out,
                            const fastent_options * o,
-                           fastent_analyze_fn fn, fastent_source * src) {
+                           fastent_analyze_fn fn,
+                           fastent_analyze_fn fn_plain,
+                           fastent_source * src) {
   i32 W = o->threads;
   fastent_set_num_threads(W);
   if (W < 2) {                          /*  no real pool: serial  */
@@ -345,7 +399,7 @@ static void run_stream_mt_(fastent_chunk_state * out,
       sz n = fastent_src_read(src);
       if (n == (sz) -1) { perror("read");  exit(2); }
       if (n == 0) break;
-      analyze_fused_(out, fn, src->stream_buf, n,
+      analyze_fused_(out, fn, fn_plain, src->stream_buf, n,
                      o->extended, o->binary, o->fold);
     }
     return;
@@ -353,7 +407,7 @@ static void run_stream_mt_(fastent_chunk_state * out,
 
   stream_ctx c;
   memset(&c, 0, sizeof c);
-  c.src = src;  c.fn = fn;
+  c.src = src;  c.fn = fn;  c.fn_plain = fn_plain;
   c.extended = o->extended;  c.binary = o->binary;  c.fold = o->fold;
   c.blocksz = (FASTENT_STREAM_BUF / 6u) * 6u;
   c.mtx = fastent_mutex_create();
@@ -378,7 +432,9 @@ static void run_stream_mt_(fastent_chunk_state * out,
   if (o->extended >= 2 && !o->binary)
     Fk(W,
        c.accs[k].bigram = fastent_bigram_alloc();
-       if (!c.accs[k].bigram) { fprintf(stderr, "out of memory\n"); exit(2); })
+       c.accs[k].dg_u32 = fastent_dg_u32_alloc();
+       if (!c.accs[k].bigram || !c.accs[k].dg_u32) {
+         fprintf(stderr, "out of memory\n"); exit(2); })
 
   fastent_parallel_for((sz) W, stream_consumer_, &c);
 
@@ -467,7 +523,8 @@ static void run_stream_mt_(fastent_chunk_state * out,
   }
 
   if (o->extended >= 2 && !o->binary)
-    Fk(W, fastent_bigram_free(c.accs[k].bigram))
+    Fk(W, fastent_bigram_free(c.accs[k].bigram);
+          fastent_dg_u32_free(c.accs[k].dg_u32))
   Fk(P, free(c.bufs_raw[k]))
   free(c.bufs);  free(c.bufs_raw);  free(c.freelist);
   free(c.accs);  free(c.edges);
@@ -484,15 +541,17 @@ void fastent_run_mmap(fastent_chunk_state * st, const fastent_options * o,
   fastent_analyze_fn body = o->binary
     ? (o->fold ? fn_bits_fold : fn_bits)
     : (o->fold ? fn_byte_fold : fn_byte);
+  /*  Non-fold byte body for the fold-once -ee path.  */
+  fastent_analyze_fn body_plain = (!o->binary && o->fold) ? fn_byte : NULL;
 
 #ifdef FASTENT_HAVE_THREADS
   if (o->threads > 1 && size >= (u64)(o->threads) * 1024u * 1024u) {
-    run_mmap_mt_(st, o, body, data, size);
+    run_mmap_mt_(st, o, body, body_plain, data, size);
     return;
   }
 #endif
 
-  analyze_fused_(st, body, data, (sz) size,
+  analyze_fused_(st, body, body_plain, data, (sz) size,
                  o->extended, o->binary, o->fold);
 }
 
@@ -505,10 +564,12 @@ void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
   fastent_analyze_fn body = o->binary
     ? (o->fold ? fn_bits_fold : fn_bits)
     : (o->fold ? fn_byte_fold : fn_byte);
+  /*  Non-fold byte body for the fold-once -ee path.  */
+  fastent_analyze_fn body_plain = (!o->binary && o->fold) ? fn_byte : NULL;
 
 #ifdef FASTENT_HAVE_THREADS
   if (o->threads > 1) {
-    run_stream_mt_(st, o, body, src);
+    run_stream_mt_(st, o, body, body_plain, src);
     return;
   }
 #endif
@@ -520,7 +581,7 @@ void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
       exit(2);
     }
     if (n == 0) break;
-    analyze_fused_(st, body, src->stream_buf, n,
+    analyze_fused_(st, body, body_plain, src->stream_buf, n,
                    o->extended, o->binary, o->fold);
   }
 }
@@ -551,7 +612,10 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   fastent_chunk_state_init(&st);
   if (c->o->extended >= 2 && !c->o->binary) {
     st.bigram = fastent_bigram_alloc();
-    if (!st.bigram) { fprintf(stderr, "out of memory\n"); exit(2); }
+    st.dg_u32 = fastent_dg_u32_alloc();
+    if (!st.bigram || !st.dg_u32) {
+      fprintf(stderr, "out of memory\n"); exit(2);
+    }
   }
   if (src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, c->o, c->fn_byte, c->fn_bits,
@@ -566,6 +630,7 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
 
   fastent_src_close(&src);
   fastent_bigram_free(st.bigram);
+  fastent_dg_u32_free(st.dg_u32);
 
   if (c->count == c->cap) {
     sz nc = c->cap ? c->cap * 2 : 32;

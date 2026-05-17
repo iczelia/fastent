@@ -53,6 +53,7 @@
   #define V_SRLI_EPI16(a, n)   _mm256_srli_epi16((a), (n))
   #define V_SHUFFLE_EPI8(t, i) _mm256_shuffle_epi8((t), (i))
   #define V_SAD_EPU8(a, b)     _mm256_sad_epu8((a), (b))
+  #define V_MOVEMASK_EPI8(a)   ((u32) _mm256_movemask_epi8((a)))
 #elif defined(FASTENT_VARIANT_SSE41)
   #define FASTENT_VAR_SUFFIX _sse41
   #define FASTENT_SIMD_VEC   __m128i
@@ -71,6 +72,7 @@
   #define V_SRLI_EPI16(a, n)   _mm_srli_epi16((a), (n))
   #define V_SHUFFLE_EPI8(t, i) _mm_shuffle_epi8((t), (i))
   #define V_SAD_EPU8(a, b)     _mm_sad_epu8((a), (b))
+  #define V_MOVEMASK_EPI8(a)   ((u32) _mm_movemask_epi8((a)))
 #elif defined(FASTENT_VARIANT_SSSE3)
   #define FASTENT_VAR_SUFFIX _ssse3
   #define FASTENT_SIMD_VEC   __m128i
@@ -89,6 +91,7 @@
   #define V_SRLI_EPI16(a, n)   _mm_srli_epi16((a), (n))
   #define V_SHUFFLE_EPI8(t, i) _mm_shuffle_epi8((t), (i))
   #define V_SAD_EPU8(a, b)     _mm_sad_epu8((a), (b))
+  #define V_MOVEMASK_EPI8(a)   ((u32) _mm_movemask_epi8((a)))
 #endif
 
 #endif
