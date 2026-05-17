@@ -44,11 +44,10 @@ static fastent_fold_fn dg_fold_fn_(void) {
     digram + run kernel is templatized per ISA (analyze-impl.h) and
     dispatched via dg_byte_fn_().  */
 
-/*  Cached byte digram + longest-run kernel.  Process-stable pick, so
-    the lazy-init race stores the same pointer (same discipline as
-    dg_fold_fn_).  The scalar variant is always built and is the
-    reference; the chosen SIMD variant reproduces its counters bit-
-    for-bit.  */
+/*  Cached byte digram + longest-run kernel.  Process-stable pick so
+    the lazy-init race stores the same pointer (as dg_fold_fn_).  The
+    always-built scalar variant is the reference; the chosen SIMD
+    variant reproduces its counters bit-for-bit.  */
 static fastent_digram_byte_fn dg_byte_fn_(void) {
   static fastent_digram_byte_fn df = NULL;
   fastent_digram_byte_fn f = df;
@@ -59,11 +58,10 @@ static fastent_digram_byte_fn dg_byte_fn_(void) {
 #define FASTENT_DG_BITS_CHUNK 65536u                   /*  bytes  */
 #define FASTENT_DG_BITS_WORDS (FASTENT_DG_BITS_CHUNK / 8u)
 
-/*  One <= 64 KiB sub-block; state carries across calls, so a sub-
-    block is just a contiguous continuation (boundary bit pair,
-    run continuation, cusum offset and rn_last all thread through
-    st exactly as the per-bit scan did).  cs LUT entries hold the
-    min / max prefix offset and net of a byte's MSB-first +-1 walk.  */
+/*  One <= 64 KiB sub-block; state carries across calls so a sub-block
+    is a contiguous continuation (boundary pair, run, cusum offset,
+    rn_last all thread through st as the per-bit scan).  cs LUT holds
+    min/max prefix offset and net of a byte's MSB-first +-1 walk.  */
 static void digram_bits_blk_(fastent_chunk_state * st,
                              const u8 * FASTENT_RESTRICT buf, sz cl,
                              const i32 * cs_mn, const i32 * cs_mx,
@@ -176,13 +174,10 @@ static void digram_bits_(fastent_chunk_state * st,
   }
 }
 
-/*  Byte scan with deterministic u32 -> u64 drains.  dg_chunk_bytes
-    accumulates across calls; a drain fires whenever cumulative bytes
-    would cross FASTENT_DG_U32_CHUNK, splitting the scan at exactly
-    that byte.  Splitting a buffer into successive digram_bytes_ calls
-    is bit-identical to one call (dg_prev / lr state carry across), so
-    the drain point is a function of byte count only and identical for
-    any -j.  Draining BEFORE crossing keeps every u32 cell < 2^31.  */
+/*  Byte scan with deterministic u32->u64 drains.  Drain fires when
+    dg_chunk_bytes would cross FASTENT_DG_U32_CHUNK; split calls are
+    bit-identical to one (dg_prev/lr carry), so the drain point depends
+    only on byte count (any -j).  Draining first keeps cells < 2^31.  */
 static void digram_bytes_drained_(fastent_chunk_state * st,
                                   const u8 * FASTENT_RESTRICT buf, sz len) {
   fastent_digram_byte_fn fn = dg_byte_fn_();

@@ -25,21 +25,10 @@ static fastent_fold_fn fused_fold_fn_(void) {
   return f;
 }
 
-/*  One cache-blocked traversal: the order-0 SIMD body then the -ee
-    extras on each L1/L2-resident sub-block, so the extras read the
-    data from cache instead of re-streaming the whole region from
-    DRAM (it is bandwidth-bound).  State threads across sub-blocks
-    exactly as the stream path's per-chunk calls do, so the result
-    is byte-identical to a single whole-region pass; -e (no extras)
-    stays a single pass.
-
-    Byte -ee with -f: each sub-block is folded ONCE into a reusable
-    scratch with the SIMD fold LUT, then the non-fold order-0 body
-    and the non-fold digram scan both consume that folded scratch.
-    This drops the second (per-32 KiB) fold and its staging round-
-    trip; the folded bytes fed to both kernels are identical to the
-    in-register fold, so the result is byte-identical and the
-    boundary fold in the merges (still fastent_fold_byte) matches.  */
+/*  Cache-blocked: order-0 body then -ee extras per L1/L2-resident
+    sub-block so extras hit cache not DRAM; state threads as the stream
+    path, byte-identical to one whole pass.  Byte -ee -f folds each
+    sub-block once into scratch fed to both kernels (= in-register).  */
 static void analyze_fused_(fastent_chunk_state * st,
                            fastent_analyze_fn body,
                            fastent_analyze_fn body_plain,
@@ -142,11 +131,10 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
   ctx.fold = o->fold;
   fastent_parallel_for((sz) N, mt_worker_, &ctx);
 
-  /*  Merge slabs in fixed order so the result is bit-identical to -j1.
-      Adjacent slab pairs contribute carry_byte (prev last) * first_byte
-      (next first) to the SCC; the final wrap (last * first) is added in
-      fastent_finalize().  In bit mode carry/first/last are single bits,
-      so the same expression covers the cross-slab bit pair.  */
+  /*  Fixed-order slab merge, bit-identical to -j1.  Adjacent pairs add
+      carry_byte (prev last) * first_byte (next first) to the SCC; the
+      wrap (last*first) is added in fastent_finalize.  Bit mode: those
+      are single bits so the same expression covers the bit pair.  */
   Fk(N,
      const fastent_chunk_state * s = &states[k];
      if (s->total_bytes == 0) continue;
@@ -172,11 +160,10 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
      out->mc_pos = s->mc_pos;
      memcpy(out->mc_buf, s->mc_buf, sizeof(out->mc_buf)))
 
-  /*  Merge the -ee level-2 reductions.  Per-slab counts are
-      partition-invariant; pair, bit-run and cusum stats additionally
-      need the symbol straddling each slab boundary, stitched here in
-      fixed slab order so jN == j1.  Longest run is a segmented merge:
-      a run may span a boundary or whole single-symbol slabs.  */
+  /*  Merge -ee level-2 reductions.  Per-slab counts are partition-
+      invariant; pair/bit-run/cusum also need the symbol straddling
+      each boundary, stitched in fixed slab order so jN==j1.  Longest
+      run is a segmented merge (may span boundaries or whole slabs).  */
   if (o->extended >= 2) {
     u64 lr_gmax = 0, carry_len = 0;
     u32 carry_sym = 0;
@@ -250,14 +237,10 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
   free(bounds);
 }
 
-/*  SPMC stream/uring pipeline.  W consumers; whichever holds the mutex
-    does the next serialized fastent_src_read (re-chunked to a multiple
-    of 6 so no Monte Carlo hexad straddles a block), claims a monotone
-    seq, then processes its block lock-free.  Order-independent sums fold
-    into per-consumer accumulators; order-sensitive boundary quantities
-    go into per-block edge records, sorted by seq and stitched with the
-    same merge run_mmap_mt_ uses, so the result is bit-identical to
-    -j1.  */
+/*  SPMC stream/uring pipeline.  Mutex holder reads the next block
+    (multiple of 6 so no MC hexad straddles it), claims a monotone seq,
+    processes lock-free.  Order-free sums fold per-consumer; boundary
+    quantities stitched per-seq via run_mmap_mt_'s merge, = -j1.  */
 
 typedef struct {
   u64 seq, n;

@@ -98,13 +98,9 @@ typedef double   f64;
   #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #endif
 
-/*  popcount: the SWAR fallback exists because on x86 without a
-    POPCNT-enabling flag (no __POPCNT__) __builtin_popcount goes
-    out-of-line to libgcc __popcountdi2, far costlier than inline
-    bit-twiddling, and that hits the hot bit-mode walker in
-    analyze-scalar.c (no -m flags) and analyze-ssse3.c (-mssse3
-    only).  TCC/non-GCC compilers also take SWAR (__TINYC__ also
-    defines __GNUC__, hence the explicit exclusion).  Other targets
+/*  SWAR popcount fallback: on x86 without __POPCNT__ the builtin goes
+    out-of-line to libgcc __popcountdi2, costly in the hot bit-mode
+    walker.  TCC excluded (it also defines __GNUC__).  Other targets
     (e.g. AArch64 CNT) trust the builtin.  */
 #if defined(__GNUC__) && !defined(__TINYC__) \
     && !((defined(__i386__) || defined(__x86_64__)) && !defined(__POPCNT__))

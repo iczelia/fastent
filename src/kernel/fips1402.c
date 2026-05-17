@@ -30,11 +30,10 @@
 
 #define FIPS_BLOCK_BYTES 2500u
 
-/*  Variant table.  Order matters: the dispatcher picks the LAST
-    entry whose `available` returns true, so place narrower
-    (preferred) variants after their wider supersets, exactly like
-    analyze.c.  AVX-512 has two tiers: base (F+BW, PSHUFB-LUT
-    popcount) and bitalg (+VPOPCNTB).  */
+/*  Variant table.  Order matters: dispatcher picks the LAST entry
+    whose `available` is true, so narrower (preferred) variants follow
+    their wider supersets (as analyze.c).  AVX-512 tiers: base (F+BW,
+    PSHUFB-LUT) and bitalg (+VPOPCNTB).  */
 
 #define CPU_HAS(name)      (fastent_cpu_get()->name)
 

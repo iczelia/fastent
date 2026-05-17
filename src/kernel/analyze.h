@@ -14,12 +14,10 @@
 /*  incirc = (256^3 - 1)^2 = 281474943156225  (fits in 49 bits).  */
 #define FASTENT_INCIRC ((u64) 281474943156225ULL)
 
-/*  Order-1 bigram accumulator (opt-in, -ee).  Order-0 histogram of
-    the 16-bit key ((prev<<8)|cur) over FASTENT_BG_NB round-robin
-    shadow tables so consecutive pairs avoid the store-to-load-forward
-    serialisation; summed at finalize.  Two planes (1 MiB) keep the
-    working set in L2 while still breaking the dependency chain.  u64
-    so a cell can reach N-1 (all-same-byte input) at any size.  */
+/*  Order-1 bigram accumulator (-ee).  Order-0 histogram of key
+    ((prev<<8)|cur) over FASTENT_BG_NB round-robin shadows to break
+    store-to-load-forward, summed at finalize; 2 planes (1 MiB) fit L2.
+    u64 so a cell reaches N-1 (all-same-byte) at any size.  */
 #define FASTENT_BG_NB    2
 #define FASTENT_BG_TABLE 65536
 #define FASTENT_BG_CELLS (FASTENT_BG_NB * FASTENT_BG_TABLE)
@@ -43,12 +41,10 @@ static inline u8 fastent_fold_byte(u8 b) {
     Monte Carlo hits, and the first/last/carry bytes needed to stitch
     chunk boundaries at finalize.  */
 typedef struct {
-  /*  Banked histogram: bank[k][v] counts value v at stream positions
-      p with (p mod FASTENT_BANKS) == k.  Merged at finalize.  u64,
-      not u32: a single-symbol stream through one state (single-thread
-      mmap, or stream -j1 accumulating across chunks) drives one cell
-      to ~N/4, which overflows u32 near 17 GiB and silently corrupts
-      entropy/chi/mode.  */
+  /*  Banked histogram: bank[k][v] counts value v at positions p with
+      p mod FASTENT_BANKS == k, merged at finalize.  u64 not u32: a
+      single-symbol stream drives one cell to ~N/4, overflowing u32
+      near 17 GiB and corrupting entropy/chi/mode.  */
   u64 bank[FASTENT_BANKS][256];
 
   /*  Sum of x[i] * x[i+1] over bytes seen so far, MINUS the wrap term
@@ -76,34 +72,26 @@ typedef struct {
   u8  mc_buf[6];
   i32 mc_pos;
 
-  /*  Order-1 digram: FASTENT_BG_CELLS u64 (NB flat 65536 tables),
-      NULL unless -ee byte mode active; runner allocates/frees.
-      bit_bigram[prev_bit][cur_bit] is the bit-mode counterpart,
-      always present.  dg_prev/dg_have carry the previous byte across
-      fastent_digram_count calls (independent of the SCC carry).  */
+  /*  Order-1 digram: FASTENT_BG_CELLS u64, NULL unless -ee byte mode.
+      bit_bigram is the always-present bit-mode counterpart.  dg_prev/
+      dg_have carry the previous byte across fastent_digram_count
+      calls (independent of the SCC carry).  */
   u64 * bigram;
   u64   bit_bigram[2][2];
   u8    dg_prev;
   u8    dg_have;
 
-  /*  u32 chunk shadow of `bigram`: the byte digram kernel increments
-      FASTENT_BG_CELLS u32 cells (half the u64 hot set), drained into
-      the u64 master every FASTENT_DG_U32_CHUNK bytes and once more
-      before any merge reads st->bigram.  A chunk of B <= 2^31 bytes
-      has < B adjacent pairs, so every u32 cell is < 2^31 and cannot
-      wrap even for all-same-byte input; the drain is an associativity
-      -only re-grouping of the same integer adds, so bigram[] is bit-
-      identical to direct u64 increments for any -j.  Allocated and
-      freed alongside `bigram` by the runner.  */
+  /*  u32 chunk shadow of `bigram` (half the u64 hot set), drained
+      every FASTENT_DG_U32_CHUNK bytes and before any merge.  Chunk
+      B<=2^31 has <B pairs so no u32 cell wraps; the drain is
+      associativity-only, so bigram[] is bit-identical for any -j.  */
   u32 * dg_u32;
   u64   dg_chunk_bytes;
 
-  /*  -ee level-2 sequential extras (runs / longest run / cusum),
-      filled by fastent_digram_count; zeroed at init.  Symbols are
-      bits (bit mode) or byte values (byte mode).  Streams accumulate
-      across chunks; with -j each slab's reductions are merged with a
-      boundary stitch (run_mmap_mt_), lr_head_* recording the slab's
-      leading run so straddling runs can be spliced.  */
+  /*  -ee level-2 sequential extras (runs / longest run / cusum).
+      Symbols are bits or byte values.  Streams accumulate across
+      chunks; with -j slabs merge via a boundary stitch (run_mmap_mt_),
+      lr_head_* recording the leading run so straddlers splice.  */
   u64 lr_max;        /*  longest completed identical-symbol run  */
   u64 lr_cur;        /*  open run length                         */
   u8  lr_sym;        /*  open run symbol                          */
@@ -120,11 +108,9 @@ typedef struct {
   i64 cs_max;        /*  max of the walk (>= 0)                   */
 } fastent_chunk_state;
 
-/*  fastent_finalize sets scc to this sentinel when the SCC
-    denominator is zero (no defined serial correlation); a real
-    coefficient is in [-1, 1], so any value past the threshold is the
-    sentinel.  Renderers test FASTENT_SCC_DEFINED instead of
-    open-coding the magic number.  */
+/*  scc sentinel for a zero SCC denominator (undefined serial
+    correlation).  A real coefficient is in [-1,1] so anything past
+    the threshold is the sentinel; renderers test FASTENT_SCC_DEFINED.  */
 #define FASTENT_SCC_UNDEF      (-100000.0)
 #define FASTENT_SCC_DEFINED(s) ((s) > -99999.0)
 
@@ -257,13 +243,10 @@ void analyze_fold_sve2(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
-/*  The -ee level-2 extra pass: one scalar scan over the same bytes
-    the SIMD analyser just consumed (order-0 keeps full SIMD speed).
-    Folds digram histogram, longest run, 0/1 runs and the +-1 cusum
-    walk into one pass.  Byte mode fills st->bigram; bit mode fills
-    bit_bigram.  dg_prev/dg_have carry across calls.  Byte runs-vs-
-    median is derived in fastent_finalize from the digram counts (no
-    rescan).  fold case-folds the input first (matches -f).  */
+/*  -ee level-2 pass: one scalar scan folding digram histogram, longest
+    run, 0/1 runs and the cusum walk.  Byte mode fills st->bigram, bit
+    mode bit_bigram; dg_prev carries across calls.  Byte runs-vs-median
+    derived in fastent_finalize from digram counts.  fold matches -f.  */
 void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
                           sz len, int binary, int fold);
 
@@ -273,12 +256,10 @@ void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
 void fastent_lr_one(fastent_chunk_state * st, u32 s);
 void fastent_lr_run(fastent_chunk_state * st, u32 q, u64 n);
 
-/*  Byte-mode order-1 digram + longest-run kernel, one per ISA.  Each
-    increments st->dg_u32 (NB round-robin planes) and threads the
-    longest-run / dg_prev state across calls exactly as the scalar
-    reference does, so the merged result is byte-identical for any -j.
-    The scalar variant is always built and is the reference; SIMD
-    variants must reproduce its counters bit-for-bit.  */
+/*  Byte-mode digram + longest-run kernel, one per ISA.  Each threads
+    dg_u32 / longest-run / dg_prev state as the scalar reference, so
+    the merged result is byte-identical for any -j.  The always-built
+    scalar variant is the reference; SIMD must match it bit-for-bit.  */
 typedef void (* fastent_digram_byte_fn)(fastent_chunk_state *,
                                         const u8 *, sz);
 void digram_bytes_scalar(fastent_chunk_state * st, const u8 * buf, sz len);

@@ -111,11 +111,10 @@ FASTENT_FN(fips_pack)(const u8 * b, u64 W[FIPS_NW]) {
   }
 }
 
-/*  Shift the whole packed bit stream n positions toward later stream
-    order (1 <= n <= 32): the stream successor at distance n.  In an
-    MSB-first big-endian word that is a left shift, the carry coming
-    from the next word's top n bits.  Out-of-block (past the last
-    word) is zero.  */
+/*  Shift the packed bit stream n positions later (1<=n<=32): the
+    stream successor at distance n.  In an MSB-first big-endian word
+    that is a left shift with carry from the next word's top n bits;
+    past the last word is zero.  */
 static FASTENT_ALWAYS_INLINE void
 FASTENT_FN(fips_succn)(const u64 src[FIPS_NW], u64 dst[FIPS_NW], u32 n) {
   i32 w;
@@ -126,24 +125,10 @@ FASTENT_FN(fips_succn)(const u64 src[FIPS_NW], u64 dst[FIPS_NW], u32 n) {
   }
 }
 
-/*  Bounded-window run-length spectrum (branchless, word-parallel).
-    For one polarity P (1-runs on the packed stream, 0-runs on its
-    valid-masked complement):
-
-      S      = P & ~pred(P)            run-start positions
-      A_1    = P
-      A_k    = P & succ(A_{k-1})       k consecutive equal bits start
-      ge[k]  = popcount(S & A_k)       runs of length >= k  (k=1..6)
-
-    Exact-length bucket k = ge[k]-ge[k+1] for k=1..5, bucket 6 =
-    ge[6].  The long-run flag is the existence of a 34-equal window:
-    log-doubling AND of the stream by stream-distance (1,2,4,8,16
-    then a final +2 for 32+2 = 34); if any bit of that 34-window mask
-    survives there is a run of length >= 34.  Out-of-block is zero
-    for both polarities, so a run touching the block end terminates
-    exactly as the reference recurrence required.  Identical integer
-    summaries to the transition / CTZ-gap form; this is the SIMD-
-    friendly shape the wide variants instantiate.  */
+/*  Bounded-window run-length spectrum per polarity P: S=P&~pred(P),
+    A_k=P&succ(A_{k-1}), ge[k]=popcount(S&A_k) runs>=k; bucket=
+    ge[k]-ge[k+1], long-run=34-equal window via log-doubling AND
+    (1,2,4,8,16,+2).  Out-of-block zero = reference recurrence.  */
 
 static void FASTENT_FN(fips_runs_side)(const u64 P[FIPS_NW],
                                        u32 ge[7], int * lr34) {
@@ -266,11 +251,9 @@ FASTENT_FN(fips_popcnt_bytes)(FASTENT_SIMD_VEC v) {
 #endif
 }
 
-/*  Monobit: total set bits over the 2500 raw bytes.  Vector bulk
-    over floor(2500/VLEN)*VLEN bytes, scalar popcount tail.  With
-    AVX-512 VPOPCNTDQ the per-vector reduction is a single
-    _mm512_popcnt_epi64 accumulated in 64-bit lanes, replacing the
-    PSHUFB-LUT + PSADBW ladder; the integer result is identical.  */
+/*  Monobit: total set bits over the 2500 raw bytes, vector bulk +
+    scalar tail.  AVX-512 VPOPCNTDQ uses _mm512_popcnt_epi64 instead
+    of the PSHUFB-LUT + PSADBW ladder; integer result identical.  */
 static FASTENT_ALWAYS_INLINE u64
 FASTENT_FN(fips_monobit)(const u8 * b) {
 #if defined(FASTENT_VARIANT_AVX512) \
@@ -300,11 +283,10 @@ FASTENT_FN(fips_monobit)(const u8 * b) {
 #endif
 }
 
-/*  Poker nibble histogram via per-value mask compare.  For nibble
-    value t the count is popcount(lo==t) + popcount(hi==t) summed
-    over all bytes; SAD turns each compare mask (0/-1 bytes) into a
-    per-lane byte count, scaled back by negating.  16 values, both
-    nibble planes, exact integer.  */
+/*  Poker nibble histogram via per-value mask compare: count(t) =
+    popcount(lo==t)+popcount(hi==t) over all bytes; SAD turns each
+    0/-1 compare mask into a per-lane count, negated back.  16
+    values, both nibble planes, exact integer.  */
 static FASTENT_ALWAYS_INLINE void
 FASTENT_FN(fips_poker)(const u8 * b, u32 f[16]) {
   const FASTENT_SIMD_VEC nmask = V_SET1_EPI8(0x0F);

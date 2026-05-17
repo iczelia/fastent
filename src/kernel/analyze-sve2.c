@@ -240,47 +240,10 @@ void fold_sve2(u8 * buf, sz len) {
   for (; i < (u64) len; i++) buf[i] = sve2_fold_byte(buf[i]);
 }
 
-/*  Byte-mode order-1 digram + longest-run kernel (the -ee level-2 byte
-    pass).  Self-contained SVE2 analogue of the templated
-    FASTENT_FN(digram_bytes) in analyze-impl.h; bit-for-bit identical to
-    digram_bytes_scalar for any -j and any vector length.
-
-    Never folds: -f is applied once upstream (analyze_fused_) so the
-    exact byte stream the scalar reference saw flows through unchanged.
-
-    Reductions (state threads across calls exactly as the scalar
-    reference's per-byte loop did):
-
-      digram : FASTENT_BG_CELLS u32 cells, key = (left<<8)|cur, left =
-               previous byte (st->dg_prev across calls).  Plane of the
-               pair at absolute byte index p is p & 1 (the templated
-               kernel's NB round-robin reduces to absolute-index parity:
-               main loop ((i ^ (k&1)) & 1) == (k+i)&1, prologue index 0
-               -> plane 0, scalar tail (k&1); the NB planes are summed
-               at finalize so any once-per-pair assignment is
-               equivalent).  Block width is irrelevant to the result:
-               fastent_lr_run is order-preserving and the plane is a
-               pure function of absolute index, so a VL-sized scan
-               yields the identical dg_u32 / lr state as the scalar
-               per-byte loop or the fixed-64 x86 template.
-      longest run : maximal stretch of equal adjacent bytes.  Derived
-               from the equality bitmap (a run boundary is buf[p] !=
-               buf[p-1]); boundary bits are iterated low-offset-first
-               via FASTENT_CTZ64 feeding fastent_lr_run, which is
-               bit-for-bit equivalent to the scalar per-byte
-               fastent_lr_one sequence (the same proof as the bit-mode
-               digram_bits scan and the x86 template).
-
-    SVE2 specifics: svcmpne_u8 produces the boundary predicate; it is
-    materialised to a u8 0/1 lane vector (svdup under predicate) and
-    stored, then packed into u64 boundary words arithmetically
-    (endian-independent).  Keys are produced VL-wide as
-    (vprev << 8) | v in the u16 domain, staged via the launder pattern,
-    then scattered with a scalar inc-mem loop (no SVE2 scatter; the
-    project_avx512_scatter_zen4 "scatter loses to inc-mem" reasoning
-    applies) with one-ahead prefetch and absolute-index parity round-
-    robin.  The dense-boundary fast path (whole VL block all-distinct)
-    collapses the singleton runs in O(1), exactly as the x86 template.  */
+/*  SVE2 -ee level-2 digram+run kernel, bit-identical to scalar for any
+    -j and VL: never folds, key=(dg_prev<<8)|cur, plane=abs-index parity,
+    run via CTZ64 = fastent_lr_one.  Boundary packed to u64 arithmetically
+    (endian-independent), scalar inc-mem scatter (Zen4-scatter rationale).  */
 
 #define SVE2_DG_MAXVL 256u   /*  SVE max VL is 2048 bits = 256 bytes  */
 
@@ -305,12 +268,10 @@ void digram_bytes_sve2(fastent_chunk_state * st,
   sz  runstart = i0;
   u32 runsym   = buf[i0];
 
-  /*  Scalar prologue: the SVE window needs buf[base-1] in bounds, so
-      it starts at index >= 1.  i0 is 0 or 1; when i0 == 0 emit the
-      single pair at index 0 (left = carried st->dg_prev) here so the
-      window can start at index 1.  Index 0 has no run boundary (the
-      run scan opens at runstart = i0 = 0).  When i0 == 1 nothing is
-      emitted here (the window starts at 1 directly).  */
+  /*  Scalar prologue: the SVE window needs buf[base-1], so starts at
+      index >= 1.  i0 in {0,1}; if i0==0 emit the index-0 pair (left =
+      carried dg_prev) so the window can start at 1.  Index 0 has no
+      run boundary.  If i0==1 nothing emitted here.  */
   sz k = i0;
   if (k == 0) {
     u32 c = buf[0];
@@ -337,11 +298,10 @@ void digram_bytes_sve2(fastent_chunk_state * st,
     svuint8_t nev  = svdup_n_u8_z(ne, 1u);
     svst1_u8(pg, neq, nev);
 
-    /*  P2: 16-bit digram keys (vprev << 8) | v, VL-wide.  Zipping the
-        byte vectors gives interleaved lanes v[j], vp[j]; reinterpreted
-        u16 that is v[j] | (vp[j] << 8) == (left << 8) | cur on little-
-        endian (this TU is little-endian only; see the #error guard),
-        matching the scalar reference's arithmetic key exactly.  */
+    /*  P2: 16-bit digram keys, VL-wide.  zip1/zip2 interleave v,vp;
+        reinterpreted u16 is v|(vp<<8) == (left<<8)|cur on little-endian
+        (this TU is LE-only, see the #error guard), matching the scalar
+        arithmetic key exactly.  */
     {
       svuint16_t lo = svreinterpret_u16_u8(svzip1_u8(v, vp));
       svuint16_t hi = svreinterpret_u16_u8(svzip2_u8(v, vp));
@@ -369,19 +329,10 @@ void digram_bytes_sve2(fastent_chunk_state * st,
       }
     }
 
-    /*  Boundaries in this window are absolute indices k .. k+W-1; bit
-        j set => buf[k+j] != buf[k+j-1] => a run closes at k+j-1 and a
-        new run starts at k+j.  Emit low-offset-first via fastent_lr_run.
-
-        Dense fast path: every byte differs from its predecessor, so
-        the carried run closes and the window is W singleton runs.  The
-        general loop would emit lr_run(runsym, k-runstart); lr_run(
-        buf[k],1); then W-2 length-1 runs of distinct symbols.  Each of
-        those W-2 takes the "different symbol" branch (so lr_cur stays
-        1 <= lr_max and lr_head_open stays 0 after the first), leaving
-        only lr_sym = buf[k+W-2].  Bit-for-bit identical to the per-
-        boundary loop and removes the W-iteration CTZ chain on near-
-        random input.  W = svcntb() >= 16 so W >= 2 holds.  */
+    /*  Boundary bit j (abs k..k+W-1): buf[k+j]!=buf[k+j-1].  Dense
+        fast path: W singleton runs; the W-2 distinct singletons take
+        the different-symbol branch so only the first raises lr_max,
+        leaving lr_sym=buf[k+W-2].  Bit-identical, W=svcntb()>=16.  */
     {
       int dense = 1;
       u64 j;

@@ -135,11 +135,10 @@ static inline dd_t dd_sqrt_d(f64 x) {
   return fast_two_sum(y, delta);
 }
 
-/*  DD exp.  Reduce x = k*ln(2) + r with |r| <= ln(2)/2, Taylor on r,
-    then 2^k via ldexp.  The _scaled variant defers the ldexp so a
-    caller multiplying e^x by a large factor keeps full precision;
-    needed for the byte-mode tail near z = 745 where e^-z is subnormal
-    but Q is in normal range.  */
+/*  DD exp: reduce x=k*ln2+r, |r|<=ln2/2, Taylor on r, 2^k via ldexp.
+    The _scaled variant defers the ldexp so a caller scaling e^x keeps
+    precision; needed for the byte-mode tail near z=745 where e^-z is
+    subnormal but Q is normal.  */
 
 static const dd_t LN2_DD = {
   0.6931471805599453,        /*  ln(2) high  */
@@ -242,17 +241,10 @@ static dd_t Q_05_dd(f64 z) {
   return dd_mul(pref, h);
 }
 
-/*  Q(a, z) for half-integer a = m + 1/2, via the by-parts closed form.
-
-      Q(m+0.5, z) = Q(0.5, z) + 2 * e^-z * U(z)
-      U(z)        = sum_{k=0}^{m-1} T_k
-      T_0         = sqrt(z/pi)
-      T_{k+1}     = T_k * 2z/(2k+3)
-
-    m = (df - 1) / 2 for odd df: 127 (df=255), 7 (df=15, poker),
-    0 (df=1: empty sum, reduces to Q(0.5, z)).  e^-z is applied
-    scaled (single ldexp after U * mantissa) so the deep tail
-    (z near 745, e^-z subnormal) keeps the recurrence's precision.  */
+/*  Q(m+1/2, z) by-parts closed form: Q(0.5,z) + 2 e^-z U(z), U =
+    sum_{k<m} T_k, T_0 = sqrt(z/pi), T_{k+1} = T_k 2z/(2k+3).
+    m=(df-1)/2 for odd df (127, 7 poker, 0=>Q(0.5,z)).  e^-z applied
+    scaled so the deep subnormal tail (z~745) keeps precision.  */
 
 static dd_t Q_halfint_dd(f64 z, int m) {
   if (z <= 0.0)   return dd_of(1.0);

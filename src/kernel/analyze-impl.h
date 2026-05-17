@@ -45,12 +45,10 @@
 #define FASTENT_CAT(a, b)  FASTENT_CAT2(a, b)
 #define FASTENT_FN(name)   FASTENT_CAT(name, FASTENT_VAR_SUFFIX)
 
-/*  Stage-buffer pointer launder. SIMD bodies store the folded vector
-    to a stack stage then issue scalar byte loads from it for the
-    histogram. Without a launder the compiler folds those loads into a
-    vpextrb/umov chain off the source vector, serialising the histogram
-    on the FP->GP datapath (~2x on x86, ~1.5x on NEON). GCC/Clang use
-    the empty-asm launder; elsewhere `volatile` blocks the same fold.  */
+/*  Stage-buffer pointer launder.  Without it the compiler folds the
+    histogram byte loads into a vpextrb/umov chain off the source
+    vector, serialising on the FP->GP datapath (~2x x86, ~1.5x NEON).
+    GCC/Clang use the empty-asm launder; else `volatile` blocks it.  */
 #if defined(__GNUC__) || defined(__clang__)
   #define FASTENT_STAGE_PTR    const u8 *
   #define FASTENT_LAUNDER(sp)  __asm__("" : "+r"(sp) :: "memory")
@@ -169,11 +167,9 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   if (iters == 0) return 0;
   const sz body_end = iters * 64;
 
-  /*  SCC window: the first product carry_byte*buf[0] is done scalar
-      below; the loop's pmaddubs over (buf[i..i+31], buf[i+1..i+32])
-      then covers pairs (buf[i],buf[i+1]) for i in [0..body_end-1].
-      In fold mode the scalar seeds (first_byte, carry, epilogue) use
-      folded values to match the SIMD loop.  */
+  /*  SCC window: carry_byte*buf[0] is scalar below; the pmaddubs loop
+      covers pairs (buf[i],buf[i+1]) for i in [0..body_end-1].  In fold
+      mode scalar seeds use folded values to match the SIMD loop.  */
   u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
 
   if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
@@ -873,14 +869,10 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
 #elif defined(FASTENT_VARIANT_NEON)
 
-/*  AArch64 NEON SIMD body. Stride 32 (two 16-byte vectors), mirroring
-    SSE. NEON lacks PMADDUBSW/PSADBW/movemask; equivalents:
-      SCC: widen va u8->i16 (zero), vbs s8->i16 (sign), i16 mul,
-        vpaddlq_s16 pair-sum to i32 (= madd_epi16 with ones); i64 acc.
-      LHS sum: vpaddlq u8->u16->u32->u64 ladder into lhs_sad.
-      MC Pi: all-scalar; ~5 hexads/iter is too few to amortise SIMD.
-    Histogram: 4-banked inc-mem as SSE; laundered L1 stage in fold
-    mode (see launder note above).  */
+/*  AArch64 NEON body, stride 32 mirroring SSE.  No PMADDUBSW/PSADBW:
+    SCC widens u8/s8->i16, vpaddlq_s16 pair-sum (= madd with ones);
+    LHS sum via vpaddlq u8->u64 ladder; MC Pi scalar.  Histogram
+    4-banked inc-mem, laundered L1 stage in fold mode.  */
 
 static FASTENT_ALWAYS_INLINE sz
 FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
@@ -1071,11 +1063,9 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
 #elif defined(FASTENT_VARIANT_WASM128)
 
-/*  WebAssembly SIMD128 byte-mode body. Stride 32 (two 16-byte
-    vectors), as SSE/NEON. SCC uses wasm_i32x4_dot_i16x8 (signed i16
-    pair-sum to i32, fusing NEON's mul + vpaddlq). LHS sum via the
-    extadd-pairwise ladder. Histogram + MC Pi scalar 4-banked, no
-    SIMD bulk (~5 hexads/iter).  */
+/*  WASM SIMD128 byte body, stride 32 as SSE/NEON.  SCC uses
+    wasm_i32x4_dot_i16x8 (signed i16 pair-sum to i32); LHS sum via
+    extadd-pairwise ladder; histogram + MC Pi scalar 4-banked.  */
 
 static FASTENT_ALWAYS_INLINE sz
 FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
@@ -1366,18 +1356,10 @@ void FASTENT_FN(fold)(u8 * buf, sz len) {
   }
 }
 
-/*  Bit-mode analyser. Bits run MSB-first within each byte. One pass:
-
-      bit_hist[1]  += sum_i popcount(b[i])
-      bit_hist[0]  += 8*N - bit_hist[1]
-      cross_product +=  sum_i popcount(b[i] & (b[i] >> 1))   (within-byte)
-                      + sum_{i<N-1} (b[i] & 1) & (b[i+1] >> 7)   (cross-byte)
-      MC Pi is byte-driven (one trial per 6 bytes, as byte mode).
-
-    SIMD vectorises the counters via PSHUFB-LUT popcount + PSADBW.
-    carry/first/last are bit values (0/1) so the run_mmap_mt
-    carry*first merge already gives the cross-slab bit-pair; no
-    separate bit-mode merge needed.  */
+/*  Bit-mode analyser, MSB-first per byte.  bit_hist[1]+=popcount(b),
+    bit_hist[0]+=8N-that; cross_product += within-byte popcount(b&b>>1)
+    + cross-byte (b[i]&1)&(b[i+1]>>7).  SIMD: PSHUFB-LUT popcount+PSADBW.
+    carry/first are bit values so the carry*first slab merge suffices.  */
 
 #ifdef FASTENT_HAVE_SIMD
 
@@ -1513,14 +1495,10 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
 
     /*  MC Pi: scalar drain + SIMD bulk + scalar tail + stash; fold
         mode uses the laundered L1 stage (see launder note above).  */
-    /*  Aligned to the vector width: the compiler may lower the
-        V_STORE below to an aligned move, which #GPs on a sub-VLEN
-        address (the byte-mode AVX-512 stage aligns the same way).
-        +16: the Monte Carlo SIMD loop loads a full 16-byte vector
-        per 6-byte hexad, so the last loadu reads a few bytes past
-        the VLEN of staged data; only VLEN bytes are written and
-        only n_hexads*6 consumed, so the pad just keeps that
-        over-read in-bounds.  */
+    /*  VLEN-aligned: V_STORE may lower to an aligned move that #GPs
+        on a sub-VLEN address.  +16 pad: the MC loadu reads a full
+        16-byte vector per hexad, past VLEN of staged data; only VLEN
+        written so the over-read stays in bounds.  */
     FASTENT_ALIGN(FASTENT_SIMD_VLEN) u8 bits_stage[FASTENT_SIMD_VLEN + 16];
     FASTENT_STAGE_PTR p;
     if (fold) {
@@ -1790,27 +1768,10 @@ void FASTENT_FN(analyze_bits_fold)(fastent_chunk_state * st,
   FASTENT_FN(analyze_bits_impl)(st, buf, len, 1);
 }
 
-/*  Byte-mode order-1 digram + longest-run kernel (the -ee level-2
-    pass).  Never folds: -f is handled once upstream (analyze_fused_)
-    and the raw / pre-folded bytes flow through unchanged, so this is
-    the exact same byte stream the scalar reference saw.
-
-    Reductions (state threads across calls exactly as the scalar
-    reference's per-byte loop did, so the merged result is byte-
-    identical for any -j):
-
-      digram : FASTENT_BG_CELLS u32 cells, key = (left<<8)|cur,
-               left = previous byte (st->dg_prev across calls).  The
-               NB planes are summed at finalize, so any plane
-               assignment that counts each pair exactly once is
-               equivalent; this kernel uses a fixed round-robin.
-      longest run : maximal stretch of equal adjacent bytes.  SIMD
-               variants derive it from the equality bitmap (a run
-               boundary is buf[k] != buf[k-1]); the boundary bits are
-               iterated MSB-low-offset-first via FASTENT_CTZ64 feeding
-               fastent_lr_run, which is bit-for-bit equivalent to the
-               scalar per-byte fastent_lr_one sequence (same proof as
-               the bit-mode digram_bits_blk_ run scan).  */
+/*  Byte-mode order-1 digram + longest-run kernel (-ee level-2).  Never
+    folds; state threads across calls as the scalar loop, byte-identical
+    for any -j.  digram key=(dg_prev<<8)|cur, NB planes summed at finalize;
+    run from equality bitmap via CTZ64 fastent_lr_run = fastent_lr_one.  */
 
 /*  Inlined copy of fastent_lr_run (analyze.c).  Identical logic; the
     hot SIMD path must not pay a non-inlined call per run boundary
@@ -1886,15 +1847,10 @@ FASTENT_FN(eq_mask)(const u8 * FASTENT_RESTRICT buf, sz base) {
 #endif
 
 
-/*  Process bytes buf[i0 .. len-1] of this call: scatter every digram
-    pair into st->dg_u32 and feed the longest-run machine.  The run
-    scan starts at i0 (symbol buf[i0]); a run boundary is index i with
-    buf[i] != buf[i-1].  Emitting fastent_lr_run per maximal run is
-    bit-for-bit equivalent to the scalar fastent_lr_one per byte, and
-    fastent_lr_run merges a run that continues the carried open run by
-    symbol, so cross-call state threads exactly as the scalar loop.
-    left(i) = buf[i-1] for i >= 1, else st->dg_prev; for the bootstrap
-    case i0 == 1 and buf[0] == st->dg_prev, so the rule is uniform.  */
+/*  Scatter digram pairs of buf[i0..len-1] into st->dg_u32, feed the run
+    machine (boundary buf[i]!=buf[i-1]).  fastent_lr_run per run = scalar
+    fastent_lr_one per byte, merges the carried open run by symbol, so
+    state threads as the scalar loop; left(i)=buf[i-1] else dg_prev.  */
 void FASTENT_FN(digram_bytes)(fastent_chunk_state * st,
                               const u8 * FASTENT_RESTRICT buf, sz len) {
 #ifndef FASTENT_HAVE_SIMD
@@ -1919,12 +1875,10 @@ void FASTENT_FN(digram_bytes)(fastent_chunk_state * st,
   sz  runstart = i0;
   u32 runsym   = buf[i0];
 
-  /*  Scalar prologue: the SIMD window needs buf[base-1] in bounds, so
-      it starts at index >= 1.  i0 is 0 or 1; when i0 == 0 emit the
-      single pair at index 0 (left = carried st->dg_prev) here so the
-      window can start at index 1.  Index 0 has no run boundary (the
-      run scan opens at runstart = i0 = 0).  When i0 == 1 nothing is
-      emitted here (the window starts at 1 directly).  */
+  /*  Scalar prologue: the SIMD window needs buf[base-1], so starts at
+      index >= 1.  i0 in {0,1}; if i0==0 emit the index-0 pair (left =
+      carried dg_prev) so the window can start at 1.  Index 0 has no
+      run boundary.  If i0==1 nothing emitted here.  */
   sz k = i0;
   if (k == 0) {
     u32 c = buf[0];
@@ -1960,11 +1914,10 @@ void FASTENT_FN(digram_bytes)(fastent_chunk_state * st,
     }
 #endif
 
-    /*  Digram keys for buf[k .. k+63]: vectorised index production,
-        scalar inc-mem scatter (microarch-neutral; the scatter stays
-        scalar per project_avx512_scatter_zen4).  NB round-robin by
-        absolute index parity so the merged plane sum is unchanged
-        and consecutive equal keys do not chain one SLF location.  */
+    /*  Digram keys for buf[k..k+63]: vectorised index production,
+        scalar inc-mem scatter (stays scalar per the Zen4-scatter
+        rationale).  NB round-robin by index parity keeps the merged
+        plane sum and unchains consecutive equal keys (SLF).  */
     {
       FASTENT_ALIGN(64) u16 keys[64];
       FASTENT_STAGE_PTR sp = buf + k;
@@ -1981,22 +1934,10 @@ void FASTENT_FN(digram_bytes)(fastent_chunk_state * st,
       }
     }
 
-    /*  Boundaries inside this window are absolute indices k .. k+63;
-        bit j set => buf[k+j] != buf[k+j-1] => a run closes at k+j-1
-        and a new run starts at k+j.  Emit MSB-low-offset-first via
-        the inlined run machine.
-
-        Dense fast path: bnd == ~0 means every byte in the window
-        differs from its predecessor, so the carried run closes and
-        the window is 64 singleton runs.  The general loop would emit
-          lr_run(runsym, k - runstart);
-          lr_run(buf[k], 1); ...; lr_run(buf[k+62], 1);
-        All 63 singletons take the "different symbol" branch (each
-        byte != its predecessor != lr_sym), so only the first can
-        raise lr_max (lr_max >= 1 thereafter) and the rest collapse
-        to lr_sym = buf[k+62], lr_cur = 1, lr_head_open = 0.  This is
-        bit-for-bit identical to the per-boundary loop and removes the
-        64-iteration CTZ chain on near-random input.  */
+    /*  Boundary bit j (abs k..k+63): buf[k+j]!=buf[k+j-1].  Dense fast
+        path bnd==~0: 64 singleton runs; the 63 singletons take the
+        different-symbol branch so only the first raises lr_max, ending
+        lr_sym=buf[k+62],lr_cur=1.  Bit-identical, skips the CTZ chain.  */
     if (bnd == ~(u64) 0) {
       FASTENT_FN(lr_run_i)(st, runsym, (u64)(k - runstart));
       FASTENT_FN(lr_run_i)(st, buf[k], 1u);

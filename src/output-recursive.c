@@ -10,11 +10,9 @@
 #include <stdio.h>
 
 static void csv_escape_(const char * s) {
-  /*  RFC 4180 quoting (double embedded quotes), plus a spreadsheet
-      formula-injection guard: a leading = + - @ tab would be
-      evaluated as a formula, so such a field is quoted with a
-      leading apostrophe inside the quotes, keeping it literal text
-      and the CSV still RFC 4180.  */
+  /*  RFC 4180 quoting (doubled quotes) plus a formula-injection guard:
+      a leading = + - @ tab is prefixed with an apostrophe inside the
+      quotes so spreadsheets keep it literal, still RFC 4180.  */
   int formula = (*s == '=' || *s == '+' || *s == '-'
               || *s == '@' || *s == '\t');
   int need_quote = formula;

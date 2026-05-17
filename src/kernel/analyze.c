@@ -35,10 +35,9 @@ void fastent_dg_u32_free(u32 * s) {
 }
 
 /*  Stream the u32 chunk shadow into the u64 master and zero it.
-    Sequential add + clear over FASTENT_BG_CELLS cells; ~one L2 fill
-    per FASTENT_DG_U32_CHUNK bytes processed.  Pure associativity-only
-    re-grouping of the same integer adds, so st->bigram is bit-
-    identical to direct u64 increments for any thread count.  */
+    Associativity-only re-grouping of the same integer adds, so
+    st->bigram is bit-identical to direct u64 increments for any
+    thread count.  ~one L2 fill per FASTENT_DG_U32_CHUNK bytes.  */
 void fastent_dg_drain(fastent_chunk_state * st) {
   u32 * FASTENT_RESTRICT s = st->dg_u32;
   u64 * FASTENT_RESTRICT d = st->bigram;
@@ -266,11 +265,10 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
     }
   }
 
-  /*  Runs / longest run / cusum from the fused -ee pass.  st->lr_have
-      is set iff that pass ran with >= 1 symbol, doubling as the -ee
-      gate.  Byte runs-vs-median = 1 + count of adjacent byte pairs
-      whose median class differs; that pair multiset is exactly the
-      digram table, so no rescan and it works for streams too.  */
+  /*  Runs / longest run / cusum from the fused -ee pass; st->lr_have
+      gates -ee.  Byte runs-vs-median = 1 + adjacent pairs whose median
+      class differs; that pair multiset is exactly the digram table, so
+      no rescan and it works for streams.  */
   out->runs = out->longest_run = out->cusum_max = NAN;
   if (st->lr_have) {
     const u64 lr = st->lr_cur > st->lr_max ? st->lr_cur : st->lr_max;
