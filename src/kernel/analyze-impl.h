@@ -63,13 +63,13 @@
     0xD7) lowered, other bytes unchanged. Used by the fused fold +
     analyse path so no staging copy of the input is needed.  */
 
-static inline int FASTENT_FN(fold_is_upper_inline)(unsigned c) {
-  return ((unsigned)(c - 'A')   < 26u) ||
-         ((unsigned)(c - 0xC0u) < 31u && c != 0xD7u);
+static inline int FASTENT_FN(fold_is_upper_inline)(u32 c) {
+  return ((u32)(c - 'A')   < 26u) ||
+         ((u32)(c - 0xC0u) < 31u && c != 0xD7u);
 }
 
 static inline u8 FASTENT_FN(fold_byte_inline)(u8 b) {
-  unsigned c = b;
+  u32 c = b;
   if (FASTENT_FN(fold_is_upper_inline)(c)) return (u8)(c + 0x20u);
   return b;
 }
@@ -103,7 +103,7 @@ FASTENT_FN(fold_vec_inline)(FASTENT_SIMD_VEC c) {
     Used by head/tail of all variants and the whole scalar body.  */
 
 static inline void FASTENT_FN(consume_byte)(fastent_chunk_state * st, u8 b,
-                                        unsigned bank_idx) {
+                                        u32 bank_idx) {
   st->bank[bank_idx & (FASTENT_BANKS - 1)][b]++;
   if (st->have_carry) {
     st->cross_product += (i64) st->carry_byte * (i64) b;
@@ -292,7 +292,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       drain_fired = 1; \
     } while (0)
 
-    unsigned p_idx;
+    u32 p_idx;
     switch (mc_pos) {
       case 0: p_idx = 0; break;
       case 1: m1 = p[0]; m2 = p[1]; m3 = p[2]; m4 = p[3]; m5 = p[4];
@@ -307,14 +307,14 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
               MC_DRAIN(); p_idx = 1; break;
     }
 
-    unsigned n_hexads = (64u - p_idx) / 6u;
+    u32 n_hexads = (64u - p_idx) / 6u;
     /*  SIMD bulk: 2 hexads (12 bytes) per iter via PSHUFB + VPMULUDQ;
         cmpgt_epi64 is SSE4.2, always present with AVX2.  */
     const u8 * q = p + p_idx;
     const __m128i mc_shuf = _mm_setr_epi8(2, 1, 0, -1, 5, 4, 3, -1,
                                           8, 7, 6, -1, 11, 10, 9, -1);
     const __m128i mc_lim  = _mm_set1_epi64x((i64)(FASTENT_INCIRC + 1ULL));
-    unsigned k = 0;
+    u32 k = 0;
     for (; k + 2 <= n_hexads; k += 2) {
       __m128i v   = _mm_loadu_si128((const __m128i *) (q + k * 6u));
       __m128i xy  = _mm_shuffle_epi8(v, mc_shuf);          /*  [x0,y0,x1,y1]  */
@@ -328,7 +328,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     }
     /*  Scalar tail (0 or 1 hexad).  */
     for (; k < n_hexads; k++) {
-      unsigned o = k * 6u;
+      u32 o = k * 6u;
       u32 x = ((u32) q[o + 0] << 16) | ((u32) q[o + 1] << 8) | q[o + 2];
       u32 y = ((u32) q[o + 3] << 16) | ((u32) q[o + 4] << 8) | q[o + 5];
       u64 d = (u64) x * (u64) x + (u64) y * (u64) y;
@@ -340,8 +340,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     #undef MC_HIT
 
     /*  Stash trailing < 6 bytes.  */
-    unsigned stash_at    = p_idx + n_hexads * 6u;
-    unsigned stash_count = 64u - stash_at;
+    u32 stash_at    = p_idx + n_hexads * 6u;
+    u32 stash_count = 64u - stash_at;
     mc_pos = (int) stash_count;
     if (stash_count >= 1) m0 = p[stash_at + 0];
     if (stash_count >= 2) m1 = p[stash_at + 1];
@@ -373,7 +373,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
                 : buf[body_end];
     st->total_bytes += body_end;
-    st->bank[(unsigned)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
+    st->bank[(u32)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
     st->total_bytes++;
     st->carry_byte = b;
     st->last_byte  = b;
@@ -563,7 +563,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       drain_fired = 1; \
     } while (0)
 
-    unsigned p_idx;
+    u32 p_idx;
     switch (mc_pos) {
       case 0: p_idx = 0; break;
       case 1: m1 = p[0]; m2 = p[1]; m3 = p[2]; m4 = p[3]; m5 = p[4];
@@ -578,12 +578,12 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
               MC_DRAIN(); p_idx = 1; break;
     }
 
-    unsigned n_hexads = (128u - p_idx) / 6u;
+    u32 n_hexads = (128u - p_idx) / 6u;
     const u8 * q = p + p_idx;
     const __m128i mc_shuf = _mm_setr_epi8(2, 1, 0, -1, 5, 4, 3, -1,
                                           8, 7, 6, -1, 11, 10, 9, -1);
     const __m128i mc_lim  = _mm_set1_epi64x((i64)(FASTENT_INCIRC + 1ULL));
-    unsigned k = 0;
+    u32 k = 0;
     /*  256-bit bulk: 4 hexads per iter (=24 bytes of source).  */
     const __m256i mc_shuf256 = _mm256_broadcastsi128_si256(mc_shuf);
     const __m256i mc_lim256  = _mm256_set1_epi64x((i64)(FASTENT_INCIRC + 1ULL));
@@ -615,7 +615,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     }
     /*  Scalar tail (0 or 1 hexad).  */
     for (; k < n_hexads; k++) {
-      unsigned o = k * 6u;
+      u32 o = k * 6u;
       u32 x = ((u32) q[o + 0] << 16) | ((u32) q[o + 1] << 8) | q[o + 2];
       u32 y = ((u32) q[o + 3] << 16) | ((u32) q[o + 4] << 8) | q[o + 5];
       u64 d = (u64) x * (u64) x + (u64) y * (u64) y;
@@ -626,8 +626,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     #undef MC_DRAIN
     #undef MC_HIT
 
-    unsigned stash_at    = p_idx + n_hexads * 6u;
-    unsigned stash_count = 128u - stash_at;
+    u32 stash_at    = p_idx + n_hexads * 6u;
+    u32 stash_count = 128u - stash_at;
     mc_pos = (int) stash_count;
     if (stash_count >= 1) m0 = p[stash_at + 0];
     if (stash_count >= 2) m1 = p[stash_at + 1];
@@ -646,7 +646,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
                 : buf[body_end];
     st->total_bytes += body_end;
-    st->bank[(unsigned)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
+    st->bank[(u32)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
     st->total_bytes++;
     st->carry_byte = b;
     st->last_byte  = b;
@@ -792,7 +792,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       mc_inside += (d <= FASTENT_INCIRC); \
     } while (0)
 
-    unsigned p_idx;
+    u32 p_idx;
     switch (mc_pos) {
       case 0: p_idx = 0; break;
       case 1: m1=p[0]; m2=p[1]; m3=p[2]; m4=p[3]; m5=p[4];
@@ -808,10 +808,10 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     }
     int n_hexads = (int)((32u - p_idx) / 6u);
     Fk(n_hexads,
-       unsigned o = p_idx + (unsigned) k * 6u;
+       u32 o = p_idx + (u32) k * 6u;
        MC_HEXAD(p[o+0], p[o+1], p[o+2], p[o+3], p[o+4], p[o+5]))
-    unsigned stash_at    = p_idx + n_hexads * 6u;
-    unsigned stash_count = 32u - stash_at;
+    u32 stash_at    = p_idx + n_hexads * 6u;
+    u32 stash_count = 32u - stash_at;
     mc_pos = (int) stash_count;
     if (stash_count >= 1) m0 = p[stash_at + 0];
     if (stash_count >= 2) m1 = p[stash_at + 1];
@@ -837,7 +837,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
                 : buf[body_end];
     last_b = b;
     st->total_bytes += body_end;
-    st->bank[(unsigned)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
+    st->bank[(u32)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
     st->total_bytes++;
     switch (mc_pos) {
       case 0: m0 = b; break;
@@ -995,7 +995,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       mc_inside += (d <= FASTENT_INCIRC); \
     } while (0)
 
-    unsigned p_idx;
+    u32 p_idx;
     switch (mc_pos) {
       case 0: p_idx = 0; break;
       case 1: m1=p[0]; m2=p[1]; m3=p[2]; m4=p[3]; m5=p[4];
@@ -1011,10 +1011,10 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     }
     int n_hexads = (int)((32u - p_idx) / 6u);
     Fk(n_hexads,
-       unsigned o = p_idx + (unsigned) k * 6u;
+       u32 o = p_idx + (u32) k * 6u;
        MC_HEXAD(p[o+0], p[o+1], p[o+2], p[o+3], p[o+4], p[o+5]))
-    unsigned stash_at    = p_idx + (unsigned) n_hexads * 6u;
-    unsigned stash_count = 32u - stash_at;
+    u32 stash_at    = p_idx + (u32) n_hexads * 6u;
+    u32 stash_count = 32u - stash_at;
     mc_pos = (int) stash_count;
     if (stash_count >= 1) m0 = p[stash_at + 0];
     if (stash_count >= 2) m1 = p[stash_at + 1];
@@ -1036,7 +1036,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
                 : buf[body_end];
     last_b = b;
     st->total_bytes += body_end;
-    st->bank[(unsigned)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
+    st->bank[(u32)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
     st->total_bytes++;
     switch (mc_pos) {
       case 0: m0 = b; break;
@@ -1093,7 +1093,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     st->cross_product += (i64) st->carry_byte * (i64) b0_user;
   st->have_carry = 1;
 
-  const v128_t sign_xor = wasm_i8x16_splat((int8_t) 0x80);
+  const v128_t sign_xor = wasm_i8x16_splat((i8) 0x80);
   v128_t scc_acc64 = wasm_i64x2_splat(0);
   v128_t lhs_sad   = wasm_i64x2_splat(0);
 
@@ -1189,7 +1189,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       mc_inside += (d <= FASTENT_INCIRC); \
     } while (0)
 
-    unsigned p_idx;
+    u32 p_idx;
     switch (mc_pos) {
       case 0: p_idx = 0; break;
       case 1: m1=p[0]; m2=p[1]; m3=p[2]; m4=p[3]; m5=p[4];
@@ -1205,10 +1205,10 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     }
     int n_hexads = (int)((32u - p_idx) / 6u);
     Fk(n_hexads,
-       unsigned o = p_idx + (unsigned) k * 6u;
+       u32 o = p_idx + (u32) k * 6u;
        MC_HEXAD(p[o+0], p[o+1], p[o+2], p[o+3], p[o+4], p[o+5]))
-    unsigned stash_at    = p_idx + (unsigned) n_hexads * 6u;
-    unsigned stash_count = 32u - stash_at;
+    u32 stash_at    = p_idx + (u32) n_hexads * 6u;
+    u32 stash_count = 32u - stash_at;
     mc_pos = (int) stash_count;
     if (stash_count >= 1) m0 = p[stash_at + 0];
     if (stash_count >= 2) m1 = p[stash_at + 1];
@@ -1232,7 +1232,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
                 : buf[body_end];
     last_b = b;
     st->total_bytes += body_end;
-    st->bank[(unsigned)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
+    st->bank[(u32)(st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
     st->total_bytes++;
     switch (mc_pos) {
       case 0: m0 = b; break;
@@ -1320,9 +1320,9 @@ void FASTENT_FN(analyze_fold)(fastent_chunk_state * st,
 /*  Case fold in place: ASCII A-Z and Latin-1 0xC0-0xDE (except 0xD7)
     lowered. Range tests use saturating sub (SSSE3-grade ops only).  */
 
-static inline int FASTENT_FN(fold_is_upper_scalar)(unsigned c) {
-  return ((unsigned)(c - 'A')  < 26u) ||
-         ((unsigned)(c - 0xC0u) < 31u && c != 0xD7u);
+static inline int FASTENT_FN(fold_is_upper_scalar)(u32 c) {
+  return ((u32)(c - 'A')  < 26u) ||
+         ((u32)(c - 0xC0u) < 31u && c != 0xD7u);
 }
 
 void FASTENT_FN(fold)(u8 * buf, sz len) {
@@ -1361,7 +1361,7 @@ void FASTENT_FN(fold)(u8 * buf, sz len) {
   }
 #endif
   for (; i < len; i++) {
-    unsigned c = buf[i];
+    u32 c = buf[i];
     if (FASTENT_FN(fold_is_upper_scalar)(c)) buf[i] = (u8)(c + 0x20u);
   }
 }
@@ -1399,8 +1399,8 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
     st->have_first = 1;
   }
   if (st->have_carry) {
-    unsigned prev_lsb = (unsigned)(st->carry_byte & 1u);
-    unsigned curr_msb = (unsigned)((b0_user >> 7) & 1u);
+    u32 prev_lsb = (u32)(st->carry_byte & 1u);
+    u32 curr_msb = (u32)((b0_user >> 7) & 1u);
     st->cross_product += (i64)(prev_lsb & curr_msb);
   }
   st->have_carry = 1;
@@ -1536,7 +1536,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
       mc_count++; \
       mc_inside += (d <= FASTENT_INCIRC); \
     } while (0)
-    unsigned p_idx;
+    u32 p_idx;
     switch (mc_pos) {
       case 0: p_idx = 0; break;
       case 1: m1=p[0]; m2=p[1]; m3=p[2]; m4=p[3]; m5=p[4];
@@ -1550,7 +1550,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
       default: m5=p[0];
               MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
     }
-    unsigned n_hexads = ((unsigned) FASTENT_SIMD_VLEN - p_idx) / 6u;
+    u32 n_hexads = ((u32) FASTENT_SIMD_VLEN - p_idx) / 6u;
     /*  SIMD bulk (byte-mode pattern); mi_simd counts hits, mc_count
         gets all n_hexads added below.  */
     u64 mi_simd = 0;
@@ -1560,7 +1560,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
                                           8, 7, 6, -1, 11, 10, 9, -1);
     const __m128i mc_lim  = _mm_set1_epi64x((i64)(FASTENT_INCIRC + 1ULL));
 #endif
-    unsigned k = 0;
+    u32 k = 0;
 #if defined(FASTENT_VARIANT_AVX2) || defined(FASTENT_VARIANT_AVX512)
     /*  256-bit: 4 hexads (24 bytes) per iter.  */
     const __m256i mc_shuf256 = _mm256_broadcastsi128_si256(mc_shuf);
@@ -1600,7 +1600,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
 #endif
     /*  Scalar tail (0/1 hexad on AVX2+SSE41; full on SSSE3).  */
     for (; k < n_hexads; k++) {
-      unsigned o = k * 6u;
+      u32 o = k * 6u;
       u32 x = ((u32) q[o + 0] << 16) | ((u32) q[o + 1] << 8) | q[o + 2];
       u32 y = ((u32) q[o + 3] << 16) | ((u32) q[o + 4] << 8) | q[o + 5];
       u64 d = (u64) x * (u64) x + (u64) y * (u64) y;
@@ -1608,8 +1608,8 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
     }
     mc_count  += n_hexads;
     mc_inside += mi_simd;
-    unsigned stash_at    = p_idx + n_hexads * 6u;
-    unsigned stash_count = (unsigned) FASTENT_SIMD_VLEN - stash_at;
+    u32 stash_at    = p_idx + n_hexads * 6u;
+    u32 stash_count = (u32) FASTENT_SIMD_VLEN - stash_at;
     mc_pos = (int) stash_count;
     if (stash_count >= 1) m0 = p[stash_at + 0];
     if (stash_count >= 2) m1 = p[stash_at + 1];
@@ -1670,10 +1670,10 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   {
     u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[body_end])
                 : buf[body_end];
-    unsigned ones_b = (unsigned) FASTENT_POPCOUNT32(b);
+    u32 ones_b = (u32) FASTENT_POPCOUNT32(b);
     st->bit_hist[1] += ones_b;
     st->bit_hist[0] += 8u - ones_b;
-    unsigned within_b = (unsigned) FASTENT_POPCOUNT32(b & (b >> 1));
+    u32 within_b = (u32) FASTENT_POPCOUNT32(b & (b >> 1));
     st->cross_product += (i64) within_b;
     st->carry_byte = (u8)(b & 1u);
     st->last_byte  = (u8)(b & 1u);
@@ -1727,14 +1727,14 @@ FASTENT_FN(bits_scalar_body_impl)(fastent_chunk_state * st,
                                   sz len, int fold) {
   for (sz i = 0; i < len; i++) {
     const u8 byte = fold ? FASTENT_FN(fold_byte_inline)(buf[i]) : buf[i];
-    const unsigned ones_in_byte = (unsigned) FASTENT_POPCOUNT32(byte);
+    const u32 ones_in_byte = (u32) FASTENT_POPCOUNT32(byte);
     st->bit_hist[1] += ones_in_byte;
     st->bit_hist[0] += 8u - ones_in_byte;
-    const unsigned within = (unsigned) FASTENT_POPCOUNT32(byte & (byte >> 1));
+    const u32 within = (u32) FASTENT_POPCOUNT32(byte & (byte >> 1));
     st->cross_product += (i64) within;
     if (st->have_carry) {
-      const unsigned prev_lsb = (unsigned)(st->carry_byte & 1u);
-      const unsigned curr_msb = (unsigned)((byte >> 7) & 1u);
+      const u32 prev_lsb = (u32)(st->carry_byte & 1u);
+      const u32 curr_msb = (u32)((byte >> 7) & 1u);
       st->cross_product += (i64)(prev_lsb & curr_msb);
     } else {
       st->first_byte = (u8)((byte >> 7) & 1u);

@@ -105,8 +105,8 @@ static void gen_biased(uint8_t * b, size_t n, uint64_t pos) {
 static void gen_sparse_bits(uint8_t * b, size_t n, uint64_t pos) {
   (void) pos;
   memset(b, 0, n);
-  /*  About 1.5% of bits set: n*8/64 ≈ n/8 bits.  Repeats may collide
-      so the actual density is slightly lower, which is fine.  */
+  /*  About 1.5% of bits set: n*8/64, roughly n/8 bits.  Repeats may
+      collide so the actual density is slightly lower, which is fine.  */
   uint64_t total_bits = (uint64_t) n * 8ULL;
   uint64_t set_bits   = total_bits / 64ULL;
   for (uint64_t k = 0; k < set_bits; k++) {

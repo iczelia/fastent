@@ -14,13 +14,13 @@
 
 /*  JSON has no NaN/Infinity literal, so non-finite values render
     as null.  */
-static void jnum_(const char * fmt, double v) {
+static void jnum_(const char * fmt, f64 v) {
   if (!isfinite(v)) { fputs("null", stdout); return; }
   printf(fmt, v);
 }
 
 /*  Integer-valued counts: exact, never %g.  */
-static void jint_(double v) {
+static void jint_(f64 v) {
   if (!isfinite(v)) fputs("null", stdout);
   else              printf("%.0f", v);
 }

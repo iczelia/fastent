@@ -56,23 +56,23 @@ static int alloc_stream_buf(fastent_source * s) {
 typedef struct {
   int     ring_fd;
   void *  sq_ring;
-  size_t  sq_ring_size;
+  sz      sq_ring_size;
   void *  cq_ring;
-  size_t  cq_ring_size;
+  sz      cq_ring_size;
   struct io_uring_sqe * sqes;
-  size_t  sqes_size;
-  volatile uint32_t * sq_khead;
-  volatile uint32_t * sq_ktail;
-  volatile uint32_t * sq_ring_mask;
-           uint32_t * sq_array;
-  volatile uint32_t * cq_khead;
-  volatile uint32_t * cq_ktail;
-  volatile uint32_t * cq_ring_mask;
+  sz      sqes_size;
+  volatile u32 * sq_khead;
+  volatile u32 * sq_ktail;
+  volatile u32 * sq_ring_mask;
+           u32 * sq_array;
+  volatile u32 * cq_khead;
+  volatile u32 * cq_ktail;
+  volatile u32 * cq_ring_mask;
   struct io_uring_cqe * cqes;
   u8 *     slot_buf[FASTENT_URING_SLOTS];
   void *   slot_buf_raw[FASTENT_URING_SLOTS];
   int      slot_done[FASTENT_URING_SLOTS];
-  int32_t  slot_result[FASTENT_URING_SLOTS];
+  i32      slot_result[FASTENT_URING_SLOTS];
   int      next_consume;
   int      prev_returned;
   u64      next_submit_offset;
@@ -85,13 +85,13 @@ static long io_uring_setup_sys(unsigned entries, struct io_uring_params * p) {
 static long io_uring_enter_sys(int fd, unsigned to_submit,
                                unsigned min_complete, unsigned flags) {
   return syscall(__NR_io_uring_enter, fd, to_submit, min_complete,
-                 flags, NULL, (size_t) 0);
+                 flags, NULL, (sz) 0);
 }
 
 static int uring_submit_read(uring_state * u, int src_fd, int slot) {
-  uint32_t tail = *u->sq_ktail;
-  uint32_t mask = *u->sq_ring_mask;
-  uint32_t idx  = tail & mask;
+  u32 tail = *u->sq_ktail;
+  u32 mask = *u->sq_ring_mask;
+  u32 idx  = tail & mask;
   struct io_uring_sqe * sqe = &u->sqes[idx];
 
   u64 off = u->next_submit_offset;
@@ -103,9 +103,9 @@ static int uring_submit_read(uring_state * u, int src_fd, int slot) {
   sqe->opcode    = IORING_OP_READ;
   sqe->fd        = src_fd;
   sqe->off       = off;
-  sqe->addr      = (uint64_t)(uintptr_t) u->slot_buf[slot];
-  sqe->len       = (uint32_t) to_read;
-  sqe->user_data = (uint64_t) slot;
+  sqe->addr      = (u64)(uintptr_t) u->slot_buf[slot];
+  sqe->len       = (u32) to_read;
+  sqe->user_data = (u64) slot;
 
   u->sq_array[idx]     = idx;
   u->slot_done[slot]   = 0;
@@ -124,11 +124,11 @@ static int uring_submit_read(uring_state * u, int src_fd, int slot) {
 
 static int uring_wait(uring_state * u, int target_slot) {
   while (!u->slot_done[target_slot]) {
-    uint32_t head = *u->cq_khead;
-    uint32_t tail = *u->cq_ktail;
+    u32 head = *u->cq_khead;
+    u32 tail = *u->cq_ktail;
 
     while (head != tail) {
-      uint32_t mask = *u->cq_ring_mask;
+      u32 mask = *u->cq_ring_mask;
       struct io_uring_cqe * cqe = &u->cqes[head & mask];
       int slot = (int) cqe->user_data;
       u->slot_result[slot] = cqe->res;
@@ -167,7 +167,7 @@ static uring_state * uring_setup(int src_fd, u64 file_size) {
   if (r < 0) { free(u); return NULL; }
   u->ring_fd = (int) r;
 
-  u->sq_ring_size = p.sq_off.array + p.sq_entries * sizeof(uint32_t);
+  u->sq_ring_size = p.sq_off.array + p.sq_entries * sizeof(u32);
   u->cq_ring_size = p.cq_off.cqes  + p.cq_entries * sizeof(struct io_uring_cqe);
   if (p.features & IORING_FEAT_SINGLE_MMAP) {
     if (u->cq_ring_size > u->sq_ring_size) u->sq_ring_size = u->cq_ring_size;
@@ -192,14 +192,14 @@ static uring_state * uring_setup(int src_fd, u64 file_size) {
                  MAP_SHARED | MAP_POPULATE, u->ring_fd, IORING_OFF_SQES);
   if (u->sqes == MAP_FAILED) { uring_destroy(u); return NULL; }
 
-  u->sq_khead     = (uint32_t *)((char *) u->sq_ring + p.sq_off.head);
-  u->sq_ktail     = (uint32_t *)((char *) u->sq_ring + p.sq_off.tail);
-  u->sq_ring_mask = (uint32_t *)((char *) u->sq_ring + p.sq_off.ring_mask);
-  u->sq_array     = (uint32_t *)((char *) u->sq_ring + p.sq_off.array);
+  u->sq_khead     = (u32 *)((char *) u->sq_ring + p.sq_off.head);
+  u->sq_ktail     = (u32 *)((char *) u->sq_ring + p.sq_off.tail);
+  u->sq_ring_mask = (u32 *)((char *) u->sq_ring + p.sq_off.ring_mask);
+  u->sq_array     = (u32 *)((char *) u->sq_ring + p.sq_off.array);
 
-  u->cq_khead     = (uint32_t *)((char *) u->cq_ring + p.cq_off.head);
-  u->cq_ktail     = (uint32_t *)((char *) u->cq_ring + p.cq_off.tail);
-  u->cq_ring_mask = (uint32_t *)((char *) u->cq_ring + p.cq_off.ring_mask);
+  u->cq_khead     = (u32 *)((char *) u->cq_ring + p.cq_off.head);
+  u->cq_ktail     = (u32 *)((char *) u->cq_ring + p.cq_off.tail);
+  u->cq_ring_mask = (u32 *)((char *) u->cq_ring + p.cq_off.ring_mask);
   u->cqes = (struct io_uring_cqe *)
             ((char *) u->cq_ring + p.cq_off.cqes);
 
@@ -301,16 +301,16 @@ int fastent_src_open(fastent_source * s, const char * path,
 #ifdef HAVE_SYS_STAT_H
   if (mode != FASTENT_IO_STREAM && is_regular && file_size > 0) {
 #ifdef HAVE_MMAP
-    void * p = mmap(NULL, (size_t) file_size,
+    void * p = mmap(NULL, (sz) file_size,
                     PROT_READ, MAP_PRIVATE, fd, 0);
     if (p != MAP_FAILED) {
       s->kind = FASTENT_SRC_MMAP;
       s->map  = p;
       s->size = file_size;
 #ifdef HAVE_MADVISE
-      madvise(p, (size_t) file_size, MADV_SEQUENTIAL | MADV_WILLNEED);
+      madvise(p, (sz) file_size, MADV_SEQUENTIAL | MADV_WILLNEED);
   #ifdef MADV_HUGEPAGE
-      madvise(p, (size_t) file_size, MADV_HUGEPAGE);
+      madvise(p, (sz) file_size, MADV_HUGEPAGE);
   #endif
 #endif
 #ifdef HAVE_POSIX_FADVISE
@@ -346,8 +346,8 @@ sz fastent_src_read(fastent_source * s) {
   if (s->kind == FASTENT_SRC_STREAM) {
     sz off = 0;
     while (off < s->stream_buf_cap) {
-      long n = (long) read(s->fd, s->stream_buf + off,
-                           s->stream_buf_cap - off);
+      i64 n = (i64) read(s->fd, s->stream_buf + off,
+                         s->stream_buf_cap - off);
       if (n < 0)  { if (errno == EINTR) continue;  return (sz) -1; }
       if (n == 0) break;
       off += (sz) n;
@@ -365,7 +365,7 @@ sz fastent_src_read(fastent_source * s) {
     int slot = u->next_consume;
     if (uring_wait(u, slot) < 0) return (sz) -1;
 
-    int32_t res = u->slot_result[slot];
+    i32 res = u->slot_result[slot];
     if (res < 0) { errno = -res; return (sz) -1; }
 
     s->stream_buf    = u->slot_buf[slot];
@@ -383,7 +383,7 @@ void fastent_src_close(fastent_source * s) {
 
   if (s->kind == FASTENT_SRC_MMAP && s->map) {
 #ifdef HAVE_MMAP
-    munmap(s->map, (size_t) s->size);
+    munmap(s->map, (sz) s->size);
 #endif
     s->map = NULL;
   }

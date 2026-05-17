@@ -5,6 +5,8 @@
 #ifndef FASTENT_OPTIONS_H
 #define FASTENT_OPTIONS_H
 
+#include "common.h"
+
 typedef enum {
   FASTENT_SORT_NONE = 0,
   FASTENT_SORT_PATH,
@@ -49,7 +51,7 @@ typedef struct {
   const char * path;  /*  positional (NULL = stdin)  */
 } fastent_options;
 
-static inline int fastent_is_displayable(unsigned c) {
+static inline int fastent_is_displayable(u32 c) {
   return (c >= 0x21u && c <= 0x7Eu) || c >= 0xA1u;
 }
 

@@ -17,7 +17,7 @@ static void print_counts_(const fastent_result * r, int binary) {
   printf("Value Char Occurrences Fraction\n");
   Fi(bins,
      if (r->hist[i] == 0) continue;
-     char ch = fastent_is_displayable((unsigned) i) ? (char) i : ' ';
+     char ch = fastent_is_displayable((u32) i) ? (char) i : ' ';
      printf("%3d   %c   %10llu   %f\n", i, ch,
             (unsigned long long) r->hist[i],
             (f64) r->hist[i] / (f64) r->total_samples))

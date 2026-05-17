@@ -62,8 +62,8 @@ void fastent_print_histogram(const fastent_result * r,
 
   const int use_color = color_active_(o->color);
 
-  const double log_denom = o->histogram_log
-                           ? log((double) max + 1.0) : 0.0;
+  const f64 log_denom = o->histogram_log
+                        ? log((f64) max + 1.0) : 0.0;
 
   /*  Left gutter: sample count at each row's top edge,
       right-justified to the peak's width.  */
@@ -75,20 +75,20 @@ void fastent_print_histogram(const fastent_result * r,
      const int row_bot = (height - 1 - i) * sub;
      const int row_top = row_bot + sub;
      int last_class = -1;
-     const double yf = (double)(height - i) / (double) height;
+     const f64 yf = (f64)(height - i) / (f64) height;
      const u64 yval = o->histogram_log
                       ? (u64)(exp(yf * log_denom) - 1.0 + 0.5)
-                      : (u64)(yf * (double) max + 0.5);
+                      : (u64)(yf * (f64) max + 0.5);
      printf("%*llu |", gw, (unsigned long long) yval);
      Fj(cols,
-        double frac;
+        f64 frac;
         if (o->histogram_log) {
           frac = grouped[j] == 0 ? 0.0
-               : log((double) grouped[j] + 1.0) / log_denom;
+               : log((f64) grouped[j] + 1.0) / log_denom;
         } else {
-          frac = (double) grouped[j] / (double) max;
+          frac = (f64) grouped[j] / (f64) max;
         }
-        int hh = (int)(frac * (double) levels + 0.5);
+        int hh = (int)(frac * (f64) levels + 0.5);
         if (hh > levels) hh = levels;
         const char * glyph;
         if (hh >= row_top)      glyph = blocks[sub];
@@ -138,7 +138,7 @@ void fastent_print_histogram(const fastent_result * r,
          (unsigned long long) raw_peak,
          raw_peak == 1 ? "" : "s",
          peak_v);
-  if (!o->binary && fastent_is_displayable((unsigned) peak_v))
+  if (!o->binary && fastent_is_displayable((u32) peak_v))
     printf(" '%c'", (char) peak_v);
   if (group > 1)         printf(", %d bytes/col", group);
   if (o->histogram_log)  printf(", log y");

@@ -9,10 +9,10 @@
 
 #include <unistd.h>
 
-long fastent_os_num_cpus(void) {
+i64 fastent_os_num_cpus(void) {
 #ifdef _SC_NPROCESSORS_ONLN
   long n = sysconf(_SC_NPROCESSORS_ONLN);
-  return n > 0 ? n : 1;
+  return n > 0 ? (i64) n : 1;
 #else
   return 1;
 #endif

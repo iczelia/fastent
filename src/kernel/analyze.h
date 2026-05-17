@@ -27,9 +27,9 @@
 /*  Scalar case fold: ASCII A-Z and Latin-1 0xC0-0xDE (not 0xD7) to
     lower-case, other bytes unchanged. Same rule as the SIMD fold.  */
 static inline u8 fastent_fold_byte(u8 b) {
-  unsigned c = b;
-  if (((unsigned)(c - 'A') < 26u) ||
-      ((unsigned)(c - 0xC0u) < 31u && c != 0xD7u))
+  u32 c = b;
+  if (((u32)(c - 'A') < 26u) ||
+      ((u32)(c - 0xC0u) < 31u && c != 0xD7u))
     return (u8)(c + 0x20u);
   return b;
 }

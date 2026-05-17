@@ -8,7 +8,7 @@
 #include "common.h"
 
 /*  Return online CPU count (>=1), 1 if the OS can't tell us.  */
-long fastent_os_num_cpus(void);
+i64 fastent_os_num_cpus(void);
 
 /*  Make stdin a binary stream.  No-op on POSIX; _setmode on Win32.  */
 void fastent_os_set_stdin_binary(void);

@@ -60,7 +60,7 @@ int main(int argc, char ** argv) {
 
 #ifdef FASTENT_HAVE_THREADS
   if (o.threads < 0) {
-    long n = fastent_os_num_cpus();
+    i64 n = fastent_os_num_cpus();
     o.threads = n > 0 && n < 1024 ? (int) n : 1;
   }
   if (o.threads > 1) fastent_set_num_threads(o.threads);

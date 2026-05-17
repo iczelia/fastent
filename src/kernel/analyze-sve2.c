@@ -15,7 +15,7 @@
 #include <string.h>
 
 static inline u8 sve2_fold_byte(u8 b) {
-  unsigned c = b;
+  u32 c = b;
   int is_ascii_upper = (c - 'A')   < 26u;
   int is_lat_upper   = ((c - 0xC0u) < 31u) && (c != 0xD7u);
   if (is_ascii_upper || is_lat_upper) return (u8)(c + 0x20u);
@@ -88,7 +88,7 @@ static void analyze_sve2_byte_impl(fastent_chunk_state * st,
 
       for (u64 k = 0; k < stride; k++) {
         u8 b = fold ? sve2_fold_byte(buf[i + k]) : buf[i + k];
-        st->bank[(unsigned)(i + k) & (FASTENT_BANKS - 1)][b]++;
+        st->bank[(u32)(i + k) & (FASTENT_BANKS - 1)][b]++;
         st->mc_buf[st->mc_pos++] = b;
         if (st->mc_pos == 6) SVE2_MC_COMMIT(st);
       }
@@ -120,7 +120,7 @@ static void analyze_sve2_byte_impl(fastent_chunk_state * st,
     st->carry_byte = b;
     st->have_carry = 1;
     st->last_byte  = b;
-    st->bank[(unsigned) i & (FASTENT_BANKS - 1)][b]++;
+    st->bank[(u32) i & (FASTENT_BANKS - 1)][b]++;
     st->mc_buf[st->mc_pos++] = b;
     if (st->mc_pos == 6) SVE2_MC_COMMIT(st);
     st->total_bytes++;
@@ -136,14 +136,14 @@ void analyze_fold_sve2(fastent_chunk_state * st, const u8 * buf, sz len) {
 }
 
 static inline void sve2_consume_bit_byte(fastent_chunk_state * st, u8 b) {
-  const unsigned ones_in_byte = FASTENT_POPCOUNT32(b);
+  const u32 ones_in_byte = FASTENT_POPCOUNT32(b);
   st->bit_hist[1] += ones_in_byte;
   st->bit_hist[0] += 8u - ones_in_byte;
-  const unsigned within = FASTENT_POPCOUNT32(b & (b >> 1));
+  const u32 within = FASTENT_POPCOUNT32(b & (b >> 1));
   st->cross_product += (i64) within;
   if (st->have_carry) {
-    const unsigned prev_lsb = (unsigned)(st->carry_byte & 1u);
-    const unsigned curr_msb = (unsigned)((b >> 7) & 1u);
+    const u32 prev_lsb = (u32)(st->carry_byte & 1u);
+    const u32 curr_msb = (u32)((b >> 7) & 1u);
     st->cross_product += (i64)(prev_lsb & curr_msb);
   } else {
     st->first_byte = (u8)((b >> 7) & 1u);
@@ -185,8 +185,8 @@ static void analyze_bits_sve2_impl(fastent_chunk_state * st,
 
     if (st->have_carry) {
       u8 head = fold ? sve2_fold_byte(buf[i]) : buf[i];
-      const unsigned prev_lsb = (unsigned)(st->carry_byte & 1u);
-      const unsigned curr_msb = (unsigned)((head >> 7) & 1u);
+      const u32 prev_lsb = (u32)(st->carry_byte & 1u);
+      const u32 curr_msb = (u32)((head >> 7) & 1u);
       st->cross_product += (i64)(prev_lsb & curr_msb);
     } else {
       u8 head = fold ? sve2_fold_byte(buf[i]) : buf[i];

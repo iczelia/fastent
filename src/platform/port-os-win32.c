@@ -9,7 +9,7 @@
 
 #include "fastent-win32.h"
 
-long fastent_os_num_cpus(void) {
+i64 fastent_os_num_cpus(void) {
   return fastent_win32_num_cpus();
 }
 

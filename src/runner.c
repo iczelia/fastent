@@ -18,7 +18,8 @@ typedef struct {
   const u8 *     data;
   const u64 *    bounds;     /*  N+1 entries, multiples of 6 except last  */
   fastent_chunk_state * states;
-  u64 * const *  bigrams;    /*  per-slab digram tables; NULL unless -ee byte mode  */
+  /*  per-slab digram tables; NULL unless -ee byte mode  */
+  u64 * const *  bigrams;
   fastent_analyze_fn fn;
   int            extended;
   int            binary;
@@ -50,7 +51,7 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
   bounds[0] = 0;
   bounds[N] = size;
   Fk0(N, 1,
-      u64 raw = (u64)((double) size * (double) k / (double) N);
+      u64 raw = (u64)((f64) size * (f64) k / (f64) N);
       bounds[k] = (raw / 6ULL) * 6ULL;
       if (bounds[k] < bounds[k - 1]) bounds[k] = bounds[k - 1])
 
@@ -113,7 +114,7 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
       a run may span a boundary or whole single-symbol slabs.  */
   if (o->extended >= 2) {
     u64 lr_gmax = 0, carry_len = 0;
-    unsigned carry_sym = 0;
+    u32 carry_sym = 0;
     int have_run = 0, seen = 0;
     i64 cs_off = 0, cs_min = 0, cs_max = 0;
     Fk(N,
@@ -130,13 +131,13 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
        }
        if (seen && start > 0) {     /*  pair straddling this boundary  */
          /*  Fold to match the per-slab digram pass under -f.  */
-         const unsigned bp = o->fold ? fastent_fold_byte(data[start - 1])
-                                      : data[start - 1];
-         const unsigned bc = o->fold ? fastent_fold_byte(data[start])
-                                      : data[start];
+         const u32 bp = o->fold ? fastent_fold_byte(data[start - 1])
+                                 : data[start - 1];
+         const u32 bc = o->fold ? fastent_fold_byte(data[start])
+                                 : data[start];
          if (o->binary) {
-           const unsigned pb = bp & 1u;
-           const unsigned cb = (bc >> 7) & 1u;
+           const u32 pb = bp & 1u;
+           const u32 cb = (bc >> 7) & 1u;
            out->bit_bigram[pb][cb]++;
            if (pb == cb) out->rn_count--;       /*  two runs join  */
          } else if (out->bigram) {
@@ -145,7 +146,7 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
        }
        {
          const u64 imax = s->lr_cur > s->lr_max ? s->lr_cur : s->lr_max;
-         const unsigned hs = s->lr_head_sym;
+         const u32 hs = s->lr_head_sym;
          const u64 hl = s->lr_head_len;  const u64 tl = s->lr_cur;
          const int whole = s->lr_head_open;
          if (imax > lr_gmax) lr_gmax = imax;
@@ -390,7 +391,7 @@ static void run_stream_mt_(fastent_chunk_state * out,
 
   /*  Ordered boundary stitch (same algebra as run_mmap_mt_).  */
   u64 lr_gmax = 0, carry_len = 0;
-  unsigned carry_sym = 0;
+  u32 carry_sym = 0;
   int have_run = 0;
   i64 cs_off = 0, cs_min = 0, cs_max = 0;
   for (sz i = 0; i < c.ne; i++) {
@@ -398,11 +399,11 @@ static void run_stream_mt_(fastent_chunk_state * out,
     if (out->have_carry) {
       out->cross_product += (i64) out->carry_byte * (i64) e->o0_first;
       if (out->bigram)
-        out->bigram[((unsigned) c.edges[i - 1].raw_last << 8)
+        out->bigram[((u32) c.edges[i - 1].raw_last << 8)
                     | e->raw_first]++;
       if (o->binary && o->extended >= 2) {
-        const unsigned pb = c.edges[i - 1].raw_last & 1u;
-        const unsigned cb = (e->raw_first >> 7) & 1u;
+        const u32 pb = c.edges[i - 1].raw_last & 1u;
+        const u32 cb = (e->raw_first >> 7) & 1u;
         out->bit_bigram[pb][cb]++;
         if (pb == cb) out->rn_count--;
       }
@@ -605,9 +606,9 @@ void fastent_rows_free(fastent_recursive_row * rows, sz n) {
 static int g_sort_by_  = 0;
 static int g_sort_desc_ = 0;
 
-static double row_key_(const fastent_recursive_row * r) {
+static f64 row_key_(const fastent_recursive_row * r) {
   switch ((fastent_sort_by) g_sort_by_) {
-    case FASTENT_SORT_SAMPLES:    return (double) r->result.total_samples;
+    case FASTENT_SORT_SAMPLES:    return (f64) r->result.total_samples;
     case FASTENT_SORT_ENTROPY:    return r->result.entropy;
     case FASTENT_SORT_CHI_SQUARE: return r->result.chi_square;
     case FASTENT_SORT_MEAN:       return r->result.mean;
@@ -619,7 +620,7 @@ static double row_key_(const fastent_recursive_row * r) {
     case FASTENT_SORT_POKER:      return r->result.poker_chisq;
     case FASTENT_SORT_VARIANCE:   return r->result.variance;
     case FASTENT_SORT_REDUNDANCY: return r->result.redundancy;
-    case FASTENT_SORT_DISTINCT:   return (double) r->result.distinct;
+    case FASTENT_SORT_DISTINCT:   return (f64) r->result.distinct;
     case FASTENT_SORT_BIT_BIAS:   return r->result.bit_bias_max;
     case FASTENT_SORT_COND_ENTROPY: return r->result.conditional_entropy;
     case FASTENT_SORT_MUTUAL_INFO:  return r->result.mutual_information;
@@ -634,8 +635,8 @@ static int cmp_(const void * a, const void * b) {
   if (g_sort_by_ == FASTENT_SORT_PATH) {
     rc = strcmp(ra->path, rb->path);
   } else {
-    double ka = row_key_(ra);
-    double kb = row_key_(rb);
+    f64 ka = row_key_(ra);
+    f64 kb = row_key_(rb);
     rc = (ka < kb) ? -1 : (ka > kb) ? 1 : 0;
   }
   return g_sort_desc_ ? -rc : rc;

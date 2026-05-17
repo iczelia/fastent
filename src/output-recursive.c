@@ -91,7 +91,7 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
 static void json_escape_(const char * s) {
   putchar('"');
   for (; *s; s++) {
-    unsigned char c = (unsigned char) *s;
+    u8 c = (u8) *s;
     switch (c) {
       case '"':  fputs("\\\"", stdout); break;
       case '\\': fputs("\\\\", stdout); break;
@@ -110,13 +110,13 @@ static void json_escape_(const char * s) {
 
 /*  JSON has no NaN/Infinity literal, so non-finite values render
     as null.  */
-static void json_num_(const char * fmt, double v) {
+static void json_num_(const char * fmt, f64 v) {
   if (!isfinite(v)) { fputs("null", stdout); return; }
   printf(fmt, v);
 }
 
 /*  Integer-valued counts: exact, never %g.  */
-static void json_int_(double v) {
+static void json_int_(f64 v) {
   if (!isfinite(v)) fputs("null", stdout);
   else              printf("%.0f", v);
 }

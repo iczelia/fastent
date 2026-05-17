@@ -90,7 +90,7 @@ static int parse_int(const char * s, int * out) {
     return 0;
   }
   char * end = NULL;
-  long v = strtol(s, &end, 10);
+  i64 v = strtol(s, &end, 10);
   if (end == s || (end && *end)) return -1;
   if (v < 0 || v > 1024) return -1;
   *out = (int) v;
@@ -99,7 +99,7 @@ static int parse_int(const char * s, int * out) {
 
 static int parse_sort_by_(const char * arg, fastent_options * o) {
   char buf[64];
-  size_t n = strlen(arg);
+  sz n = strlen(arg);
   if (n >= sizeof buf) return -1;
   memcpy(buf, arg, n + 1);
   char * colon = strchr(buf, ':');

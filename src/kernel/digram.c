@@ -72,13 +72,13 @@ static void digram_bytes_(fastent_chunk_state * st,
   }
 
   for (; i + 2 <= len; i += 2) {
-    unsigned c0 = buf[i], c1 = buf[i + 1];
+    u32 c0 = buf[i], c1 = buf[i + 1];
     t[0u * FASTENT_BG_TABLE + ((prev << 8) | c0)]++;  lr_one_(st, c0);
     t[1u * FASTENT_BG_TABLE + ((c0   << 8) | c1)]++;  lr_one_(st, c1);
     prev = c1;
   }
   for (; i < len; i++) {
-    unsigned c = buf[i];
+    u32 c = buf[i];
     t[(prev << 8) | c]++;  lr_one_(st, c);
     prev = c;
   }
