@@ -111,7 +111,8 @@ endif
 
 dist_man_MANS = fastent.1
 
-EXTRA_DIST = README.md NEWS ChangeLog AUTHORS COPYING bootstrap \
+EXTRA_DIST = README.md NEWS ChangeLog AUTHORS COPYING bootstrap .clangd \
+             scripts/gen_log2_tables.py scripts/gen_compile_commands.py \
              build/msvc/Makefile.nmake build/ci/package.sh \
              tests/run-tests.sh tests/bench.sh tests/bench-gen.c \
              doc/bench.png doc/bench.tsv \

@@ -5,6 +5,7 @@
 #include "common.h"
 #include "output.h"
 
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 
@@ -18,10 +19,10 @@ static void print_counts_(const fastent_result * r, int binary) {
   Fi(bins,
      if (r->hist[i] == 0) continue;
      char ch = fastent_is_displayable((u32) i) ? (char) i : ' ';
-     printf("%3d   %c   %10llu   %f\n", i, ch,
+     printf("%3d   %c   %10" PRIu64 "   %f\n", i, ch,
             (u64) r->hist[i],
             (f64) r->hist[i] / (f64) r->total_samples))
-  printf("\nTotal:    %10llu   %f\n\n",
+  printf("\nTotal:    %10" PRIu64 "   %f\n\n",
          (u64) r->total_samples, 1.0);
 }
 
@@ -44,14 +45,16 @@ void fastent_print_default(const fastent_result * r,
                      : comp_raw < 0.0      ? 0
                      : comp_raw > 100.0    ? 100
                                            : (i32) comp_raw;
-  printf("of this %llu %s file by %d percent.\n\n",
+  printf("of this %" PRIu64 " %s file by %d percent.\n\n",
          (u64) r->total_samples, samp, comp_pct);
 
   if (fp) {
-    printf("Chi square distribution for %llu samples is %.17g, and randomly\n",
+    printf("Chi square distribution for %" PRIu64
+           " samples is %.17g, and randomly\n",
            (u64) r->total_samples, r->chi_square);
   } else {
-    printf("Chi square distribution for %llu samples is %1.2f, and randomly\n",
+    printf("Chi square distribution for %" PRIu64
+           " samples is %1.2f, and randomly\n",
            (u64) r->total_samples, r->chi_square);
   }
   if      (r->chi_probability < 0.0001)
@@ -137,8 +140,8 @@ void fastent_print_default(const fastent_result * r,
   }
   printf("Distinct symbols: %u of %d.\n", r->distinct, bins);
   if (r->mode_value >= 0)
-    printf("Most common symbol is %d (%llu times); "
-           "rarest is %d (%llu times).\n",
+    printf("Most common symbol is %d (%" PRIu64 " times); "
+           "rarest is %d (%" PRIu64 " times).\n",
            r->mode_value, (u64) r->mode_count,
            r->rarest_value, (u64) r->rarest_count);
 

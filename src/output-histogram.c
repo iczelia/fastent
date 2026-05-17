@@ -6,6 +6,7 @@
 #include "output.h"
 #include "port-term.h"
 
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,7 +69,7 @@ void fastent_print_histogram(const fastent_result * r,
   /*  Left gutter: sample count at each row's top edge,
       right-justified to the peak's width.  */
   char gbuf[24];
-  i32  gw = snprintf(gbuf, sizeof gbuf, "%llu", (u64) max);
+  i32  gw = snprintf(gbuf, sizeof gbuf, "%" PRIu64, (u64) max);
   if (gw < 1) gw = 1;
 
   Fi(height,
@@ -79,7 +80,7 @@ void fastent_print_histogram(const fastent_result * r,
      const u64 yval = o->histogram_log
                       ? (u64)(exp(yf * log_denom) - 1.0 + 0.5)
                       : (u64)(yf * (f64) max + 0.5);
-     printf("%*llu |", gw, (u64) yval);
+     printf("%*" PRIu64 " |", gw, (u64) yval);
      Fj(cols,
         f64 frac;
         if (o->histogram_log) {
@@ -134,7 +135,7 @@ void fastent_print_histogram(const fastent_result * r,
   u64 raw_peak = 0;
   i32 peak_v   = 0;
   Fi(bins, if (r->hist[i] > raw_peak) { raw_peak = r->hist[i]; peak_v = i; })
-  printf("(peak %llu sample%s at byte %d",
+  printf("(peak %" PRIu64 " sample%s at byte %d",
          (u64) raw_peak,
          raw_peak == 1 ? "" : "s",
          peak_v);

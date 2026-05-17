@@ -1,6 +1,7 @@
 attic/
 .vscode/
 .deps/
+.cache/
 autom4te.cache/
 ar-lib
 aclocal.m4
@@ -30,6 +31,7 @@ fastent.exe
 tests/fixtures/
 tests/tmp/
 tests/bench-gen
+compile_commands.json
 
 #  Fetched + SHA-256-verified by ./bootstrap (pinned dependencies).
 src/yarg.h

@@ -1,2 +1,2 @@
 CompileFlags:
-  Add: [-I., -Isrc]
+  Add: [-I., -Isrc, -Isrc/kernel, -Isrc/platform, -std=c99]

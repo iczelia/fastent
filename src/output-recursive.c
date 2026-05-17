@@ -5,6 +5,7 @@
 #include "common.h"
 #include "output.h"
 
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 
@@ -44,7 +45,7 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
   for (sz i = 0; i < n; i++) {
     const fastent_recursive_row * r = &rows[i];
     csv_escape_(r->path);
-    printf(",%s,%llu,", o->binary ? "bit" : "byte",
+    printf(",%s,%" PRIu64 ",", o->binary ? "bit" : "byte",
            (u64) r->result.total_samples);
     printf(f, r->result.entropy);     putchar(',');
     printf(f, r->result.chi_square);  putchar(',');
@@ -62,7 +63,7 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
       putchar(','); printf(f, r->result.variance);
       putchar(','); printf(f, r->result.stddev);
       putchar(','); printf(f, r->result.redundancy);
-      printf(",%u,%d,%llu,%d,%llu",
+      printf(",%u,%d,%" PRIu64 ",%d,%" PRIu64,
              r->result.distinct, r->result.mode_value,
              (u64) r->result.mode_count,
              r->result.rarest_value,
@@ -131,7 +132,7 @@ void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
     const fastent_recursive_row * r = &rows[i];
     fputs("    { \"path\": ", stdout);
     json_escape_(r->path);
-    printf(", \"samples\": %llu",
+    printf(", \"samples\": %" PRIu64,
            (u64) r->result.total_samples);
     fputs(", \"entropy\": ", stdout);        json_num_(f, r->result.entropy);
     fputs(", \"chi_square\": ", stdout);     json_num_(f, r->result.chi_square);
@@ -164,12 +165,12 @@ void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
       printf(", \"distinct_symbols\": %u", r->result.distinct);
       fputs(", \"most_common\": ", stdout);
       if (r->result.mode_value < 0) fputs("null", stdout);
-      else printf("{ \"value\": %d, \"count\": %llu }",
+      else printf("{ \"value\": %d, \"count\": %" PRIu64 " }",
                   r->result.mode_value,
                   (u64) r->result.mode_count);
       fputs(", \"rarest\": ", stdout);
       if (r->result.rarest_value < 0) fputs("null", stdout);
-      else printf("{ \"value\": %d, \"count\": %llu }",
+      else printf("{ \"value\": %d, \"count\": %" PRIu64 " }",
                   r->result.rarest_value,
                   (u64) r->result.rarest_count);
       fputs(", \"bit_frequencies\": ", stdout);

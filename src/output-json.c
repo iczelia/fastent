@@ -5,6 +5,7 @@
 #include "common.h"
 #include "output.h"
 
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 
@@ -39,7 +40,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
 
   printf("{\n");
   printf("  \"unit\": \"%s\",\n", samp);
-  printf("  \"samples\": %llu,\n", (u64) r->total_samples);
+  printf("  \"samples\": %" PRIu64 ",\n", (u64) r->total_samples);
   printf("  \"entropy\": "); jnum_(fmt_fp, r->entropy); printf(",\n");
   printf("  \"optimum_compression_percent\": %d,\n", comp_pct);
   printf("  \"chi_square\": {\n");
@@ -76,11 +77,11 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
     printf(",\n  \"distinct_symbols\": %u", r->distinct);
     printf(",\n  \"most_common\": ");
     if (r->mode_value < 0) fputs("null", stdout);
-    else printf("{ \"value\": %d, \"count\": %llu }",
+    else printf("{ \"value\": %d, \"count\": %" PRIu64 " }",
                 r->mode_value, (u64) r->mode_count);
     printf(",\n  \"rarest\": ");
     if (r->rarest_value < 0) fputs("null", stdout);
-    else printf("{ \"value\": %d, \"count\": %llu }",
+    else printf("{ \"value\": %d, \"count\": %" PRIu64 " }",
                 r->rarest_value, (u64) r->rarest_count);
     printf(",\n  \"bit_frequencies\": ");
     if (r->bit_bias_worst < 0) {
@@ -110,7 +111,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
        if (r->hist[i] == 0) continue;
        if (!first) printf(",\n");
        first = 0;
-       printf("    { \"value\": %d, \"count\": %llu, \"fraction\": ",
+       printf("    { \"value\": %d, \"count\": %" PRIu64 ", \"fraction\": ",
               i, (u64) r->hist[i]);
        jnum_(fmt_fp, (f64) r->hist[i] / (f64) r->total_samples);
        printf(" }"))

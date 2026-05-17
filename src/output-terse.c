@@ -5,6 +5,7 @@
 #include "common.h"
 #include "output.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 
 /*  Emit literal "nan" regardless of sign bit: glibc prints "-nan"
@@ -25,7 +26,7 @@ static void print_counts_(const fastent_result * r, int binary) {
   const i32 bins = binary ? 2 : 256;
   printf("2,Value,Occurrences,Fraction\n");
   Fi(bins,
-     printf("3,%d,%llu,%f\n", i,
+     printf("3,%d,%" PRIu64 ",%f\n", i,
             (u64) r->hist[i],
             (f64) r->hist[i] / (f64) r->total_samples))
 }
@@ -44,11 +45,11 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
 
   const char * f = o->full_precision ? "%.17g" : "%f";
   if (o->full_precision) {
-    printf("1,%llu,%.17g,%.17g,%.17g,%.17g,%.17g",
+    printf("1,%" PRIu64 ",%.17g,%.17g,%.17g,%.17g,%.17g",
            (u64) r->total_samples,
            r->entropy, r->chi_square, r->mean, r->monte_pi, r->scc);
   } else {
-    printf("1,%llu,%f,%f,%f,%f,%f",
+    printf("1,%" PRIu64 ",%f,%f,%f,%f,%f",
            (u64) r->total_samples,
            r->entropy, r->chi_square, r->mean, r->monte_pi, r->scc);
   }
@@ -61,7 +62,7 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
     putchar(','); tnum_(f, r->variance);
     putchar(','); tnum_(f, r->stddev);
     putchar(','); tnum_(f, r->redundancy);
-    printf(",%u,%d,%llu,%d,%llu",
+    printf(",%u,%d,%" PRIu64 ",%d,%" PRIu64,
            r->distinct, r->mode_value, (u64) r->mode_count,
            r->rarest_value, (u64) r->rarest_count);
     Fi(8, putchar(','); tnum_(f, r->bit_freq[i]))

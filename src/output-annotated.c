@@ -6,6 +6,7 @@
 #include "output.h"
 #include "port-term.h"
 
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -101,7 +102,7 @@ void fastent_print_annotated(const fastent_result * r,
   const char * nf = o->full_precision ? "%.17g" : "%.6g";
   char aux[96];
 
-  printf("fastent  %llu %s%s\n\n",
+  printf("fastent  %" PRIu64 " %s%s\n\n",
          (u64) r->total_samples, samp,
          r->total_samples == 1 ? "" : "s");
 
