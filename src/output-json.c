@@ -39,7 +39,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
 
   printf("{\n");
   printf("  \"unit\": \"%s\",\n", samp);
-  printf("  \"samples\": %llu,\n", (unsigned long long) r->total_samples);
+  printf("  \"samples\": %llu,\n", (u64) r->total_samples);
   printf("  \"entropy\": "); jnum_(fmt_fp, r->entropy); printf(",\n");
   printf("  \"optimum_compression_percent\": %d,\n", comp_pct);
   printf("  \"chi_square\": {\n");
@@ -77,11 +77,11 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
     printf(",\n  \"most_common\": ");
     if (r->mode_value < 0) fputs("null", stdout);
     else printf("{ \"value\": %d, \"count\": %llu }",
-                r->mode_value, (unsigned long long) r->mode_count);
+                r->mode_value, (u64) r->mode_count);
     printf(",\n  \"rarest\": ");
     if (r->rarest_value < 0) fputs("null", stdout);
     else printf("{ \"value\": %d, \"count\": %llu }",
-                r->rarest_value, (unsigned long long) r->rarest_count);
+                r->rarest_value, (u64) r->rarest_count);
     printf(",\n  \"bit_frequencies\": ");
     if (r->bit_bias_worst < 0) {
       fputs("null", stdout);
@@ -111,7 +111,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
        if (!first) printf(",\n");
        first = 0;
        printf("    { \"value\": %d, \"count\": %llu, \"fraction\": ",
-              i, (unsigned long long) r->hist[i]);
+              i, (u64) r->hist[i]);
        jnum_(fmt_fp, (f64) r->hist[i] / (f64) r->total_samples);
        printf(" }"))
     printf("\n  ]");

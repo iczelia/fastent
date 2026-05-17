@@ -45,7 +45,7 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
     const fastent_recursive_row * r = &rows[i];
     csv_escape_(r->path);
     printf(",%s,%llu,", o->binary ? "bit" : "byte",
-           (unsigned long long) r->result.total_samples);
+           (u64) r->result.total_samples);
     printf(f, r->result.entropy);     putchar(',');
     printf(f, r->result.chi_square);  putchar(',');
     printf(f, r->result.chi_probability); putchar(',');
@@ -64,9 +64,9 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
       putchar(','); printf(f, r->result.redundancy);
       printf(",%u,%d,%llu,%d,%llu",
              r->result.distinct, r->result.mode_value,
-             (unsigned long long) r->result.mode_count,
+             (u64) r->result.mode_count,
              r->result.rarest_value,
-             (unsigned long long) r->result.rarest_count);
+             (u64) r->result.rarest_count);
       Fi(8, putchar(','); printf(f, r->result.bit_freq[i]))
       putchar(','); printf(f, r->result.bit_bias_max);
       printf(",%d", r->result.bit_bias_worst);
@@ -132,7 +132,7 @@ void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
     fputs("    { \"path\": ", stdout);
     json_escape_(r->path);
     printf(", \"samples\": %llu",
-           (unsigned long long) r->result.total_samples);
+           (u64) r->result.total_samples);
     fputs(", \"entropy\": ", stdout);        json_num_(f, r->result.entropy);
     fputs(", \"chi_square\": ", stdout);     json_num_(f, r->result.chi_square);
     fputs(", \"p_exceed\": ", stdout);
@@ -166,12 +166,12 @@ void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
       if (r->result.mode_value < 0) fputs("null", stdout);
       else printf("{ \"value\": %d, \"count\": %llu }",
                   r->result.mode_value,
-                  (unsigned long long) r->result.mode_count);
+                  (u64) r->result.mode_count);
       fputs(", \"rarest\": ", stdout);
       if (r->result.rarest_value < 0) fputs("null", stdout);
       else printf("{ \"value\": %d, \"count\": %llu }",
                   r->result.rarest_value,
-                  (unsigned long long) r->result.rarest_count);
+                  (u64) r->result.rarest_count);
       fputs(", \"bit_frequencies\": ", stdout);
       if (r->result.bit_bias_worst < 0) {
         fputs("null", stdout);

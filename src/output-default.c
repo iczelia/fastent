@@ -19,10 +19,10 @@ static void print_counts_(const fastent_result * r, int binary) {
      if (r->hist[i] == 0) continue;
      char ch = fastent_is_displayable((u32) i) ? (char) i : ' ';
      printf("%3d   %c   %10llu   %f\n", i, ch,
-            (unsigned long long) r->hist[i],
+            (u64) r->hist[i],
             (f64) r->hist[i] / (f64) r->total_samples))
   printf("\nTotal:    %10llu   %f\n\n",
-         (unsigned long long) r->total_samples, 1.0);
+         (u64) r->total_samples, 1.0);
 }
 
 void fastent_print_default(const fastent_result * r,
@@ -45,14 +45,14 @@ void fastent_print_default(const fastent_result * r,
                      : comp_raw > 100.0    ? 100
                                            : (i32) comp_raw;
   printf("of this %llu %s file by %d percent.\n\n",
-         (unsigned long long) r->total_samples, samp, comp_pct);
+         (u64) r->total_samples, samp, comp_pct);
 
   if (fp) {
     printf("Chi square distribution for %llu samples is %.17g, and randomly\n",
-           (unsigned long long) r->total_samples, r->chi_square);
+           (u64) r->total_samples, r->chi_square);
   } else {
     printf("Chi square distribution for %llu samples is %1.2f, and randomly\n",
-           (unsigned long long) r->total_samples, r->chi_square);
+           (u64) r->total_samples, r->chi_square);
   }
   if      (r->chi_probability < 0.0001)
     printf("would exceed this value less than 0.01 percent of the times.\n\n");
@@ -139,8 +139,8 @@ void fastent_print_default(const fastent_result * r,
   if (r->mode_value >= 0)
     printf("Most common symbol is %d (%llu times); "
            "rarest is %d (%llu times).\n",
-           r->mode_value, (unsigned long long) r->mode_count,
-           r->rarest_value, (unsigned long long) r->rarest_count);
+           r->mode_value, (u64) r->mode_count,
+           r->rarest_value, (u64) r->rarest_count);
 
   if (o->binary) {
     printf("Per-bit-position bias is not applicable to bit streams.\n");

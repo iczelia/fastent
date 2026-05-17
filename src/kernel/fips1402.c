@@ -178,29 +178,29 @@ int fastent_fips140_print(const fastent_fips_report * r, FILE * fp) {
   if (r->blocks == 0) {
     fprintf(fp, "FIPS 140-2 RNG self-tests: insufficient data "
                 "(need >= %u bytes, %llu leftover)\n",
-            FIPS_BLOCK_BYTES, (unsigned long long) r->leftover);
+            FIPS_BLOCK_BYTES, (u64) r->leftover);
     return 0;
   }
   const int pass = (r->blocks_pass == r->blocks);
-  const unsigned long long n = (unsigned long long) r->blocks;
+  const u64 n = (u64) r->blocks;
   fprintf(fp, "FIPS 140-2 RNG self-tests (20000-bit blocks)\n");
   fprintf(fp, "  blocks tested  : %llu\n", n);
   fprintf(fp, "  leftover bytes : %llu\n",
-          (unsigned long long) r->leftover);
+          (u64) r->leftover);
   fprintf(fp, "  monobit        : %s  (%llu failed)\n",
           r->monobit_fail ? "FAIL" : "PASS",
-          (unsigned long long) r->monobit_fail);
+          (u64) r->monobit_fail);
   fprintf(fp, "  poker          : %s  (%llu failed)\n",
           r->poker_fail ? "FAIL" : "PASS",
-          (unsigned long long) r->poker_fail);
+          (u64) r->poker_fail);
   fprintf(fp, "  runs           : %s  (%llu failed)\n",
           r->runs_fail ? "FAIL" : "PASS",
-          (unsigned long long) r->runs_fail);
+          (u64) r->runs_fail);
   fprintf(fp, "  long run       : %s  (%llu failed)\n",
           r->longrun_fail ? "FAIL" : "PASS",
-          (unsigned long long) r->longrun_fail);
+          (u64) r->longrun_fail);
   fprintf(fp, "  overall        : %s  (%llu/%llu blocks passed)\n",
           pass ? "PASS" : "FAIL",
-          (unsigned long long) r->blocks_pass, n);
+          (u64) r->blocks_pass, n);
   return pass;
 }

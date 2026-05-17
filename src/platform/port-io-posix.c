@@ -79,11 +79,11 @@ typedef struct {
   u64      file_size;
 } uring_state;
 
-static long io_uring_setup_sys(unsigned entries, struct io_uring_params * p) {
+static long io_uring_setup_sys(u32 entries, struct io_uring_params * p) {
   return syscall(__NR_io_uring_setup, entries, p);
 }
-static long io_uring_enter_sys(int fd, unsigned to_submit,
-                               unsigned min_complete, unsigned flags) {
+static long io_uring_enter_sys(int fd, u32 to_submit,
+                               u32 min_complete, u32 flags) {
   return syscall(__NR_io_uring_enter, fd, to_submit, min_complete,
                  flags, NULL, (sz) 0);
 }

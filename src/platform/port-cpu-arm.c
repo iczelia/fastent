@@ -40,7 +40,7 @@ static int                  cache_done_ = 0;
     #define HWCAP2_SVE2 (1u << 1)
   #endif
   static int probe_sve2_(void) {
-    unsigned long hwcap2 = 0;
+    u64 hwcap2 = 0;
     if (elf_aux_info(AT_HWCAP2, &hwcap2, sizeof(hwcap2)) != 0) return 0;
     return (hwcap2 & HWCAP2_SVE2) != 0;
   }

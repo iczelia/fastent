@@ -102,7 +102,7 @@ void fastent_print_annotated(const fastent_result * r,
   char aux[96];
 
   printf("fastent  %llu %s%s\n\n",
-         (unsigned long long) r->total_samples, samp,
+         (u64) r->total_samples, samp,
          r->total_samples == 1 ? "" : "s");
 
   verdict_acc v = { B_PASS, 0, "" };

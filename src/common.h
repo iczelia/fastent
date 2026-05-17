@@ -108,15 +108,15 @@ typedef double   f64;
     (e.g. AArch64 CNT) trust the builtin.  */
 #if defined(__GNUC__) && !defined(__TINYC__) \
     && !((defined(__i386__) || defined(__x86_64__)) && !defined(__POPCNT__))
-  #define FASTENT_POPCOUNT32(x) ((unsigned) __builtin_popcount((unsigned)(x)))
+  #define FASTENT_POPCOUNT32(x) ((u32) __builtin_popcount((u32)(x)))
 #else
-  static inline unsigned fastent_popcount32_(unsigned x) {
+  static inline u32 fastent_popcount32_(u32 x) {
     x = x - ((x >> 1) & 0x55555555u);
     x = (x & 0x33333333u) + ((x >> 2) & 0x33333333u);
     x = (x + (x >> 4)) & 0x0f0f0f0fu;
     return (x * 0x01010101u) >> 24;
   }
-  #define FASTENT_POPCOUNT32(x) fastent_popcount32_((unsigned)(x))
+  #define FASTENT_POPCOUNT32(x) fastent_popcount32_((u32)(x))
 #endif
 
 /*  64-bit popcount: same builtin/SWAR rationale as the 32-bit form.  */

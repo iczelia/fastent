@@ -231,7 +231,7 @@ int fastent_win32_close(int fd) {
 }
 
 i64 fastent_win32_read(int fd, void * buf, sz n) {
-  /*  _read takes unsigned int; cap to avoid truncation.  */
+  /*  _read takes u32; cap to avoid truncation.  */
   u32 cap = (n > 0x7FFFFFFFu) ? 0x7FFFFFFFu : (u32) n;
   return (i64) _read(fd, buf, cap);
 }

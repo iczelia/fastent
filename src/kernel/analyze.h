@@ -119,13 +119,13 @@ typedef struct {
   f64 stddev;
   f64 redundancy;           /*  1 - H/Hmax  */
   u32 distinct;             /*  distinct symbols observed  */
-  int mode_value;           /*  most frequent symbol (-1 if none)  */
+  i32 mode_value;           /*  most frequent symbol (-1 if none)  */
   u64 mode_count;
-  int rarest_value;         /*  least frequent observed (-1 none)  */
+  i32 rarest_value;         /*  least frequent observed (-1 none)  */
   u64 rarest_count;
   f64 bit_freq[8];          /*  P(bit k=1), k=0 LSB..7 MSB; byte mode  */
   f64 bit_bias_max;         /*  max_k |bit_freq[k]-0.5|; NaN in bits  */
-  int bit_bias_worst;       /*  argmax k of that bias; -1 in bit mode  */
+  i32 bit_bias_worst;       /*  argmax k of that bias; -1 in bit mode  */
   f64 conditional_entropy;  /*  H(cur|prev); NaN if no bigram / bits  */
   f64 mutual_information;   /*  I(prev;cur); NaN likewise  */
   f64 runs;                 /*  bit: 0/1 runs; byte: below/>=median

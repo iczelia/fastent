@@ -14,13 +14,13 @@
     CPUID always exists).  */
 #include <intrin.h>
 static inline int has_cpuid(void) { return 1; }
-static inline void cpuid_(unsigned int leaf, unsigned int subleaf,
-                          unsigned int * a, unsigned int * b,
-                          unsigned int * c, unsigned int * d) {
+static inline void cpuid_(u32 leaf, u32 subleaf,
+                          u32 * a, u32 * b,
+                          u32 * c, u32 * d) {
   int r[4];
   __cpuidex(r, (int) leaf, (int) subleaf);
-  *a = (unsigned int) r[0];  *b = (unsigned int) r[1];
-  *c = (unsigned int) r[2];  *d = (unsigned int) r[3];
+  *a = (u32) r[0];  *b = (u32) r[1];
+  *c = (u32) r[2];  *d = (u32) r[3];
 }
 static inline u64 xgetbv0_(void) { return (u64) _xgetbv(0); }
 
@@ -32,7 +32,7 @@ static inline u64 xgetbv0_(void) { return (u64) _xgetbv(0); }
 static inline int has_cpuid(void) { return 1; }
 #else
 static int has_cpuid(void) {
-  unsigned int x, y;
+  u32 x, y;
   __asm__ volatile (
     "pushfl\n\t"
     "pushfl\n\t"
@@ -51,9 +51,9 @@ static int has_cpuid(void) {
 
 /*  i386 -fPIC reserves EBX as the PIC base, so xchg it via a scratch
     instead of clobbering it.  */
-static inline void cpuid_(unsigned int leaf, unsigned int subleaf,
-                          unsigned int * a, unsigned int * b,
-                          unsigned int * c, unsigned int * d) {
+static inline void cpuid_(u32 leaf, u32 subleaf,
+                          u32 * a, u32 * b,
+                          u32 * c, u32 * d) {
 #if defined(__i386__) && defined(__PIC__)
   __asm__ volatile (
     "xchgl %%ebx, %1\n\t"
@@ -80,13 +80,13 @@ static inline u64 xgetbv0_(void) {
 #endif  /*  _MSC_VER  */
 
 static fastent_cpu_features cache_;
-static int                  cache_done_ = 0;
+static i32                  cache_done_ = 0;
 
 static fastent_cpu_features probe_(void) {
   fastent_cpu_features f;
-  unsigned int a = 0, b = 0, c = 0, d = 0;
-  unsigned int max_leaf = 0;
-  int osxsave = 0, avx_os_ok = 0, avx512_os_ok = 0;
+  u32 a = 0, b = 0, c = 0, d = 0;
+  u32 max_leaf = 0;
+  i32 osxsave = 0, avx_os_ok = 0, avx512_os_ok = 0;
 
   f.ssse3 = f.sse41 = f.sse42 = 0;
   f.avx = f.avx2 = 0;

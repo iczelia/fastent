@@ -26,7 +26,7 @@ static void print_counts_(const fastent_result * r, int binary) {
   printf("2,Value,Occurrences,Fraction\n");
   Fi(bins,
      printf("3,%d,%llu,%f\n", i,
-            (unsigned long long) r->hist[i],
+            (u64) r->hist[i],
             (f64) r->hist[i] / (f64) r->total_samples))
 }
 
@@ -45,11 +45,11 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
   const char * f = o->full_precision ? "%.17g" : "%f";
   if (o->full_precision) {
     printf("1,%llu,%.17g,%.17g,%.17g,%.17g,%.17g",
-           (unsigned long long) r->total_samples,
+           (u64) r->total_samples,
            r->entropy, r->chi_square, r->mean, r->monte_pi, r->scc);
   } else {
     printf("1,%llu,%f,%f,%f,%f,%f",
-           (unsigned long long) r->total_samples,
+           (u64) r->total_samples,
            r->entropy, r->chi_square, r->mean, r->monte_pi, r->scc);
   }
   if (o->extended) {
@@ -62,8 +62,8 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
     putchar(','); tnum_(f, r->stddev);
     putchar(','); tnum_(f, r->redundancy);
     printf(",%u,%d,%llu,%d,%llu",
-           r->distinct, r->mode_value, (unsigned long long) r->mode_count,
-           r->rarest_value, (unsigned long long) r->rarest_count);
+           r->distinct, r->mode_value, (u64) r->mode_count,
+           r->rarest_value, (u64) r->rarest_count);
     Fi(8, putchar(','); tnum_(f, r->bit_freq[i]))
     putchar(','); tnum_(f, r->bit_bias_max);
     printf(",%d", r->bit_bias_worst);

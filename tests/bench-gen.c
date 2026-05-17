@@ -182,7 +182,7 @@ int main(int argc, char ** argv) {
     return 2;
   }
   const char * kind = argv[1];
-  unsigned long long mib = strtoull(argv[2], NULL, 10);
+  u64 mib = strtoull(argv[2], NULL, 10);
   const char * out = argv[3];
 
   gen_fn fn = NULL;

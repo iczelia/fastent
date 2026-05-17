@@ -1513,13 +1513,15 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
 
     /*  MC Pi: scalar drain + SIMD bulk + scalar tail + stash; fold
         mode uses the laundered L1 stage (see launder note above).  */
-    /*  +16: the Monte Carlo SIMD loop loads a full 16-byte vector
+    /*  Aligned to the vector width: the compiler may lower the
+        V_STORE below to an aligned move, which #GPs on a sub-VLEN
+        address (the byte-mode AVX-512 stage aligns the same way).
+        +16: the Monte Carlo SIMD loop loads a full 16-byte vector
         per 6-byte hexad, so the last loadu reads a few bytes past
-        the VLEN of staged data.  Only VLEN bytes are written and
-        only n_hexads*6 are ever consumed; the pad just keeps the
-        over-read in-bounds (mirrors the over-sized byte-mode
-        stage[] buffers).  */
-    FASTENT_ALIGN(32) u8 bits_stage[FASTENT_SIMD_VLEN + 16];
+        the VLEN of staged data; only VLEN bytes are written and
+        only n_hexads*6 consumed, so the pad just keeps that
+        over-read in-bounds.  */
+    FASTENT_ALIGN(FASTENT_SIMD_VLEN) u8 bits_stage[FASTENT_SIMD_VLEN + 16];
     FASTENT_STAGE_PTR p;
     if (fold) {
       V_STORE(bits_stage, va);
