@@ -119,6 +119,38 @@ typedef double   f64;
   #define FASTENT_POPCOUNT32(x) fastent_popcount32_((unsigned)(x))
 #endif
 
+/*  64-bit popcount: same builtin/SWAR rationale as the 32-bit form.  */
+#if defined(__GNUC__) && !defined(__TINYC__) \
+    && !((defined(__i386__) || defined(__x86_64__)) && !defined(__POPCNT__))
+  #define FASTENT_POPCOUNT64(x) ((unsigned) __builtin_popcountll((u64)(x)))
+#else
+  static inline unsigned fastent_popcount64_(u64 x) {
+    x = x - ((x >> 1) & 0x5555555555555555ull);
+    x = (x & 0x3333333333333333ull) + ((x >> 2) & 0x3333333333333333ull);
+    x = (x + (x >> 4)) & 0x0f0f0f0f0f0f0f0full;
+    return (unsigned) ((x * 0x0101010101010101ull) >> 56);
+  }
+  #define FASTENT_POPCOUNT64(x) fastent_popcount64_((u64)(x))
+#endif
+
+/*  64-bit count-trailing-zeros, non-zero input only.  */
+#if defined(__GNUC__) && !defined(__TINYC__)
+  #define FASTENT_CTZ64(x) ((unsigned) __builtin_ctzll((u64)(x)))
+#else
+  static inline unsigned fastent_ctz64_(u64 x) {
+    return FASTENT_POPCOUNT64((x & (0ull - x)) - 1ull);
+  }
+  #define FASTENT_CTZ64(x) fastent_ctz64_((u64)(x))
+#endif
+
+/*  Reverse the 8 bits of a byte (no standard builtin).  */
+static inline unsigned fastent_bitrev8_(unsigned x) {
+  u64 v = (u64)(x & 0xFFu);
+  v = ((v * 0x0802ull & 0x22110ull) | (v * 0x8020ull & 0x88440ull))
+      * 0x10101ull >> 16;
+  return (unsigned)(v & 0xFFu);
+}
+
 /*  Tight int-counter for-loop macros, C89-compliant.  */
 #define Fi(n, body)        { int i; for (i = 0; i < (n); i++) { body; } }
 #define Fj(n, body)        { int j; for (j = 0; j < (n); j++) { body; } }

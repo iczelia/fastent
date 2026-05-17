@@ -25,21 +25,6 @@
 /*  Valid bits in the final word: 20000 - 64*(FIPS_NW-1) = 32.  */
 #define FIPS_LAST_MASK   0x00000000FFFFFFFFull
 
-static u64 pc64_(u64 x) {
-  x = x - ((x >> 1) & 0x5555555555555555ull);
-  x = (x & 0x3333333333333333ull) + ((x >> 2) & 0x3333333333333333ull);
-  x = (x + (x >> 4)) & 0x0f0f0f0f0f0f0f0full;
-  return (x * 0x0101010101010101ull) >> 56;
-}
-
-/*  Reverse the 8 bits of a byte (so MSB-first stream order maps to
-    ascending bit index within a word).  */
-static u32 rev8_(unsigned x) {
-  u64 v = (u64) x;
-  v = ((v * 0x0802ull & 0x22110ull) | (v * 0x8020ull & 0x88440ull))
-      * 0x10101ull >> 16;
-  return (u32)(v & 0xFFu);
-}
 
 /*  One run polarity.  ge[k] = number of maximal runs of length >= k;
     *lr34 = 1 iff some run reaches FIPS_LONGRUN.  A_k[p] holds "bits
@@ -69,7 +54,7 @@ static void fips_runs_side_(const u64 * V, u32 ge[7], int * lr34) {
     if (k <= 6) {
       u64 g = 0;
       for (w = 0; w < (int) FIPS_NW; w++) {
-        orA |= A[w];  g += pc64_(S[w] & A[w]);
+        orA |= A[w];  g += FASTENT_POPCOUNT64(S[w] & A[w]);
       }
       ge[k] = (u32) g;
     } else {
@@ -90,13 +75,13 @@ static void fips_block_(const u8 * b, fastent_fips_report * r) {
       0-run cannot run off the block end.  */
   memset(W, 0, sizeof W);
   Fi((int) FIPS_BLOCK_BYTES,
-     W[i >> 3] |= (u64) rev8_(b[i]) << ((unsigned)(i & 7) * 8u))
+     W[i >> 3] |= (u64) fastent_bitrev8_(b[i]) << ((unsigned)(i & 7) * 8u))
   for (w = 0; w < (int) FIPS_NW; w++) C[w] = ~W[w];
   C[FIPS_NW - 1] &= FIPS_LAST_MASK;
 
   /*  Monobit: total set bits (popcount is bit-position invariant).  */
   u64 ones = 0;
-  for (w = 0; w < (int) FIPS_NW; w++) ones += pc64_(W[w]);
+  for (w = 0; w < (int) FIPS_NW; w++) ones += FASTENT_POPCOUNT64(W[w]);
   const int mono_ok = (ones > 9725ull && ones < 10275ull);
 
   /*  Poker: 5000 4-bit groups, high then low nibble.  */

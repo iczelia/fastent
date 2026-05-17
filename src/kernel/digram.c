@@ -85,29 +85,139 @@ static void digram_bytes_(fastent_chunk_state * st,
   st->dg_prev = (u8) prev;
 }
 
-/*  Bit mode: every adjacent bit pair (MSB->LSB, across byte and chunk
-    boundaries via the carried previous bit) feeds the 2x2 bigram,
-    longest run, 0/1 run count and the +-1 cusum walk.  dg_prev holds
-    the previous bit (0/1) here.  */
+/*  Feed one whole run (symbol q, length n) into the longest-run
+    machine; bit-for-bit equivalent to n lr_one_(q) calls, so the
+    head / open-run / lr_max bookkeeping the mmap and SPMC merges
+    rely on is preserved exactly.  */
+static void lr_run_(fastent_chunk_state * st, unsigned q, u64 n) {
+  if (!st->lr_have) {
+    st->lr_have = 1;  st->lr_sym = (u8) q;  st->lr_cur = n;
+    st->lr_head_sym = (u8) q;  st->lr_head_len = n;  st->lr_head_open = 1;
+  } else if (q == st->lr_sym) {
+    st->lr_cur += n;
+    if (st->lr_head_open) st->lr_head_len += n;
+  } else {
+    if (st->lr_cur > st->lr_max) st->lr_max = st->lr_cur;
+    st->lr_sym = (u8) q;  st->lr_cur = n;  st->lr_head_open = 0;
+  }
+}
+
+#define FASTENT_DG_BITS_CHUNK 65536u                   /*  bytes  */
+#define FASTENT_DG_BITS_WORDS (FASTENT_DG_BITS_CHUNK / 8u)
+
+/*  One <= 64 KiB sub-block; state carries across calls, so a sub-
+    block is just a contiguous continuation (boundary bit pair,
+    run continuation, cusum offset and rn_last all thread through
+    st exactly as the per-bit scan did).  cs LUT entries hold the
+    min / max prefix offset and net of a byte's MSB-first +-1 walk.  */
+static void digram_bits_blk_(fastent_chunk_state * st,
+                             const u8 * FASTENT_RESTRICT buf, sz cl,
+                             const i32 * cs_mn, const i32 * cs_mx,
+                             const i32 * cs_net) {
+  u64 W[FASTENT_DG_BITS_WORDS];
+  const sz M  = cl * 8;
+  const sz NW = (M + 63) / 64;
+  sz w, i;
+
+  memset(W, 0, NW * sizeof(u64));
+  for (i = 0; i < cl; i++)
+    W[i >> 3] |= (u64) fastent_bitrev8_(buf[i]) << ((unsigned)(i & 7) * 8u);
+
+  const unsigned b0   = (unsigned)(W[0] & 1u);
+  const sz       lbpos = M - 1;
+  const unsigned lbit = (unsigned)((W[lbpos >> 6] >> (lbpos & 63)) & 1u);
+
+  /*  bit_bigram: n11 / transitions / n10 over the M-1 internal
+      pairs.  succ(W)[p] = W[p+1]; out-of-block bits are zero, so
+      only the spurious p == M-1 term (= lbit) needs correcting.  */
+  u64 n11 = 0, ntr = 0, n10 = 0;
+  for (w = 0; w < NW; w++) {
+    const u64 a  = W[w];
+    const u64 nx = (w + 1 < NW) ? W[w + 1] : 0ull;
+    const u64 sa = (a >> 1) | (nx << 63);
+    n11 += FASTENT_POPCOUNT64(a & sa);
+    ntr += FASTENT_POPCOUNT64(a ^ sa);
+    n10 += FASTENT_POPCOUNT64(a & ~sa);
+  }
+  ntr -= lbit;  n10 -= lbit;
+  const u64 n01 = ntr - n10;
+  const u64 n00 = (u64)(M - 1) - ntr - n11;
+
+  if (st->dg_have) st->bit_bigram[st->dg_prev & 1u][b0]++;
+  st->bit_bigram[0][0] += n00;  st->bit_bigram[0][1] += n01;
+  st->bit_bigram[1][0] += n10;  st->bit_bigram[1][1] += n11;
+  st->dg_prev = (u8) lbit;  st->dg_have = 1;
+
+  /*  0/1 run count = prior runs + boundary flip + internal flips.  */
+  if (!st->rn_have) { st->rn_have = 1;  st->rn_count = 1 + ntr; }
+  else {
+    if (b0 != st->rn_last) st->rn_count++;
+    st->rn_count += ntr;
+  }
+  st->rn_last = (u8) lbit;
+
+  /*  cusum: per-byte LUT, running offset, fold into the carried
+      walk.  */
+  {
+    i64 o = 0, gmn = ((i64) 1 << 60), gmx = -((i64) 1 << 60);
+    for (i = 0; i < cl; i++) {
+      const unsigned v = buf[i];
+      if (o + cs_mn[v] < gmn) gmn = o + cs_mn[v];
+      if (o + cs_mx[v] > gmx) gmx = o + cs_mx[v];
+      o += cs_net[v];
+    }
+    const i64 cs0 = st->cs_sum;
+    if (cs0 + gmn < st->cs_min) st->cs_min = cs0 + gmn;
+    if (cs0 + gmx > st->cs_max) st->cs_max = cs0 + gmx;
+    st->cs_sum = cs0 + o;
+  }
+
+  /*  Longest run: enumerate runs via the transition bitmap and feed
+      each to lr_run_ (exactly the scalar run sequence).  */
+  {
+    const sz      wl = lbpos >> 6;
+    const unsigned bl = (unsigned)(lbpos & 63);
+    const u64     lmask = bl ? ((1ull << bl) - 1ull) : 0ull;
+    i64 lastp = -1;
+    unsigned sym = b0;
+    for (w = 0; w < NW; w++) {
+      const u64 a  = W[w];
+      const u64 nx = (w + 1 < NW) ? W[w + 1] : 0ull;
+      u64 tw = a ^ ((a >> 1) | (nx << 63));
+      if (w == wl) tw &= lmask;
+      while (tw) {
+        const i64 p = (i64) w * 64 + (int) FASTENT_CTZ64(tw);
+        lr_run_(st, sym, (u64)(p - lastp));
+        lastp = p;  sym ^= 1u;
+        tw &= tw - 1;
+      }
+    }
+    lr_run_(st, sym, (u64)((i64) lbpos - lastp));
+  }
+}
+
+/*  Bit mode: every adjacent bit pair (MSB->LSB, across byte and
+    chunk boundaries via the carried previous bit) feeds the 2x2
+    bigram, longest run, 0/1 run count and the +-1 cusum walk.
+    Word-parallel; dg_prev holds the previous bit (0/1).  */
 static void digram_bits_(fastent_chunk_state * st,
                          const u8 * FASTENT_RESTRICT buf, sz len) {
-  u64 (* bb)[2] = st->bit_bigram;
-  sz i;
-  for (i = 0; i < len; i++) {
-    const unsigned byte = buf[i];
-    int k;
+  i32 cs_mn[256], cs_mx[256], cs_net[256];
+  int v, k;
+  for (v = 0; v < 256; v++) {
+    int s = 0, mn = 0, mx = 0;
     for (k = 7; k >= 0; k--) {
-      const unsigned bit = (byte >> k) & 1u;
-      if (st->dg_have) bb[st->dg_prev & 1u][bit]++;
-      lr_one_(st, bit);
-      if (!st->rn_have) { st->rn_have = 1;  st->rn_count = 1; }
-      else if (bit != st->rn_last) st->rn_count++;
-      st->rn_last  = (u8) bit;
-      st->cs_sum  += bit ? 1 : -1;
-      if (st->cs_sum < st->cs_min) st->cs_min = st->cs_sum;
-      if (st->cs_sum > st->cs_max) st->cs_max = st->cs_sum;
-      st->dg_prev  = (u8) bit;
-      st->dg_have  = 1;
+      s += ((v >> k) & 1) ? 1 : -1;
+      if (s < mn) mn = s;
+      if (s > mx) mx = s;
+    }
+    cs_mn[v] = mn;  cs_mx[v] = mx;  cs_net[v] = s;
+  }
+  { sz off;
+    for (off = 0; off < len; off += FASTENT_DG_BITS_CHUNK) {
+      sz cl = len - off;
+      if (cl > FASTENT_DG_BITS_CHUNK) cl = FASTENT_DG_BITS_CHUNK;
+      digram_bits_blk_(st, buf + off, cl, cs_mn, cs_mx, cs_net);
     }
   }
 }
