@@ -203,7 +203,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   /*  Prefetch ~8 strides ahead into L2 for streaming workloads.  */
   #define FASTENT_PREFETCH_DIST 512
   for (sz i = 0; i < body_end; i += 64) {
-    __builtin_prefetch(buf + i + FASTENT_PREFETCH_DIST, 0, 1);
+    FASTENT_PREFETCH_R(buf + i + FASTENT_PREFETCH_DIST);
     /*  SCC: two 32-byte chunks, widen-mul-madd (no saturation);
         folded in-register first when fold is set.  */
     __m256i va0 = _mm256_loadu_si256((const __m256i *) (buf + i +  0));
@@ -259,7 +259,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
     /*  Histogram: 64 movzbl increments across 4 banks, from buf or
         (fold mode) the laundered L1 stage. See launder note above.  */
-    u8 stage[64] __attribute__((aligned(32)));
+    FASTENT_ALIGN(32) u8 stage[64];
     FASTENT_STAGE_PTR p;
     if (fold) {
       _mm256_store_si256((__m256i *) (stage +  0), va0);
@@ -455,8 +455,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
   #define FASTENT_PREFETCH_DIST 512
   for (sz i = 0; i < body_end; i += 128) {
-    __builtin_prefetch(buf + i + FASTENT_PREFETCH_DIST + 0,  0, 1);
-    __builtin_prefetch(buf + i + FASTENT_PREFETCH_DIST + 64, 0, 1);
+    FASTENT_PREFETCH_R(buf + i + FASTENT_PREFETCH_DIST + 0);
+    FASTENT_PREFETCH_R(buf + i + FASTENT_PREFETCH_DIST + 64);
 
     __m512i va0 = _mm512_loadu_si512((const void *) (buf + i +  0));
     __m512i vb0 = _mm512_loadu_si512((const void *) (buf + i +  1));
@@ -523,7 +523,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 
     /*  Histogram + MC stage: laundered L1 stage in fold mode, else
         direct buf reads (see launder note above).  */
-    u8 stage[128] __attribute__((aligned(64)));
+    FASTENT_ALIGN(64) u8 stage[128];
     FASTENT_STAGE_PTR p;
     if (fold) {
       _mm512_store_si512((void *) (stage +  0), va0);
@@ -765,7 +765,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     lhs_sad = _mm_add_epi64(lhs_sad, _mm_add_epi64(sad0, sad1));
 
     /*  Histogram from buf or laundered L1 stage (see note above).  */
-    u8 stage[32] __attribute__((aligned(16)));
+    FASTENT_ALIGN(16) u8 stage[32];
     FASTENT_STAGE_PTR p;
     if (fold) {
       _mm_store_si128((__m128i *) (stage +  0), va0);
@@ -914,7 +914,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   u64 mc_inside  = st->mc_inside;
 
   for (sz i = 0; i < body_end; i += 32) {
-    __builtin_prefetch(buf + i + 512, 0, 1);
+    FASTENT_PREFETCH_R(buf + i + 512);
 
     uint8x16_t va0 = vld1q_u8(buf + i +  0);
     uint8x16_t vb0 = vld1q_u8(buf + i +  1);
@@ -968,7 +968,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     lhs_sad = vaddq_u64(lhs_sad, sa_64);
 
     /*  Histogram + MC stage buffer (fold mode) or direct buf reads.  */
-    u8 stage[32] __attribute__((aligned(16)));
+    FASTENT_ALIGN(16) u8 stage[32];
     FASTENT_STAGE_PTR p;
     if (fold) {
       vst1q_u8(stage +  0, va0);
@@ -1111,7 +1111,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   const v128_t ones32 = wasm_i32x4_splat(1);
 
   for (sz i = 0; i < body_end; i += 32) {
-    __builtin_prefetch(buf + i + 512, 0, 1);
+    FASTENT_PREFETCH_R(buf + i + 512);
 
     v128_t va0 = wasm_v128_load(buf + i +  0);
     v128_t vb0 = wasm_v128_load(buf + i +  1);
@@ -1162,7 +1162,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
                 wasm_i64x2_add(sa_64_lo, sa_64_hi));
 
     /*  Histogram + MC stage buffer (fold mode) or direct buf reads.  */
-    u8 stage[32] __attribute__((aligned(16)));
+    FASTENT_ALIGN(16) u8 stage[32];
     FASTENT_STAGE_PTR p;
     if (fold) {
       wasm_v128_store(stage +  0, va0);
@@ -1449,7 +1449,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
   u64 mc_inside  = st->mc_inside;
 
   for (sz i = 0; i < body_end; i += FASTENT_SIMD_VLEN) {
-    __builtin_prefetch(buf + i + 512, 0, 1);
+    FASTENT_PREFETCH_R(buf + i + 512);
 
     FASTENT_SIMD_VEC va = V_LOAD(buf + i);
     FASTENT_SIMD_VEC vb = V_LOAD(buf + i + 1);
@@ -1513,7 +1513,7 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
 
     /*  MC Pi: scalar drain + SIMD bulk + scalar tail + stash; fold
         mode uses the laundered L1 stage (see launder note above).  */
-    u8 bits_stage[FASTENT_SIMD_VLEN] __attribute__((aligned(32)));
+    FASTENT_ALIGN(32) u8 bits_stage[FASTENT_SIMD_VLEN];
     FASTENT_STAGE_PTR p;
     if (fold) {
       V_STORE(bits_stage, va);

@@ -59,6 +59,8 @@ typedef double   f64;
   #define FASTENT_NOINLINE __attribute__((noinline))
   #define FASTENT_HOT __attribute__((hot))
   #define FASTENT_ALWAYS_INLINE __attribute__((always_inline)) inline
+  #define FASTENT_PREFETCH_R(p) __builtin_prefetch((p), 0, 1)
+  #define FASTENT_ALIGN(n) __attribute__((aligned(n)))
 #elif defined(_MSC_VER)
   #define LIKELY(x)   (x)
   #define UNLIKELY(x) (x)
@@ -66,6 +68,10 @@ typedef double   f64;
   #define FASTENT_NOINLINE __declspec(noinline)
   #define FASTENT_HOT
   #define FASTENT_ALWAYS_INLINE __forceinline
+  /*  _mm_prefetch / _MM_HINT_* come from <immintrin.h>, already
+      included by the SIMD TUs where FASTENT_PREFETCH_R is used.  */
+  #define FASTENT_PREFETCH_R(p) _mm_prefetch((const char *)(p), _MM_HINT_T1)
+  #define FASTENT_ALIGN(n) __declspec(align(n))
 #else
   #define LIKELY(x)   (x)
   #define UNLIKELY(x) (x)
@@ -73,6 +79,8 @@ typedef double   f64;
   #define FASTENT_NOINLINE
   #define FASTENT_HOT
   #define FASTENT_ALWAYS_INLINE inline
+  #define FASTENT_PREFETCH_R(p) ((void) 0)
+  #define FASTENT_ALIGN(n)
 #endif
 
 #ifdef restrict

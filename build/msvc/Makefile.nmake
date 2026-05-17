@@ -1,4 +1,4 @@
-# fastent: MSVC (cl.exe) build, scalar core + Win32 threads, no SIMD.
+# fastent: MSVC (cl.exe) build, scalar + full x86 SIMD + Win32 threads.
 #
 # Autotools does not drive cl, and the -mssse3/-mavx2 SIMD probes in
 # configure.ac reject under MSVC, so this is the dedicated cl path
@@ -7,19 +7,27 @@
 #
 #     nmake /f build\msvc\Makefile.nmake
 #
+# MSVC exposes every x86 intrinsic via <immintrin.h> regardless of
+# /arch:, so the per-tier TUs just need /arch:AVX2 or /arch:AVX512 to
+# license the wider codegen; SSSE3/SSE4.1 ride the SSE2 baseline.
 # POSIX port TUs are listed too: they are #ifndef _WIN32 and emit
 # nothing under MSVC, exactly as in the autotools build.
 
 CC      = cl
 CFLAGS  = /nologo /std:c17 /O2 /W3 /MD /D_CRT_SECURE_NO_WARNINGS \
           /D_WIN32_WINNT=0x0600 /DWINVER=0x0600 /DFASTENT_HAVE_THREADS \
+          /DHAVE_SSSE3 /DHAVE_SSE41 /DHAVE_AVX2 /DHAVE_AVX512 \
+          /DHAVE_AVX512_BITALG \
           /I src /I src\kernel /I src\platform
 LDFLAGS = /link /SUBSYSTEM:CONSOLE
 
-SRCS = \
+# Scalar core + SSSE3/SSE4.1 (intrinsics available at SSE2 baseline).
+CORE = \
   src\fastent.c src\cli.c src\runner.c \
-  src\kernel\analyze.c src\kernel\analyze-scalar.c src\kernel\digram.c \
-  src\kernel\chisq.c src\kernel\fips1402.c src\kernel\fastent-math.c \
+  src\kernel\analyze.c src\kernel\analyze-scalar.c \
+  src\kernel\analyze-ssse3.c src\kernel\analyze-sse41.c \
+  src\kernel\digram.c src\kernel\chisq.c src\kernel\fips1402.c \
+  src\kernel\fastent-math.c \
   src\output-default.c src\output-terse.c src\output-json.c \
   src\output-histogram.c src\output-recursive.c src\output-annotated.c \
   src\platform\port-cpu-x86.c src\platform\port-cpu-arm.c \
@@ -35,8 +43,15 @@ SRCS = \
 
 all: fastent.exe
 
-fastent.exe: $(SRCS)
-	$(CC) $(CFLAGS) /Fe:fastent.exe $(SRCS) $(LDFLAGS)
+# AVX2 / AVX-512 tiers compiled separately so /arch: only widens the
+# codegen licence for those TUs, then folded into the final link.
+fastent.exe: $(CORE)
+	$(CC) $(CFLAGS) /arch:AVX2 /c src\kernel\analyze-avx2.c
+	$(CC) $(CFLAGS) /arch:AVX512 /c src\kernel\analyze-avx512.c \
+	      src\kernel\analyze-avx512-bitalg.c
+	$(CC) $(CFLAGS) /Fe:fastent.exe $(CORE) \
+	      analyze-avx2.obj analyze-avx512.obj analyze-avx512-bitalg.obj \
+	      $(LDFLAGS)
 
 clean:
 	-del /q *.obj fastent.exe 2>nul

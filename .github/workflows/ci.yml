@@ -597,9 +597,10 @@ jobs:
           cd build
           make check
 
-  # MSVC (cl.exe): native Windows runner, scalar core + Win32 threads,
-  # no SIMD (configure.ac's -m SIMD probes reject under cl, so this
-  # uses the dedicated build/msvc/Makefile.nmake instead of autotools).
+  # MSVC (cl.exe): native Windows runner, scalar + full x86 SIMD
+  # (SSSE3/SSE4.1/AVX2/AVX-512/BITALG) + Win32 threads. configure.ac's
+  # -m SIMD probes reject under cl, so this uses the dedicated
+  # build/msvc/Makefile.nmake instead of autotools.
   build-msvc:
     name: msvc / windows-x86_64
     needs: dist

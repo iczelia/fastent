@@ -5,7 +5,26 @@
 #include "common.h"
 #include "port-cpu.h"
 
-#if defined(__i386__) || defined(__x86_64__)
+#if defined(__i386__) || defined(__x86_64__) \
+ || defined(_M_IX86) || defined(_M_X64)
+
+#if defined(_MSC_VER)
+
+/*  MSVC: CPUID / XGETBV via intrinsics (cl targets Pentium+, so
+    CPUID always exists).  */
+#include <intrin.h>
+static inline int has_cpuid(void) { return 1; }
+static inline void cpuid_(unsigned int leaf, unsigned int subleaf,
+                          unsigned int * a, unsigned int * b,
+                          unsigned int * c, unsigned int * d) {
+  int r[4];
+  __cpuidex(r, (int) leaf, (int) subleaf);
+  *a = (unsigned int) r[0];  *b = (unsigned int) r[1];
+  *c = (unsigned int) r[2];  *d = (unsigned int) r[3];
+}
+static inline u64 xgetbv0_(void) { return (u64) _xgetbv(0); }
+
+#else
 
 /*  EFLAGS bit 21 toggles only on Pentium-class+; stuck on 386/486
     means no CPUID and we bail to scalar.  */
@@ -57,6 +76,8 @@ static inline u64 xgetbv0_(void) {
     : "=a"(lo), "=d"(hi) : "c"(0));
   return ((u64) hi << 32) | (u64) lo;
 }
+
+#endif  /*  _MSC_VER  */
 
 static fastent_cpu_features cache_;
 static int                  cache_done_ = 0;
