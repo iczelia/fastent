@@ -46,6 +46,18 @@ void fastent_dg_drain(fastent_chunk_state * st) {
   st->dg_chunk_bytes = 0;
 }
 
+/*  Widen-add the u32 order-0 banks into the u64 master and zero them.
+    Fixed bank/value order: an associativity-only re-grouping of the
+    same integer adds, so the master is bit-identical for any flush
+    cadence or thread count.  ~one L1 sweep per FASTENT_HIST_CHUNK.  */
+void fastent_hist_flush_(fastent_chunk_state * st) {
+  Fi(FASTENT_BANKS,
+     u32 * FASTENT_RESTRICT s = st->bank[i];
+     u64 * FASTENT_RESTRICT d = st->hist_master;
+     Fj(256, d[j] += s[j];  s[j] = 0))
+  st->hist_chunk_bytes = 0;
+}
+
 /*  Longest identical-symbol run, one symbol.  Shared by the bit-mode
     scan and the scalar byte digram reference.  */
 void fastent_lr_one(fastent_chunk_state * st, u32 s) {
@@ -79,6 +91,23 @@ void fastent_lr_run(fastent_chunk_state * st, u32 q, u64 n) {
   }
 }
 
+/*  var = sum_x2/n minus mean^2.  aarch64 baseline FMA lets the
+    compiler fuse mean*mean into the subtract (one rounding),
+    diverging 1 ULP from x86 SSE2.  The volatile product forces a
+    round first, pinning the x86 (mulsd; subsd) result everywhere.  */
+static f64 variance_(f64 sum_x2_over_n, f64 mean) {
+  volatile f64 sq = mean * mean;
+  return sum_x2_over_n - sq;
+}
+
+/*  a*b minus c with the product rounded before the subtract: same
+    aarch64-FMA-fusion 1-ULP split as variance_, here on the SCC
+    numerator and denominator.  Pins the x86 two-rounding result.  */
+static f64 mul_sub_(f64 a, f64 b, f64 c) {
+  volatile f64 p = a * b;
+  return p - c;
+}
+
 /*  Collapse the FASTENT_BG_NB round-robin planes for one 16-bit
     digram key into its total count.  */
 static u64 bg_cell_(const u64 * bg, i32 key) {
@@ -96,15 +125,17 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
       shadow is absent (bit mode, no -ee, or the post-merge out).  */
   fastent_dg_drain(st);
 
+  /*  Drain the pending u32 order-0 banks into the u64 master before
+      the reduction reads it; no-op in bit mode (banks stay zero).  */
+  fastent_hist_flush_(st);
+
   if (st->have_first && st->have_carry)
     st->cross_product += (i64) st->last_byte * (i64) st->first_byte;
 
   if (binary) {
     out->hist[0] = st->bit_hist[0];  out->hist[1] = st->bit_hist[1];
   } else {
-    Fi(256,
-       out->hist[i] = (u64) st->bank[0][i] + st->bank[1][i]
-                    + st->bank[2][i] + st->bank[3][i])
+    Fi(256, out->hist[i] = st->hist_master[i])
   }
   out->total_samples = st->total_bytes;
 
@@ -123,9 +154,9 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
 
   const f64 scct1 = (f64) st->cross_product;
   const f64 scct2_sq = sum_x * sum_x;
-  const f64 denom = totalc * sum_x2 - scct2_sq;
+  const f64 denom = mul_sub_(totalc, sum_x2, scct2_sq);
   out->scc = (denom == 0.0) ? FASTENT_SCC_UNDEF
-                            : (totalc * scct1 - scct2_sq) / denom;
+                            : mul_sub_(totalc, scct1, scct2_sq) / denom;
 
   /*  Use +NaN (formats as "nan" everywhere); 0.0/0.0 can print
       "-nan" on glibc x86 but "nan" on musl aarch64.  */
@@ -169,7 +200,7 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
     out->collision_entropy =
         fastent_log2_ge1(totalc * totalc / sum_c2);
     out->redundancy        = 1.0 - entropy / hmax;
-    const f64 var = sum_x2 / totalc - out->mean * out->mean;
+    const f64 var = variance_(sum_x2 / totalc, out->mean);
     out->variance = var > 0.0 ? var : 0.0;
     out->stddev   = sqrt(out->variance);
   } else {

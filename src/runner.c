@@ -15,6 +15,25 @@
 
 #define FASTENT_FUSE_BLOCK (64u * 1024u)
 
+/*  Run `body` over [data,len) split at FASTENT_HIST_CHUNK boundaries,
+    draining the u32 order-0 banks before a chunk overflows.  Split
+    calls thread all state like one call and the drain is an order-
+    independent u64 sum: bit-identical for any cadence/driver/-j.  */
+static void body_drained_(fastent_chunk_state * st, fastent_analyze_fn body,
+                          const u8 * data, sz len) {
+  sz off = 0;
+  while (off < len) {
+    if (st->hist_chunk_bytes >= FASTENT_HIST_CHUNK)
+      fastent_hist_flush_(st);
+    sz room = (sz) (FASTENT_HIST_CHUNK - st->hist_chunk_bytes);
+    sz n = len - off;
+    if (n > room) n = room;
+    body(st, data + off, n);
+    st->hist_chunk_bytes += n;
+    off += n;
+  }
+}
+
 /*  Cached vectorised fold variant for the fold-once -ee byte path.
     Pick is process-stable, so the lazy-init race stores the same
     pointer (same discipline as digram.c's dg_fold_fn_).  */
@@ -34,7 +53,7 @@ static void analyze_fused_(fastent_chunk_state * st,
                            fastent_analyze_fn body_plain,
                            const u8 * data, sz len,
                            int extended, int binary, int fold) {
-  if (extended < 2) { body(st, data, len);  return; }
+  if (extended < 2) { body_drained_(st, body, data, len);  return; }
 
   if (fold && !binary && body_plain) {
     FASTENT_ALIGN(64) u8 fb[FASTENT_FUSE_BLOCK];
@@ -45,7 +64,10 @@ static void analyze_fused_(fastent_chunk_state * st,
       if (n > FASTENT_FUSE_BLOCK) n = FASTENT_FUSE_BLOCK;
       memcpy(fb, data + off, n);
       ff(fb, n);
+      if (st->hist_chunk_bytes >= FASTENT_HIST_CHUNK)
+        fastent_hist_flush_(st);
       body_plain(st, fb, n);
+      st->hist_chunk_bytes += n;
       fastent_digram_count(st, fb, n, 0, 0);
       off += n;
     }
@@ -56,7 +78,10 @@ static void analyze_fused_(fastent_chunk_state * st,
   while (off < len) {
     sz n = len - off;
     if (n > FASTENT_FUSE_BLOCK) n = FASTENT_FUSE_BLOCK;
+    if (st->hist_chunk_bytes >= FASTENT_HIST_CHUNK)
+      fastent_hist_flush_(st);
     body(st, data + off, n);
+    st->hist_chunk_bytes += n;
     fastent_digram_count(st, data + off, n, binary, fold);
     off += n;
   }
@@ -86,6 +111,9 @@ static void mt_worker_(sz k, void * vctx) {
   if (c->dg_u32s) c->states[k].dg_u32 = c->dg_u32s[k];
   analyze_fused_(&c->states[k], c->fn, c->fn_plain, c->data + start,
                  (sz)(end - start), c->extended, c->binary, c->fold);
+  /*  Settle this slab's residual u32 banks into its u64 master so the
+      serial merge below sums masters (order-independent, == j1).  */
+  fastent_hist_flush_(&c->states[k]);
 }
 
 static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
@@ -138,7 +166,7 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
   Fk(N,
      const fastent_chunk_state * s = &states[k];
      if (s->total_bytes == 0) continue;
-     Fi(FASTENT_BANKS, Fj(256, out->bank[i][j] += s->bank[i][j]))
+     Fi(256, out->hist_master[i] += s->hist_master[i])
      out->bit_hist[0] += s->bit_hist[0];
      out->bit_hist[1] += s->bit_hist[1];
      if (out->have_carry) {
@@ -321,7 +349,10 @@ static void stream_consumer_(sz k, void * vctx) {
         per-consumer accumulate; the shadow is zeroed for reuse.  */
     fastent_dg_drain(&blk);
 
-    Fi(FASTENT_BANKS, Fj(256, acc->bank[i][j] += blk.bank[i][j]))
+    /*  Settle this block's u32 banks into its u64 master, then add the
+        master into the per-consumer accumulator (order-independent).  */
+    fastent_hist_flush_(&blk);
+    Fi(256, acc->hist_master[i] += blk.hist_master[i])
     acc->bit_hist[0] += blk.bit_hist[0];
     acc->bit_hist[1] += blk.bit_hist[1];
     acc->bit_bigram[0][0] += blk.bit_bigram[0][0];
@@ -430,7 +461,7 @@ static void run_stream_mt_(fastent_chunk_state * out,
   /*  Order-independent sums.  */
   Fk(W,
      const fastent_chunk_state * a = &c.accs[k];
-     Fi(FASTENT_BANKS, Fj(256, out->bank[i][j] += a->bank[i][j]))
+     Fi(256, out->hist_master[i] += a->hist_master[i])
      out->bit_hist[0] += a->bit_hist[0];
      out->bit_hist[1] += a->bit_hist[1];
      out->bit_bigram[0][0] += a->bit_bigram[0][0];
@@ -444,7 +475,10 @@ static void run_stream_mt_(fastent_chunk_state * out,
      if (out->bigram && a->bigram)
        Fi((int) FASTENT_BG_CELLS, out->bigram[i] += a->bigram[i]))
 
-  qsort(c.edges, c.ne, sizeof(*c.edges), stream_edge_cmp_);
+  /*  c.edges is allocated lazily on the first pushed edge; with no
+      edges (empty / single-block input) it stays NULL and qsort(NULL,
+      0, ...) is undefined (glibc marks the base nonnull).  */
+  if (c.ne) qsort(c.edges, c.ne, sizeof(*c.edges), stream_edge_cmp_);
 
   /*  Ordered boundary stitch (same algebra as run_mmap_mt_).  */
   u64 lr_gmax = 0, carry_len = 0;

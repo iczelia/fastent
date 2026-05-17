@@ -332,8 +332,9 @@ fi
 # only gets built when NEON is also available - the dispatcher prefers
 # SVE2 at runtime and falls back to NEON when HWCAP2_SVE2 is unset.
 # Big-endian is refused for the same lane-ordering reasons as NEON.
-# Probe order: try -march=armv8-a+sve2 (GCC/Clang baseline syntax),
-# then -march=armv9-a (some Apple/Linaro toolchains prefer this).
+# Probe order: -march=armv8-a+sve2 (GCC baseline), -march=armv9-a
+# (some Apple/Linaro toolchains), then -mcpu=generic+sve2 (clang/zig,
+# which reject the GCC -march=...+sve2 spelling).
 SVE2_CFLAGS=""
 fastent_have_sve2=no
 if test "x$fastent_skip_simd" != "xyes" && test "x$fastent_have_neon" = "xyes"; then
@@ -349,7 +350,8 @@ if test "x$fastent_skip_simd" != "xyes" && test "x$fastent_have_neon" = "xyes"; 
     [fastent_is_aarch64=no])
 
   if test "x$fastent_is_aarch64" = "xyes"; then
-    for fastent_sve2_try in "-march=armv8-a+sve2" "-march=armv9-a"; do
+    for fastent_sve2_try in "-march=armv8-a+sve2" "-march=armv9-a" \
+                            "-mcpu=generic+sve2"; do
       test "x$SVE2_CFLAGS" != "x" && break
       CFLAGS="$save_CFLAGS $fastent_sve2_try"
       AC_MSG_CHECKING([for SVE2 intrinsics with $CC $fastent_sve2_try])

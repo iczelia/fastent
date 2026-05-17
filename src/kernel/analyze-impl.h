@@ -97,6 +97,38 @@ FASTENT_FN(fold_vec_inline)(FASTENT_SIMD_VEC c) {
 }
 #endif
 
+/*  Order-0 fan-out: FASTENT_BANKS u32 working banks in locals, HIST_N
+    scatters 8 bytes across 8 banks to break store-to-load-forward.
+    Landing bank is irrelevant (finalize sums all banks per value);
+    only every byte counted once matters.  */
+#if FASTENT_BANKS == 8
+#define FASTENT_HIST_DECL                                              \
+  u32 * FASTENT_RESTRICT b0 = st->bank[0];                             \
+  u32 * FASTENT_RESTRICT b1 = st->bank[1];                             \
+  u32 * FASTENT_RESTRICT b2 = st->bank[2];                             \
+  u32 * FASTENT_RESTRICT b3 = st->bank[3];                             \
+  u32 * FASTENT_RESTRICT b4 = st->bank[4];                             \
+  u32 * FASTENT_RESTRICT b5 = st->bank[5];                             \
+  u32 * FASTENT_RESTRICT b6 = st->bank[6];                             \
+  u32 * FASTENT_RESTRICT b7 = st->bank[7]
+#define HIST_N(p, o)                                                   \
+  b0[(p)[(o) + 0]]++; b1[(p)[(o) + 1]]++;                              \
+  b2[(p)[(o) + 2]]++; b3[(p)[(o) + 3]]++;                              \
+  b4[(p)[(o) + 4]]++; b5[(p)[(o) + 5]]++;                              \
+  b6[(p)[(o) + 6]]++; b7[(p)[(o) + 7]]++
+#else
+#define FASTENT_HIST_DECL                                              \
+  u32 * FASTENT_RESTRICT b0 = st->bank[0];                             \
+  u32 * FASTENT_RESTRICT b1 = st->bank[1];                             \
+  u32 * FASTENT_RESTRICT b2 = st->bank[2];                             \
+  u32 * FASTENT_RESTRICT b3 = st->bank[3 & (FASTENT_BANKS - 1)]
+#define HIST_N(p, o)                                                   \
+  b0[(p)[(o) + 0]]++; b1[(p)[(o) + 1]]++;                              \
+  b2[(p)[(o) + 2]]++; b3[(p)[(o) + 3]]++;                              \
+  b0[(p)[(o) + 4]]++; b1[(p)[(o) + 5]]++;                              \
+  b2[(p)[(o) + 6]]++; b3[(p)[(o) + 7]]++
+#endif
+
 /*  Scalar single-byte update: histogram + SCC + MC Pi + first/last.
     Used by head/tail of all variants and the whole scalar body.  */
 
@@ -182,11 +214,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   __m256i scc_acc64        = _mm256_setzero_si256(); /*  4 i64 lanes  */
   __m256i lhs_sad          = _mm256_setzero_si256();
 
-  /*  4 histogram banks; bytes 0..3 within each quad hit banks 0..3.  */
-  u64 * FASTENT_RESTRICT b0 = st->bank[0];
-  u64 * FASTENT_RESTRICT b1 = st->bank[1];
-  u64 * FASTENT_RESTRICT b2 = st->bank[2];
-  u64 * FASTENT_RESTRICT b3 = st->bank[3];
+  FASTENT_HIST_DECL;
 
   /*  MC Pi state hoisted into locals for register residency.  */
   i32 mc_pos     = st->mc_pos;
@@ -253,7 +281,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     __m256i sad1 = _mm256_sad_epu8(va1, zero);
     lhs_sad = _mm256_add_epi64(lhs_sad, _mm256_add_epi64(sad0, sad1));
 
-    /*  Histogram: 64 movzbl increments across 4 banks, from buf or
+    /*  Histogram: 64 inc-mem across FASTENT_BANKS banks, from buf or
         (fold mode) the laundered L1 stage. See launder note above.  */
     FASTENT_ALIGN(32) u8 stage[64];
     FASTENT_STAGE_PTR p;
@@ -266,14 +294,8 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     } else {
       p = buf + i;
     }
-    #define HIST4(o) \
-      b0[p[(o) + 0]]++; b1[p[(o) + 1]]++; \
-      b2[p[(o) + 2]]++; b3[p[(o) + 3]]++
-    HIST4( 0); HIST4( 4); HIST4( 8); HIST4(12);
-    HIST4(16); HIST4(20); HIST4(24); HIST4(28);
-    HIST4(32); HIST4(36); HIST4(40); HIST4(44);
-    HIST4(48); HIST4(52); HIST4(56); HIST4(60);
-    #undef HIST4
+    HIST_N(p,  0); HIST_N(p,  8); HIST_N(p, 16); HIST_N(p, 24);
+    HIST_N(p, 32); HIST_N(p, 40); HIST_N(p, 48); HIST_N(p, 56);
 
     /*  MC Pi: drain ring, then bulk hexads. Two accumulators (mi_a,
         mi_b) break the sbb serial dependency.  */
@@ -435,10 +457,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   __m512i scc_acc64      = _mm512_setzero_si512(); /*  8 i64 lanes  */
   __m512i lhs_sad        = _mm512_setzero_si512();
 
-  u64 * FASTENT_RESTRICT b0 = st->bank[0];
-  u64 * FASTENT_RESTRICT b1 = st->bank[1];
-  u64 * FASTENT_RESTRICT b2 = st->bank[2];
-  u64 * FASTENT_RESTRICT b3 = st->bank[3];
+  FASTENT_HIST_DECL;
 
   i32 mc_pos     = st->mc_pos;
   u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
@@ -531,20 +550,11 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
       p = buf + i;
     }
 
-    /*  128 inc-mem increments across 4 banks; same bank discipline
-        as AVX2 so cross-variant tail merges line up.  */
-    #define HIST4(o) \
-      b0[p[(o) + 0]]++; b1[p[(o) + 1]]++; \
-      b2[p[(o) + 2]]++; b3[p[(o) + 3]]++
-    HIST4(  0); HIST4(  4); HIST4(  8); HIST4( 12);
-    HIST4( 16); HIST4( 20); HIST4( 24); HIST4( 28);
-    HIST4( 32); HIST4( 36); HIST4( 40); HIST4( 44);
-    HIST4( 48); HIST4( 52); HIST4( 56); HIST4( 60);
-    HIST4( 64); HIST4( 68); HIST4( 72); HIST4( 76);
-    HIST4( 80); HIST4( 84); HIST4( 88); HIST4( 92);
-    HIST4( 96); HIST4(100); HIST4(104); HIST4(108);
-    HIST4(112); HIST4(116); HIST4(120); HIST4(124);
-    #undef HIST4
+    /*  128 inc-mem across FASTENT_BANKS banks.  */
+    HIST_N(p,   0); HIST_N(p,   8); HIST_N(p,  16); HIST_N(p,  24);
+    HIST_N(p,  32); HIST_N(p,  40); HIST_N(p,  48); HIST_N(p,  56);
+    HIST_N(p,  64); HIST_N(p,  72); HIST_N(p,  80); HIST_N(p,  88);
+    HIST_N(p,  96); HIST_N(p, 104); HIST_N(p, 112); HIST_N(p, 120);
 
     /*  MC Pi: AVX2 drain + bulk + stash, sized for the 128-byte
         stride (up to 21 hexads/iter).  */
@@ -700,10 +710,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   __m128i scc_acc64        = _mm_setzero_si128();  /*  2 i64 lanes  */
   __m128i lhs_sad          = _mm_setzero_si128();
 
-  u64 * FASTENT_RESTRICT b0 = st->bank[0];
-  u64 * FASTENT_RESTRICT b1 = st->bank[1];
-  u64 * FASTENT_RESTRICT b2 = st->bank[2];
-  u64 * FASTENT_RESTRICT b3 = st->bank[3];
+  FASTENT_HIST_DECL;
 
   /*  MC Pi state hoisted into locals.  */
   i32 mc_pos     = st->mc_pos;
@@ -772,12 +779,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     } else {
       p = buf + i;
     }
-    #define HIST4(o) \
-      b0[p[(o) + 0]]++; b1[p[(o) + 1]]++; \
-      b2[p[(o) + 2]]++; b3[p[(o) + 3]]++
-    HIST4( 0); HIST4( 4); HIST4( 8); HIST4(12);
-    HIST4(16); HIST4(20); HIST4(24); HIST4(28);
-    #undef HIST4
+    HIST_N(p,  0); HIST_N(p,  8); HIST_N(p, 16); HIST_N(p, 24);
 
     /*  MC Pi: scalar drain + bulk + stash (32-byte stride).  */
     #define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
@@ -894,10 +896,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   int64x2_t  scc_acc64 = vdupq_n_s64(0);
   uint64x2_t lhs_sad   = vdupq_n_u64(0);
 
-  u64 * FASTENT_RESTRICT b0 = st->bank[0];
-  u64 * FASTENT_RESTRICT b1 = st->bank[1];
-  u64 * FASTENT_RESTRICT b2 = st->bank[2];
-  u64 * FASTENT_RESTRICT b3 = st->bank[3];
+  FASTENT_HIST_DECL;
 
   i32 mc_pos     = st->mc_pos;
   u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
@@ -971,12 +970,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     } else {
       p = buf + i;
     }
-    #define HIST4(o) \
-      b0[p[(o) + 0]]++; b1[p[(o) + 1]]++; \
-      b2[p[(o) + 2]]++; b3[p[(o) + 3]]++
-    HIST4( 0); HIST4( 4); HIST4( 8); HIST4(12);
-    HIST4(16); HIST4(20); HIST4(24); HIST4(28);
-    #undef HIST4
+    HIST_N(p,  0); HIST_N(p,  8); HIST_N(p, 16); HIST_N(p, 24);
 
     /*  MC Pi: scalar drain + scalar bulk + scalar stash.  */
     #define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
@@ -1087,10 +1081,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
   v128_t scc_acc64 = wasm_i64x2_splat(0);
   v128_t lhs_sad   = wasm_i64x2_splat(0);
 
-  u64 * FASTENT_RESTRICT b0 = st->bank[0];
-  u64 * FASTENT_RESTRICT b1 = st->bank[1];
-  u64 * FASTENT_RESTRICT b2 = st->bank[2];
-  u64 * FASTENT_RESTRICT b3 = st->bank[3];
+  FASTENT_HIST_DECL;
 
   i32 mc_pos     = st->mc_pos;
   u8  m0 = st->mc_buf[0], m1 = st->mc_buf[1], m2 = st->mc_buf[2];
@@ -1163,12 +1154,7 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     } else {
       p = buf + i;
     }
-    #define HIST4(o) \
-      b0[p[(o) + 0]]++; b1[p[(o) + 1]]++; \
-      b2[p[(o) + 2]]++; b3[p[(o) + 3]]++
-    HIST4( 0); HIST4( 4); HIST4( 8); HIST4(12);
-    HIST4(16); HIST4(20); HIST4(24); HIST4(28);
-    #undef HIST4
+    HIST_N(p,  0); HIST_N(p,  8); HIST_N(p, 16); HIST_N(p, 24);
 
     /*  MC Pi: all-scalar (NEON-style).  */
     #define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
@@ -2001,6 +1987,312 @@ FASTENT_FN(maxgap_in_word)(u64 t, u32 lo, u32 hi) {
   return (u64) k + 1ull;
 }
 
+/*  Signed nibble LUTs for the +-1 cusum walk (4 bits, LSB-first):
+    net = end value, mn = min prefix, mx = max prefix.  A byte composes
+    from its two nibbles: net=nlo+nhi, mn=min(mnlo,nlo+mnhi),
+    mx=max(mxlo,nlo+mxhi); proven == the 256-entry byte LUT.  */
+#define FASTENT_DG_NIB_NET { -4,-2,-2, 0,-2, 0, 0, 2,-2, 0, 0, 2, 0, 2, 2, 4 }
+#define FASTENT_DG_NIB_MN  { -4,-2,-2, 0,-2, 0,-1, 0,-3,-1,-1, 0,-2, 0,-1, 0 }
+#define FASTENT_DG_NIB_MX  {  0, 1, 0, 2, 0, 1, 1, 3, 0, 1, 0, 2, 0, 2, 2, 4 }
+
+#if defined(FASTENT_VARIANT_AVX512)
+/*  Rotate every 64-bit lane left by nb bytes within the lane (the 8
+    bytes wrap), so a 1/2/4-byte rotate + min/max tree reduces all 8
+    lane bytes to the lane's horizontal min/max in 3 steps.  */
+static FASTENT_ALWAYS_INLINE __m512i
+FASTENT_FN(rotl_lane8)(__m512i v, int nb) {
+  const int s = nb * 8;
+  return _mm512_or_si512(_mm512_slli_epi64(v, s),
+                         _mm512_srli_epi64(v, 64 - s));
+}
+/*  Exclusive prefix sum over the 8 i64 lanes (lane 0 = first word):
+    Hillis-Steele inclusive then subtract self.  */
+static FASTENT_ALWAYS_INLINE __m512i
+FASTENT_FN(expref_i64)(__m512i v) {
+  __m512i t = v;
+  t = _mm512_add_epi64(t, _mm512_maskz_permutexvar_epi64(0xFE,
+        _mm512_set_epi64(6,5,4,3,2,1,0,0), t));
+  t = _mm512_add_epi64(t, _mm512_maskz_permutexvar_epi64(0xFC,
+        _mm512_set_epi64(5,4,3,2,1,0,0,0), t));
+  t = _mm512_add_epi64(t, _mm512_maskz_permutexvar_epi64(0xF0,
+        _mm512_set_epi64(3,2,1,0,0,0,0,0), t));
+  return _mm512_sub_epi64(t, v);
+}
+#endif
+
+#if defined(FASTENT_VARIANT_AVX512) || defined(FASTENT_VARIANT_AVX2) \
+ || defined(FASTENT_VARIANT_SSE41)  || defined(FASTENT_VARIANT_SSSE3)
+#define FASTENT_DG_B4_SIMD 1
+/*  SIMD B4 over the leading full words; returns count consumed (lane-
+    width multiple), caller's scalar loop does the rest + the partial.
+    o/gmn/gmx fold in place.  Byte-identical to the scalar byte-LUT
+    residue (nibble compose + 8-pos scan + cross-word net prefix).  */
+static FASTENT_ALWAYS_INLINE sz
+FASTENT_FN(cusum_full_words)(const u64 * W, sz nfull, i64 * po,
+                             i64 * pgmn, i64 * pgmx) {
+  static const i8 nnet[16] = FASTENT_DG_NIB_NET;
+  static const i8 nmn[16]  = FASTENT_DG_NIB_MN;
+  static const i8 nmx[16]  = FASTENT_DG_NIB_MX;
+#if defined(FASTENT_VARIANT_AVX512)
+  enum { LW = 8 };
+  const __m512i Lnet = _mm512_broadcast_i32x4(
+      _mm_loadu_si128((const void *) nnet));
+  const __m512i Lmn  = _mm512_broadcast_i32x4(
+      _mm_loadu_si128((const void *) nmn));
+  const __m512i Lmx  = _mm512_broadcast_i32x4(
+      _mm_loadu_si128((const void *) nmx));
+  const __m512i m0f  = _mm512_set1_epi8(0x0F);
+  sz w;  i64 o = *po, g1 = *pgmn, g2 = *pgmx;
+  __m512i vmin = _mm512_set1_epi64(g1);
+  __m512i vmax = _mm512_set1_epi64(g2);
+  for (w = 0; w + LW <= nfull; w += LW) {
+    __m512i a   = _mm512_loadu_si512((const void *)(W + w));
+    __m512i lo  = _mm512_and_si512(a, m0f);
+    __m512i hi  = _mm512_and_si512(_mm512_srli_epi16(a, 4), m0f);
+    __m512i nl  = _mm512_shuffle_epi8(Lnet, lo);
+    __m512i bnet = _mm512_add_epi8(nl, _mm512_shuffle_epi8(Lnet, hi));
+    __m512i bmin = _mm512_min_epi8(_mm512_shuffle_epi8(Lmn, lo),
+                     _mm512_add_epi8(nl, _mm512_shuffle_epi8(Lmn, hi)));
+    __m512i bmax = _mm512_max_epi8(_mm512_shuffle_epi8(Lmx, lo),
+                     _mm512_add_epi8(nl, _mm512_shuffle_epi8(Lmx, hi)));
+    /*  In-lane byte prefix sum via 64-bit shifts, kept in i8 (8-byte
+        cumulative net + extreme stays in [-72,72]).  Per-word min/max
+        is a 3-step in-lane rotate tree; cross-word net prefix is i64
+        Hillis-Steele; only o += batch net is scalar.  */
+    {
+      __m512i incl = bnet;
+      incl = _mm512_add_epi8(incl, _mm512_slli_epi64(incl, 8));
+      incl = _mm512_add_epi8(incl, _mm512_slli_epi64(incl, 16));
+      incl = _mm512_add_epi8(incl, _mm512_slli_epi64(incl, 32));
+      {
+        __m512i excl = _mm512_sub_epi8(incl, bnet);
+        __m512i mn   = _mm512_add_epi8(excl, bmin);
+        __m512i mx   = _mm512_add_epi8(excl, bmax);
+        __m512i wnet, opref;
+        mn = _mm512_min_epi8(mn, FASTENT_FN(rotl_lane8)(mn, 1));
+        mn = _mm512_min_epi8(mn, FASTENT_FN(rotl_lane8)(mn, 2));
+        mn = _mm512_min_epi8(mn, FASTENT_FN(rotl_lane8)(mn, 4));
+        mx = _mm512_max_epi8(mx, FASTENT_FN(rotl_lane8)(mx, 1));
+        mx = _mm512_max_epi8(mx, FASTENT_FN(rotl_lane8)(mx, 2));
+        mx = _mm512_max_epi8(mx, FASTENT_FN(rotl_lane8)(mx, 4));
+        /*  Lane min/max is replicated in every byte of the lane; the
+            low byte truncate (VPMOVQB) then sign-extend gives one i64
+            per word.  Lane byte 7 (arith >> 56) is the word net.  */
+        wnet  = _mm512_srai_epi64(incl, 56);
+        opref = _mm512_add_epi64(_mm512_set1_epi64(o),
+                                 FASTENT_FN(expref_i64)(wnet));
+        vmin  = _mm512_min_epi64(vmin, _mm512_add_epi64(opref,
+                  _mm512_cvtepi8_epi64(_mm512_cvtepi64_epi8(mn))));
+        vmax  = _mm512_max_epi64(vmax, _mm512_add_epi64(opref,
+                  _mm512_cvtepi8_epi64(_mm512_cvtepi64_epi8(mx))));
+        o += _mm512_reduce_add_epi64(wnet);
+      }
+    }
+  }
+  g1 = _mm512_reduce_min_epi64(vmin);
+  g2 = _mm512_reduce_max_epi64(vmax);
+  *po = o;  *pgmn = g1;  *pgmx = g2;
+  return w;
+#else
+  /*  AVX2 (4 words/lane) / SSE (2 words/lane) share the i64-lane
+      formulation; vector width LW from the V_ macros.  */
+  enum { LW = FASTENT_SIMD_VLEN / 8 };
+  sz w;  i64 o = *po, g1 = *pgmn, g2 = *pgmx;
+  (void) nnet;  (void) nmn;  (void) nmx;
+  for (w = 0; w + LW <= nfull; w += LW) {
+    int k;
+    for (k = 0; k < LW; k++) {
+      const u64 a = W[w + k];
+      int j;  i64 r = 0;
+      for (j = 0; j < 8; j++) {
+        const u32 v = (u32)((a >> (j * 8)) & 0xFFu);
+        const i32 lo = v & 15u, hi = (v >> 4) & 15u;
+        const i32 cn = nnet[lo] + nnet[hi];
+        i32 cmn = nmn[lo];
+        i32 cmx = nmx[lo];
+        if (nnet[lo] + nmn[hi] < cmn) cmn = nnet[lo] + nmn[hi];
+        if (nnet[lo] + nmx[hi] > cmx) cmx = nnet[lo] + nmx[hi];
+        if (o + r + cmn < g1) g1 = o + r + cmn;
+        if (o + r + cmx > g2) g2 = o + r + cmx;
+        r += cn;
+      }
+      o += r;
+    }
+  }
+  *po = o;  *pgmn = g1;  *pgmx = g2;
+  return w;
+#endif
+}
+#endif
+
+#if defined(FASTENT_VARIANT_AVX512) && defined(FASTENT_AVX512_HAVE_BITALG)
+#define FASTENT_DG_B3_SIMD 1
+/*  In-lane prefix-OR: bit i := OR of bits 0..i within each 64-bit lane
+    (monotone: 0 below the lowest set bit, 1 from it up).  */
+static FASTENT_ALWAYS_INLINE __m512i FASTENT_FN(pfx_or64)(__m512i v) {
+  v = _mm512_or_si512(v, _mm512_slli_epi64(v, 1));
+  v = _mm512_or_si512(v, _mm512_slli_epi64(v, 2));
+  v = _mm512_or_si512(v, _mm512_slli_epi64(v, 4));
+  v = _mm512_or_si512(v, _mm512_slli_epi64(v, 8));
+  v = _mm512_or_si512(v, _mm512_slli_epi64(v, 16));
+  v = _mm512_or_si512(v, _mm512_slli_epi64(v, 32));
+  return v;
+}
+/*  In-lane suffix-OR: bit i := OR of bits i..63 (monotone the other
+    way: 1 up to the highest set bit, 0 above).  */
+static FASTENT_ALWAYS_INLINE __m512i FASTENT_FN(sfx_or64)(__m512i v) {
+  v = _mm512_or_si512(v, _mm512_srli_epi64(v, 1));
+  v = _mm512_or_si512(v, _mm512_srli_epi64(v, 2));
+  v = _mm512_or_si512(v, _mm512_srli_epi64(v, 4));
+  v = _mm512_or_si512(v, _mm512_srli_epi64(v, 8));
+  v = _mm512_or_si512(v, _mm512_srli_epi64(v, 16));
+  v = _mm512_or_si512(v, _mm512_srli_epi64(v, 32));
+  return v;
+}
+/*  Per-64-bit-lane popcount (BITALG VPOPCNTB + SAD), as the B1/B2
+    block does; result is the lane bit count in each i64 lane.  */
+static FASTENT_ALWAYS_INLINE __m512i FASTENT_FN(popcnt64v)(__m512i v) {
+  return _mm512_sad_epu8(_mm512_popcnt_epi8(v), _mm512_setzero_si512());
+}
+
+/*  Nibble (4-bit, LSB-first) longest-run-of-1s state: pre = leading
+    1-run from bit 0, suf = trailing 1-run ending at bit 3, mx =
+    longest internal 1-run, full = all four bits set.  A monoid: two
+    states (lower then higher bits) compose order-preserving.  */
+#define FASTENT_DG_LR_PRE { 0,1,0,2,0,1,0,3,0,1,0,2,0,1,0,4 }
+#define FASTENT_DG_LR_SUF { 0,0,0,0,0,0,0,0,1,1,1,1,2,2,3,4 }
+#define FASTENT_DG_LR_MX  { 0,1,1,2,1,1,2,3,1,1,1,2,2,2,3,4 }
+#define FASTENT_DG_LR_FUL { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1 }
+
+typedef struct {
+  __m512i pre, suf, mx, full, wid;
+} FASTENT_FN(lrstate);
+
+/*  Compose state a (lower bits) then b (higher bits): the join run
+    spans a's suffix + b's prefix; pre/suf extend through a fully-set
+    operand.  All fields are i8 lanes (max value 64, fits).  */
+static FASTENT_ALWAYS_INLINE FASTENT_FN(lrstate)
+FASTENT_FN(lr_cmb)(FASTENT_FN(lrstate) a, FASTENT_FN(lrstate) b) {
+  FASTENT_FN(lrstate) r;
+  __m512i join = _mm512_add_epi8(a.suf, b.pre);
+  __mmask64 af = _mm512_cmpneq_epi8_mask(a.full, _mm512_setzero_si512());
+  __mmask64 bf = _mm512_cmpneq_epi8_mask(b.full, _mm512_setzero_si512());
+  r.mx   = _mm512_max_epi8(_mm512_max_epi8(a.mx, b.mx), join);
+  r.pre  = _mm512_mask_blend_epi8(af, a.pre,
+             _mm512_add_epi8(a.wid, b.pre));
+  r.suf  = _mm512_mask_blend_epi8(bf, b.suf,
+             _mm512_add_epi8(b.wid, a.suf));
+  r.full = _mm512_and_si512(a.full, b.full);
+  r.wid  = _mm512_add_epi8(a.wid, b.wid);
+  return r;
+}
+
+/*  Longest run of 1-bits per 64-bit lane, loop-free: nibble PSHUFB
+    state LUTs -> per-byte state, 3-step in-lane ordered tournament
+    (stride 1/2/4 byte shift + compose) folds 8 bytes into lane byte 0.
+    Replaces the data-dependent y&=y<<1; proven == iterative.  */
+static FASTENT_ALWAYS_INLINE __m512i
+FASTENT_FN(longest_run1)(__m512i zv) {
+  static const i8 lpre[16] = FASTENT_DG_LR_PRE;
+  static const i8 lsuf[16] = FASTENT_DG_LR_SUF;
+  static const i8 lmx[16]  = FASTENT_DG_LR_MX;
+  static const i8 lful[16] = FASTENT_DG_LR_FUL;
+  const __m512i Lpre = _mm512_broadcast_i32x4(
+      _mm_loadu_si128((const void *) lpre));
+  const __m512i Lsuf = _mm512_broadcast_i32x4(
+      _mm_loadu_si128((const void *) lsuf));
+  const __m512i Lmx  = _mm512_broadcast_i32x4(
+      _mm_loadu_si128((const void *) lmx));
+  const __m512i Lful = _mm512_broadcast_i32x4(
+      _mm_loadu_si128((const void *) lful));
+  const __m512i m0f  = _mm512_set1_epi8(0x0F);
+  __m512i lo = _mm512_and_si512(zv, m0f);
+  __m512i hi = _mm512_and_si512(_mm512_srli_epi16(zv, 4), m0f);
+  FASTENT_FN(lrstate) a, b, s;
+  int sh;
+  a.pre  = _mm512_shuffle_epi8(Lpre, lo);
+  a.suf  = _mm512_shuffle_epi8(Lsuf, lo);
+  a.mx   = _mm512_shuffle_epi8(Lmx,  lo);
+  a.full = _mm512_shuffle_epi8(Lful, lo);
+  a.wid  = _mm512_set1_epi8(4);
+  b.pre  = _mm512_shuffle_epi8(Lpre, hi);
+  b.suf  = _mm512_shuffle_epi8(Lsuf, hi);
+  b.mx   = _mm512_shuffle_epi8(Lmx,  hi);
+  b.full = _mm512_shuffle_epi8(Lful, hi);
+  b.wid  = _mm512_set1_epi8(4);
+  s = FASTENT_FN(lr_cmb)(a, b);                /*  per-byte, wid 8  */
+  for (sh = 1; sh < 8; sh <<= 1) {
+    FASTENT_FN(lrstate) hib;
+    hib.pre  = _mm512_srli_epi64(s.pre,  sh * 8);
+    hib.suf  = _mm512_srli_epi64(s.suf,  sh * 8);
+    hib.mx   = _mm512_srli_epi64(s.mx,   sh * 8);
+    hib.full = _mm512_srli_epi64(s.full, sh * 8);
+    hib.wid  = _mm512_srli_epi64(s.wid,  sh * 8);
+    s = FASTENT_FN(lr_cmb)(s, hib);
+  }
+  /*  Lane byte 0 holds mx (a small non-negative count); zero-extend
+      that byte to the whole i64 lane.  */
+  return _mm512_and_si512(s.mx, _mm512_set1_epi64(0xFF));
+}
+/*  SIMD B3 over leading "normal" words [0,ntw).  z (zeros strictly
+    between lo/hi set bits) via prefix/suffix-OR, lo=popcount(~P),
+    hi=popcount(S)-1, longest-run loop-free; only the serial cross-
+    word gap/first/last fold is scalar.  Byte-identical to B3.  */
+static FASTENT_ALWAYS_INLINE sz
+FASTENT_FN(maxgap_full_words)(const u64 * W, sz ntw, u64 * pgap,
+                              i64 * pfirst, i64 * plast, int * phave) {
+  i64 first = *pfirst, last = *plast;
+  u64 gap = *pgap;
+  int have = *phave;
+  sz w;
+  for (w = 0; w + 8 <= ntw; w += 8) {
+    __m512i a  = _mm512_loadu_si512((const void *)(W + w));
+    __m512i nx = _mm512_loadu_si512((const void *)(W + w + 1));
+    __m512i t  = _mm512_xor_si512(a,
+        _mm512_or_si512(_mm512_srli_epi64(a, 1),
+                        _mm512_slli_epi64(nx, 63)));
+    __m512i P  = FASTENT_FN(pfx_or64)(t);
+    __m512i S  = FASTENT_FN(sfx_or64)(t);
+    /*  0 at i is "strictly between" iff a set bit exists below it
+        (P>>1) and above it (S<<1).  */
+    __m512i z  = _mm512_andnot_si512(t,
+        _mm512_and_si512(_mm512_srli_epi64(P, 1),
+                         _mm512_slli_epi64(S, 1)));
+    __m512i notP = _mm512_andnot_si512(P, _mm512_set1_epi64(-1));
+    __m512i lo = FASTENT_FN(popcnt64v)(notP);
+    __m512i hi = _mm512_sub_epi64(FASTENT_FN(popcnt64v)(S),
+                                  _mm512_set1_epi64(1));
+    {
+      __m512i kc = FASTENT_FN(longest_run1)(z);
+      __mmask8 hasz = _mm512_test_epi64_mask(z, z);
+      __m512i wg = _mm512_maskz_add_epi64(hasz, kc,
+                     _mm512_set1_epi64(1));
+      i64 TWv[8], LO[8], HI[8], WG[8];
+      int k;
+      _mm512_storeu_si512((void *) TWv, t);
+      _mm512_storeu_si512((void *) LO,  lo);
+      _mm512_storeu_si512((void *) HI,  hi);
+      _mm512_storeu_si512((void *) WG,  wg);
+      for (k = 0; k < 8; k++) {
+        if (!TWv[k]) continue;
+        {
+          const i64 fp = (i64)(w + k) * 64 + LO[k];
+          const i64 lp = (i64)(w + k) * 64 + HI[k];
+          if (have) {
+            const u64 g = (u64)(fp - last);
+            if (g > gap) gap = g;
+          } else { first = fp;  have = 1; }
+          if ((u64) WG[k] > gap) gap = (u64) WG[k];
+          last = lp;
+        }
+      }
+    }
+  }
+  *pgap = gap;  *pfirst = first;  *plast = last;  *phave = have;
+  return w;
+}
+#endif
+
 /*  Fold a block's run sequence into the longest-run machine without
     enumerating internal runs; bit-identical to the per-run
     fastent_lr_run sequence (the block's runs strictly alternate, so
@@ -2092,20 +2384,38 @@ void FASTENT_FN(digram_bits_blk)(fastent_chunk_state * st,
   }
 #endif
 
-  /*  B3 longest run + B4 cusum: closed-form scalar residue on the
-      already-loaded words (proven byte-identical to the old per-
-      transition loop via lr_runs_summary).  */
+  /*  B3 longest run + B4 cusum, closed-form on the loaded words (==
+      old per-transition loop via lr_runs_summary).  SIMD folds the
+      leading full words; the loop does B3 + the scalar B4 tail
+      (uncovered full words + the single trailing partial).  */
   i64 o = 0, gmn = ((i64) 1 << 60), gmx = -((i64) 1 << 60);
   i64 first_p = -1, last_p = -1;
   u64 gapmax  = 0;
   int have_tr = 0;
-  for (w = 0; w < NW; w++) {
+  sz b4w = 0, b3w = 0;
+#ifdef FASTENT_DG_B4_SIMD
+  {
+    const sz nfull = (cl % 8u == 0) ? NW : (NW ? NW - 1 : 0);
+    b4w = FASTENT_FN(cusum_full_words)(W, nfull, &o, &gmn, &gmx);
+  }
+#endif
+#ifdef FASTENT_DG_B3_SIMD
+  /*  [0,NW-1): the last word wl=NW-1 needs the lmask fold, handled by
+      the scalar tail; earlier words use the full succ W[w+1].  */
+  if (NW > 1)
+    b3w = FASTENT_FN(maxgap_full_words)(W, NW - 1, &gapmax,
+                                        &first_p, &last_p, &have_tr);
+#endif
+  /*  SIMD B3/B4 consumed [0,b3w)/[0,b4w); the scalar loop only needs
+      the words neither covered (plus the lmask-special last word, which
+      is >= both since the SIMD passes stop before it).  */
+  for (w = (b3w < b4w ? b3w : b4w); w < NW; w++) {
     const u64 a  = W[w];
     const u64 nx = (w + 1 < NW) ? W[w + 1] : 0ull;
     const u64 sa = (a >> 1) | (nx << 63);
     u64 tw = a ^ sa;
     if (w == wl) tw &= lmask;
-    if (tw) {
+    if (w >= b3w && tw) {
       const u32 lo = FASTENT_CTZ64(tw);
       const u32 hi = 63u - FASTENT_CLZ64(tw);
       const i64 fp = (i64) w * 64 + (i64) lo;
@@ -2122,11 +2432,10 @@ void FASTENT_FN(digram_bits_blk)(fastent_chunk_state * st,
       }
       last_p = lp;
     }
-    /*  B4: word-local LUT extremes off offset o; o jumps by the
-        closed-form whole-word net 2*POP-64 (a word's byte-net sum is
-        exactly that) instead of the serial cs_net chain.  The final
-        partial word still chains cs_net for its bytes.  */
-    {
+    /*  B4 scalar tail: words the SIMD pass did not consume.  Full
+        words jump o by the closed-form net 2*POP-64 (= sum of byte
+        nets); the single trailing partial chains cs_net per byte.  */
+    if (w >= b4w) {
       const int full = (w + 1 != NW) || (cl - w * 8 == 8);
       if (full) {
         i64 r = 0;

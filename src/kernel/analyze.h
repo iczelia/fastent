@@ -7,7 +7,20 @@
 
 #include "common.h"
 
-#define FASTENT_BANKS  4
+/*  Order-0 histogram shadow banks: power-of-two, per-ISA overridable
+    (the &(FASTENT_BANKS-1) index masks are generic).  8 chosen by
+    measurement on Zen 4: breaks more store-to-load-forward chains than
+    4, the u32 banks are 8 KiB (L1-resident).  */
+#ifndef FASTENT_BANKS
+#define FASTENT_BANKS  8
+#endif
+
+/*  u32 order-0 drain bound.  Worst case all-same-byte: a bank cell
+    gains <= 1 per byte, so after FASTENT_HIST_CHUNK bytes it holds
+    < 2^30 < 2^32 (4x margin, any FASTENT_BANKS); 1 GiB <= 4 GB meets
+    the once-per-4-GB ask.  Mirrors the proven dg_u32 bound.  */
+#define FASTENT_HIST_CHUNK ((u64) (1u << 30))
+
 #define FASTENT_SIMD_STRIDE_AVX2 96 /*  16 hexads exactly  */
 #define FASTENT_SIMD_STRIDE_SSE  48 /*   8 hexads exactly  */
 
@@ -41,11 +54,13 @@ static inline u8 fastent_fold_byte(u8 b) {
     Monte Carlo hits, and the first/last/carry bytes needed to stitch
     chunk boundaries at finalize.  */
 typedef struct {
-  /*  Banked histogram: bank[k][v] counts value v at positions p with
-      p mod FASTENT_BANKS == k, merged at finalize.  u64 not u32: a
-      single-symbol stream drives one cell to ~N/4, overflowing u32
-      near 17 GiB and corrupting entropy/chi/mode.  */
-  u64 bank[FASTENT_BANKS][256];
+  /*  Order-0 histogram: bank[k][v] is the hot L1 u32 working counter
+      (k = pos mod FASTENT_BANKS, breaks store-to-load-forward).
+      hist_master[v] is the authoritative u64; banks widen-drain in
+      every FASTENT_HIST_CHUNK bytes + at finalize, so no cell wraps.  */
+  u32 bank[FASTENT_BANKS][256];
+  u64 hist_master[256];
+  u64 hist_chunk_bytes;
 
   /*  Sum of x[i] * x[i+1] over bytes seen so far, MINUS the wrap term
       (added globally at finalize).  The SIMD body applies its sign
@@ -57,8 +72,8 @@ typedef struct {
   u64 mc_count;
   u64 mc_inside;
 
-  /*  Bit-mode hist (separate u64s because bank[] is u32 and would
-      overflow for files > 512 MiB in bit mode).  */
+  /*  Bit-mode hist: own u64s, summed directly (no banking; only two
+      cells, drained at finalize is unnecessary).  */
   u64 bit_hist[2];
 
   /*  Cross-chunk state:  */
@@ -182,6 +197,11 @@ void  fastent_dg_u32_free(u32 * s);
 /*  Stream the u32 chunk shadow into st->bigram (add + zero) and
     reset st->dg_chunk_bytes.  No-op if either table is absent.  */
 void  fastent_dg_drain(fastent_chunk_state * st);
+/*  Widen-add the u32 order-0 banks into st->hist_master, zero the
+    banks, reset st->hist_chunk_bytes.  Fixed bank/value order so the
+    u64 sum is order-independent: flush cadence (any -j, any driver)
+    cannot change the result.  */
+void  fastent_hist_flush_(fastent_chunk_state * st);
 void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
                       fastent_result * FASTENT_RESTRICT out);
 
