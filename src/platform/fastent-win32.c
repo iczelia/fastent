@@ -29,9 +29,9 @@
 /*  UTF-8 / UTF-16 heap conversion helpers.  */
 
 static wchar_t * utf8_to_wide(const char * s) {
-  int n = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
+  i32 n = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
   if (n <= 0) return NULL;
-  wchar_t * w = (wchar_t *) malloc((size_t) n * sizeof(wchar_t));
+  wchar_t * w = (wchar_t *) malloc((sz) n * sizeof(wchar_t));
   if (!w) return NULL;
   if (MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n) <= 0) {
     free(w); return NULL;
@@ -40,9 +40,9 @@ static wchar_t * utf8_to_wide(const char * s) {
 }
 
 static char * wide_to_utf8(const wchar_t * w) {
-  int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, NULL, 0, NULL, NULL);
+  i32 n = WideCharToMultiByte(CP_UTF8, 0, w, -1, NULL, 0, NULL, NULL);
   if (n <= 0) return NULL;
-  char * s = (char *) malloc((size_t) n);
+  char * s = (char *) malloc((sz) n);
   if (!s) return NULL;
   if (WideCharToMultiByte(CP_UTF8, 0, w, -1, s, n, NULL, NULL) <= 0) {
     free(s); return NULL;
@@ -55,9 +55,9 @@ static char * wide_to_utf8(const wchar_t * w) {
     state, 2N+1 become N '\\' plus a literal '"'; `""` inside quotes
     is a literal '"'.  Two-pass: count argc, then fill.  */
 
-static int grow_buf_w(wchar_t ** pbuf, size_t * pbcap) {
-  if (*pbcap > (size_t) -1 / (2 * sizeof(wchar_t))) return 0;
-  size_t nc = *pbcap * 2;
+static int grow_buf_w(wchar_t ** pbuf, sz * pbcap) {
+  if (*pbcap > (sz) -1 / (2 * sizeof(wchar_t))) return 0;
+  sz nc = *pbcap * 2;
   wchar_t * nb = (wchar_t *) realloc(*pbuf, nc * sizeof(wchar_t));
   if (!nb) return 0;
   *pbuf = nb; *pbcap = nc;
@@ -66,20 +66,20 @@ static int grow_buf_w(wchar_t ** pbuf, size_t * pbcap) {
 
 static int split_cmdline_w(const wchar_t * cmd, wchar_t *** out_wargv) {
   int argc = 0;
-  int pass;
+  i32 pass;
   wchar_t ** wargv = NULL;
   wchar_t * buf = NULL;
   for (pass = 0; pass < 2; pass++) {
     const wchar_t * p = cmd;
     if (pass == 1) {
-      wargv = (wchar_t **) calloc((size_t) argc + 1, sizeof(wchar_t *));
+      wargv = (wchar_t **) calloc((sz) argc + 1, sizeof(wchar_t *));
       if (!wargv) return -1;
     }
     argc = 0;
     while (*p) {
       while (*p == L' ' || *p == L'\t') p++;
       if (!*p) break;
-      size_t blen = 0, bcap = 0;
+      sz blen = 0, bcap = 0;
       buf = NULL;
       if (pass == 1) {
         bcap = 64;
@@ -90,10 +90,10 @@ static int split_cmdline_w(const wchar_t * cmd, wchar_t *** out_wargv) {
       while (*p) {
         if (!in_quote && (*p == L' ' || *p == L'\t')) break;
         if (*p == L'\\') {
-          int nbs = 0;
+          i32 nbs = 0;
           while (*p == L'\\') { nbs++; p++; }
           if (*p == L'"') {
-            int slashes = nbs / 2;
+            i32 slashes = nbs / 2;
             if (pass == 1) {
               Fi(slashes,
                 if (blen + 1 >= bcap && !grow_buf_w(&buf, &bcap)) goto fail;
@@ -162,7 +162,7 @@ int fastent_win32_argv_utf8(int * argc_out, char *** argv_out) {
   char ** argv;
   if (wargc < 0) return -1;
 
-  argv = (char **) calloc((size_t) wargc + 1, sizeof(char *));
+  argv = (char **) calloc((sz) wargc + 1, sizeof(char *));
   if (!argv) {
     Fi(wargc, free(wargv[i]));
     free(wargv);
@@ -230,43 +230,42 @@ int fastent_win32_close(int fd) {
   return _close(fd);
 }
 
-long fastent_win32_read(int fd, void * buf, size_t n) {
+i64 fastent_win32_read(int fd, void * buf, sz n) {
   /*  _read takes unsigned int; cap to avoid truncation.  */
-  unsigned int cap = (n > 0x7FFFFFFFu) ? 0x7FFFFFFFu : (unsigned int) n;
-  return (long) _read(fd, buf, cap);
+  u32 cap = (n > 0x7FFFFFFFu) ? 0x7FFFFFFFu : (u32) n;
+  return (i64) _read(fd, buf, cap);
 }
 
-long fastent_win32_num_cpus(void) {
+i64 fastent_win32_num_cpus(void) {
   SYSTEM_INFO si;
   GetSystemInfo(&si);
-  return (long) si.dwNumberOfProcessors;
+  return (i64) si.dwNumberOfProcessors;
 }
 
 /*  GetFileSizeEx is Win2000+; FASTENT_WIN_LEGACY uses GetFileSize.
     Returns 0 and sets *out on success, -1 on error or empty file.  */
-static int fastent_win32_filesize_(HANDLE h, unsigned long long * out) {
+static int fastent_win32_filesize_(HANDLE h, u64 * out) {
 #ifdef FASTENT_WIN_LEGACY
   DWORD hi = 0;
   DWORD lo = GetFileSize(h, &hi);
   if (lo == INVALID_FILE_SIZE && GetLastError() != NO_ERROR) return -1;
-  unsigned long long sz = ((unsigned long long) hi << 32)
-                        | (unsigned long long) lo;
-  if (sz == 0) return -1;
-  *out = sz;
+  u64 total = ((u64) hi << 32) | (u64) lo;
+  if (total == 0) return -1;
+  *out = total;
   return 0;
 #else
   LARGE_INTEGER li;
   if (!GetFileSizeEx(h, &li) || li.QuadPart <= 0) return -1;
-  *out = (unsigned long long) li.QuadPart;
+  *out = (u64) li.QuadPart;
   return 0;
 #endif
 }
 
 int fastent_win32_mmap(int fd, void ** out_base,
-                       unsigned long long * out_size,
+                       u64 * out_size,
                        void ** out_handle) {
   HANDLE h, hm;
-  unsigned long long fsz;
+  u64 fsz;
   void * p;
   intptr_t raw;
   if (fd < 0) return -1;
@@ -296,15 +295,15 @@ void fastent_win32_munmap(void * base, void * handle) {
 }
 
 void * fastent_win32_open_overlapped(const char * utf8_path,
-                                     unsigned long long * out_size) {
+                                     u64 * out_size) {
   HANDLE h = INVALID_HANDLE_VALUE;
-  unsigned long long fsz;
+  u64 fsz;
   if (!utf8_path || !out_size) return NULL;
 #ifndef FASTENT_WIN_LEGACY
   {
-    int n = MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, NULL, 0);
+    i32 n = MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, NULL, 0);
     if (n <= 0) return NULL;
-    wchar_t * w = (wchar_t *) malloc((size_t) n * sizeof(wchar_t));
+    wchar_t * w = (wchar_t *) malloc((sz) n * sizeof(wchar_t));
     if (!w) return NULL;
     if (MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, w, n) <= 0) {
       free(w); return NULL;
@@ -386,7 +385,7 @@ void fastent_win32_set_console_sev(int sev) {
   SetConsoleTextAttribute(h, attr);
 }
 
-void fastent_win32_mmap_prefetch(void * base, unsigned long long size) {
+void fastent_win32_mmap_prefetch(void * base, u64 size) {
   /*  PrefetchVirtualMemory is Win 8+; resolve at runtime so the
       binary still loads on Vista/7.  */
   typedef struct _FE_MEM_RANGE {

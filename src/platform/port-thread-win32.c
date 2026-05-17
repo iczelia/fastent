@@ -13,8 +13,8 @@
 #include <windows.h>
 #include <stdlib.h>
 
-static int                g_n_threads = 0;
-static int                g_pending   = 0;
+static i32                g_n_threads = 0;
+static i32                g_pending   = 0;
 static HANDLE *           g_workers   = NULL;
 static SRWLOCK            g_m         = SRWLOCK_INIT;
 static CONDITION_VARIABLE g_work_ready = CONDITION_VARIABLE_INIT;
@@ -23,13 +23,13 @@ static CONDITION_VARIABLE g_work_done  = CONDITION_VARIABLE_INIT;
 static fastent_parfor_fn g_fn  = NULL;
 static void *        g_ctx = NULL;
 static sz            g_n   = 0;
-static int           g_busy = 0;
+static i32           g_busy = 0;
 static u64           g_gen  = 0;
 
-struct worker_args { int k; };
+struct worker_args { i32 k; };
 
 static DWORD WINAPI worker_main(LPVOID arg) {
-  int k = ((struct worker_args *) arg)->k;
+  i32 k = ((struct worker_args *) arg)->k;
   free(arg);
 
   u64 last_gen = 0;
@@ -41,7 +41,7 @@ static DWORD WINAPI worker_main(LPVOID arg) {
     fastent_parfor_fn fn = g_fn;
     void * ctx = g_ctx;
     sz     n   = g_n;
-    int    T   = g_n_threads;
+    i32    T   = g_n_threads;
     ReleaseSRWLockExclusive(&g_m);
 
     sz start = (sz) k * n / (sz) T;
@@ -57,10 +57,10 @@ static DWORD WINAPI worker_main(LPVOID arg) {
 
 static void lazy_init(void) {
   if (g_n_threads != 0) return;
-  int T = g_pending > 0 ? g_pending : 1;
+  i32 T = g_pending > 0 ? g_pending : 1;
   if (T < 1) T = 1;
   if (T > 1) {
-    g_workers = (HANDLE *) malloc((size_t) T * sizeof(HANDLE));
+    g_workers = (HANDLE *) malloc((sz) T * sizeof(HANDLE));
     if (!g_workers) { g_n_threads = 1; return; }
     Fk(T,
        struct worker_args * a = (struct worker_args *) malloc(sizeof(*a));

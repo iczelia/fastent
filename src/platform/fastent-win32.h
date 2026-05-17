@@ -8,7 +8,7 @@
 
 #ifdef _WIN32
 
-#include <stddef.h>
+#include "common.h"
 
 /*  argv -> UTF-8 from GetCommandLineW.  Heap-allocated, lives until
     exit.  Returns 0 on success, -1 on OOM.  */
@@ -25,14 +25,14 @@ void fastent_win32_set_stdin_binary(void);
     path isn't narrowed through CP_ACP.  */
 int  fastent_win32_open_utf8(const char * path, int flags);
 int  fastent_win32_close(int fd);
-long fastent_win32_read(int fd, void * buf, size_t n);
+i64  fastent_win32_read(int fd, void * buf, sz n);
 
-long fastent_win32_num_cpus(void);
+i64  fastent_win32_num_cpus(void);
 
 /*  CreateFileMapping + MapViewOfFile.  Caller frees via munmap.
     Returns -1 on non-disk fd, empty file, or AS exhaustion.  */
 int  fastent_win32_mmap(int fd, void ** out_base,
-                        unsigned long long * out_size,
+                        u64 * out_size,
                         void ** out_handle);
 void fastent_win32_munmap(void * base, void * handle);
 
@@ -40,10 +40,10 @@ void fastent_win32_munmap(void * base, void * handle);
     FILE_FLAG_SEQUENTIAL_SCAN).  Returns a HANDLE to bind to an IOCP,
     or NULL on failure.  *out_size set to file size on success.  */
 void * fastent_win32_open_overlapped(const char * utf8_path,
-                                     unsigned long long * out_size);
+                                     u64 * out_size);
 
 /*  PrefetchVirtualMemory (Win 8+); no-op below.  */
-void fastent_win32_mmap_prefetch(void * base, unsigned long long size);
+void fastent_win32_mmap_prefetch(void * base, u64 size);
 
 /*  SetConsoleTextAttribute wrapper.  cls in {0,1,2} = dim, default,
     bright accent; cls = -1 restores initial attrs.  Background bits

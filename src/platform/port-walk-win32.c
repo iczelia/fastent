@@ -19,9 +19,9 @@
 #ifndef FASTENT_WIN_LEGACY
 
 static wchar_t * utf8_to_wide_(const char * s) {
-  int n = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
+  i32 n = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
   if (n <= 0) return NULL;
-  wchar_t * w = (wchar_t *) malloc((size_t) n * sizeof(wchar_t));
+  wchar_t * w = (wchar_t *) malloc((sz) n * sizeof(wchar_t));
   if (!w) return NULL;
   if (MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n) <= 0) {
     free(w); return NULL;
@@ -30,9 +30,9 @@ static wchar_t * utf8_to_wide_(const char * s) {
 }
 
 static char * wide_to_utf8_(const wchar_t * w) {
-  int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, NULL, 0, NULL, NULL);
+  i32 n = WideCharToMultiByte(CP_UTF8, 0, w, -1, NULL, 0, NULL, NULL);
   if (n <= 0) return NULL;
-  char * s = (char *) malloc((size_t) n);
+  char * s = (char *) malloc((sz) n);
   if (!s) return NULL;
   if (WideCharToMultiByte(CP_UTF8, 0, w, -1, s, n, NULL, NULL) <= 0) {
     free(s); return NULL;
@@ -41,8 +41,8 @@ static char * wide_to_utf8_(const wchar_t * w) {
 }
 
 static wchar_t * join_path_w_(const wchar_t * a, const wchar_t * b) {
-  size_t la = wcslen(a);
-  size_t lb = wcslen(b);
+  sz la = wcslen(a);
+  sz lb = wcslen(b);
   int sep  = (la > 0 && a[la - 1] != L'\\' && a[la - 1] != L'/');
   wchar_t * out = (wchar_t *) malloc((la + (sep ? 1 : 0) + lb + 1)
                                       * sizeof(wchar_t));
@@ -54,7 +54,7 @@ static wchar_t * join_path_w_(const wchar_t * a, const wchar_t * b) {
 }
 
 static wchar_t * make_pattern_(const wchar_t * dir) {
-  size_t ld = wcslen(dir);
+  sz ld = wcslen(dir);
   int sep  = (ld > 0 && dir[ld - 1] != L'\\' && dir[ld - 1] != L'/');
   wchar_t * out = (wchar_t *) malloc((ld + (sep ? 1 : 0) + 2)
                                       * sizeof(wchar_t));

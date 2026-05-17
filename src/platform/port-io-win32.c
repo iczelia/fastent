@@ -53,8 +53,8 @@ typedef struct {
   HANDLE     iocp;
   u64        file_size;
   u64        next_submit_offset;
-  int        next_consume;
-  int        prev_returned;
+  i32        next_consume;
+  i32        prev_returned;
   iocp_slot  slot[FASTENT_IOCP_SLOTS];
 } iocp_state;
 
@@ -72,7 +72,7 @@ static void iocp_destroy(iocp_state * u) {
   free(u);
 }
 
-static int iocp_submit_(iocp_state * u, int slot) {
+static int iocp_submit_(iocp_state * u, i32 slot) {
   iocp_slot * s = &u->slot[slot];
 
   u64 off = u->next_submit_offset;
@@ -111,7 +111,7 @@ static int iocp_submit_(iocp_state * u, int slot) {
   return 0;
 }
 
-static int iocp_wait_(iocp_state * u, int target) {
+static int iocp_wait_(iocp_state * u, i32 target) {
   while (!u->slot[target].done) {
     DWORD       bytes = 0;
     ULONG_PTR   key   = 0;
@@ -121,8 +121,8 @@ static int iocp_wait_(iocp_state * u, int target) {
       /*  GQCS itself failed (timeout / closed port).  */
       return -1;
     }
-    int slot = (int) key;
-    if (slot < 0 || (unsigned) slot >= FASTENT_IOCP_SLOTS) return -1;
+    i32 slot = (i32) key;
+    if (slot < 0 || (u32) slot >= FASTENT_IOCP_SLOTS) return -1;
     iocp_slot * s = &u->slot[slot];
     s->done  = 1;
     s->bytes = bytes;
@@ -139,10 +139,10 @@ static iocp_state * iocp_setup(const char * path) {
   iocp_state * u = calloc(1, sizeof(*u));
   if (!u) return NULL;
 
-  unsigned long long sz_out = 0;
+  u64 sz_out = 0;
   u->file = (HANDLE) fastent_win32_open_overlapped(path, &sz_out);
   if (!u->file) { iocp_destroy(u); return NULL; }
-  u->file_size = (u64) sz_out;
+  u->file_size = sz_out;
 
   u->iocp = CreateIoCompletionPort(u->file, NULL, 0, 1);
   if (!u->iocp) { iocp_destroy(u); return NULL; }
@@ -214,13 +214,13 @@ int fastent_src_open(fastent_source * s, const char * path,
   }
 
   {
-    void *             base   = NULL;
-    void *             handle = NULL;
-    unsigned long long sz_out = 0;
+    void * base   = NULL;
+    void * handle = NULL;
+    u64    sz_out = 0;
     if (fastent_win32_mmap(fd, &base, &sz_out, &handle) == 0) {
       s->kind       = FASTENT_SRC_MMAP;
       s->map        = base;
-      s->size       = (u64) sz_out;
+      s->size       = sz_out;
       s->map_handle = handle;
       fastent_win32_mmap_prefetch(base, sz_out);
       return 0;
@@ -247,8 +247,8 @@ sz fastent_src_read(fastent_source * s) {
   if (s->kind == FASTENT_SRC_STREAM) {
     sz off = 0;
     while (off < s->stream_buf_cap) {
-      long n = fastent_win32_read(s->fd, s->stream_buf + off,
-                                  s->stream_buf_cap - off);
+      i64 n = fastent_win32_read(s->fd, s->stream_buf + off,
+                                 s->stream_buf_cap - off);
       if (n < 0)  { if (errno == EINTR) continue;  return (sz) -1; }
       if (n == 0) break;
       off += (sz) n;
@@ -263,7 +263,7 @@ sz fastent_src_read(fastent_source * s) {
       u->prev_returned = -1;
     }
 
-    int slot = u->next_consume;
+    i32 slot = u->next_consume;
     if (iocp_wait_(u, slot) < 0) return (sz) -1;
 
     iocp_slot * sl = &u->slot[slot];
@@ -271,7 +271,7 @@ sz fastent_src_read(fastent_source * s) {
 
     s->stream_buf    = sl->buf;
     u->prev_returned = slot;
-    u->next_consume  = (slot + 1) % (int) FASTENT_IOCP_SLOTS;
+    u->next_consume  = (slot + 1) % (i32) FASTENT_IOCP_SLOTS;
 
     return (sz) sl->bytes;
   }
