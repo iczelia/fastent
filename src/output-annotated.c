@@ -213,7 +213,7 @@ void fastent_print_annotated(const fastent_result * r,
   /*  Serial correlation: z = |scc| * sqrt(N).  */
   {
     int b;
-    if (r->scc < -99999) {
+    if (!FASTENT_SCC_DEFINED(r->scc)) {
       snprintf(aux, sizeof aux, "undefined");
       b = B_NA;
     } else {

@@ -27,7 +27,8 @@ fastent_glyph_mode fastent_term_glyphs(void) {
 }
 
 void fastent_term_set_fg(int cls) {
-  static const int pal[3] = { DARKGRAY, LIGHTGRAY, LIGHTCYAN };
+  /*  4th entry keeps the `cls & 3` mask in bounds; classes are 0..2.  */
+  static const int pal[4] = { DARKGRAY, LIGHTGRAY, LIGHTCYAN, LIGHTGRAY };
   fflush(stdout);
   if (cls < 0) {
     textcolor(LIGHTGRAY);

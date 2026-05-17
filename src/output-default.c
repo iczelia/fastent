@@ -83,7 +83,7 @@ void fastent_print_default(const fastent_result * r,
            r->monte_pi, 100.0 * (fabs(M_PI - r->monte_pi) / M_PI));
   }
   printf("Serial correlation coefficient is ");
-  if (r->scc >= -99999) {
+  if (FASTENT_SCC_DEFINED(r->scc)) {
     if (fp) printf("%.17g (totally uncorrelated = 0.0).\n", r->scc);
     else    printf("%1.6f (totally uncorrelated = 0.0).\n", r->scc);
   } else {

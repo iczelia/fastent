@@ -28,6 +28,13 @@ static void csv_escape_(const char * s) {
   putchar('"');
 }
 
+/*  CSV: non-finite renders as the literal "nan" (never glibc's
+    sign-set "-nan"), matching terse, so the column stays parseable.  */
+static void cnum_(const char * fmt, f64 v) {
+  if (!isfinite(v)) { fputs("nan", stdout); return; }
+  printf(fmt, v);
+}
+
 void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
                                  const fastent_options * o) {
   const int fp = o->full_precision;
@@ -47,32 +54,32 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
     csv_escape_(r->path);
     printf(",%s,%" PRIu64 ",", o->binary ? "bit" : "byte",
            (u64) r->result.total_samples);
-    printf(f, r->result.entropy);     putchar(',');
-    printf(f, r->result.chi_square);  putchar(',');
-    printf(f, r->result.chi_probability); putchar(',');
-    printf(f, r->result.mean);        putchar(',');
-    printf(f, r->result.monte_pi);    putchar(',');
-    if (r->result.scc < -99999) fputs("nan", stdout);
-    else                        printf(f, r->result.scc);
+    cnum_(f, r->result.entropy);     putchar(',');
+    cnum_(f, r->result.chi_square);  putchar(',');
+    cnum_(f, r->result.chi_probability); putchar(',');
+    cnum_(f, r->result.mean);        putchar(',');
+    cnum_(f, r->result.monte_pi);    putchar(',');
+    if (FASTENT_SCC_DEFINED(r->result.scc)) cnum_(f, r->result.scc);
+    else                                    fputs("nan", stdout);
     if (o->extended) {
-      putchar(','); printf(f, r->result.min_entropy);
-      putchar(','); printf(f, r->result.collision_entropy);
-      putchar(','); printf(f, r->result.ic);
-      putchar(','); printf(f, r->result.poker_chisq);
-      putchar(','); printf(f, r->result.poker_p);
-      putchar(','); printf(f, r->result.variance);
-      putchar(','); printf(f, r->result.stddev);
-      putchar(','); printf(f, r->result.redundancy);
+      putchar(','); cnum_(f, r->result.min_entropy);
+      putchar(','); cnum_(f, r->result.collision_entropy);
+      putchar(','); cnum_(f, r->result.ic);
+      putchar(','); cnum_(f, r->result.poker_chisq);
+      putchar(','); cnum_(f, r->result.poker_p);
+      putchar(','); cnum_(f, r->result.variance);
+      putchar(','); cnum_(f, r->result.stddev);
+      putchar(','); cnum_(f, r->result.redundancy);
       printf(",%u,%d,%" PRIu64 ",%d,%" PRIu64,
              r->result.distinct, r->result.mode_value,
              (u64) r->result.mode_count,
              r->result.rarest_value,
              (u64) r->result.rarest_count);
-      Fi(8, putchar(','); printf(f, r->result.bit_freq[i]))
-      putchar(','); printf(f, r->result.bit_bias_max);
+      Fi(8, putchar(','); cnum_(f, r->result.bit_freq[i]))
+      putchar(','); cnum_(f, r->result.bit_bias_max);
       printf(",%d", r->result.bit_bias_worst);
-      putchar(','); printf(f, r->result.conditional_entropy);
-      putchar(','); printf(f, r->result.mutual_information);
+      putchar(','); cnum_(f, r->result.conditional_entropy);
+      putchar(','); cnum_(f, r->result.mutual_information);
       putchar(',');
       if (r->result.runs == r->result.runs) printf("%.0f", r->result.runs);
       else fputs("nan", stdout);
@@ -141,8 +148,8 @@ void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
     fputs(", \"mean\": ", stdout);           json_num_(f, r->result.mean);
     fputs(", \"monte_carlo_pi\": ", stdout); json_num_(f, r->result.monte_pi);
     fputs(", \"serial_correlation\": ", stdout);
-    if (r->result.scc < -99999) fputs("null", stdout);
-    else                        json_num_(f, r->result.scc);
+    if (!FASTENT_SCC_DEFINED(r->result.scc)) fputs("null", stdout);
+    else                                     json_num_(f, r->result.scc);
     if (o->extended) {
       fputs(", \"min_entropy\": ", stdout);
       json_num_(f, r->result.min_entropy);

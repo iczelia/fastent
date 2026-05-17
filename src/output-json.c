@@ -56,7 +56,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   jnum_(fmt_fp, 100.0 * (fabs(M_PI - r->monte_pi) / M_PI));
   printf("\n  },\n");
   printf("  \"serial_correlation\": ");
-  if (r->scc < -99999) printf("null");
+  if (!FASTENT_SCC_DEFINED(r->scc)) printf("null");
   else                 jnum_(fmt_fp, r->scc);
   if (o->extended) {
     printf(",\n  \"min_entropy\": ");          jnum_(fmt_fp, r->min_entropy);

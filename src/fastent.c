@@ -17,6 +17,7 @@
 #include "common.h"
 
 #include <errno.h>
+#include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +33,9 @@
 #include "port-thread.h"
 
 int main(int argc, char ** argv) {
+  /*  Machine-readable output (terse/recursive CSV, JSON) must use
+      C-locale decimal points regardless of the environment locale.  */
+  setlocale(LC_NUMERIC, "C");
   fastent_os_init_console();
   if (fastent_os_argv_utf8(&argc, &argv) != 0) {
     fprintf(stderr, "fastent: failed to decode command line\n");

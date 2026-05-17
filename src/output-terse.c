@@ -26,14 +26,15 @@ static void print_counts_(const fastent_result * r, int binary) {
   const i32 bins = binary ? 2 : 256;
   printf("2,Value,Occurrences,Fraction\n");
   Fi(bins,
+     if (r->hist[i] == 0) continue;
      printf("3,%d,%" PRIu64 ",%f\n", i,
             (u64) r->hist[i],
             (f64) r->hist[i] / (f64) r->total_samples))
 }
 
 void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
-  printf("0,File-%ss,Entropy,Chi-square,Mean,Monte-Carlo-Pi,Serial-Correlation",
-         o->binary ? "bit" : "byte");
+  printf("0,File-%ss,Entropy,Chi-square,P-Exceed,Mean,Monte-Carlo-Pi,"
+         "Serial-Correlation", o->binary ? "bit" : "byte");
   if (o->extended)
     printf(",Min-Entropy,Collision-Entropy,IC,Poker,Poker-p,Variance,Stddev,"
            "Redundancy,Distinct,Mode,Mode-Count,Rarest,Rarest-Count,"
@@ -44,15 +45,14 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
   putchar('\n');
 
   const char * f = o->full_precision ? "%.17g" : "%f";
-  if (o->full_precision) {
-    printf("1,%" PRIu64 ",%.17g,%.17g,%.17g,%.17g,%.17g",
-           (u64) r->total_samples,
-           r->entropy, r->chi_square, r->mean, r->monte_pi, r->scc);
-  } else {
-    printf("1,%" PRIu64 ",%f,%f,%f,%f,%f",
-           (u64) r->total_samples,
-           r->entropy, r->chi_square, r->mean, r->monte_pi, r->scc);
-  }
+  printf("1,%" PRIu64 ",", (u64) r->total_samples);
+  tnum_(f, r->entropy);          putchar(',');
+  tnum_(f, r->chi_square);       putchar(',');
+  tnum_(f, r->chi_probability);  putchar(',');
+  tnum_(f, r->mean);             putchar(',');
+  tnum_(f, r->monte_pi);         putchar(',');
+  if (FASTENT_SCC_DEFINED(r->scc)) tnum_(f, r->scc);
+  else                             fputs("nan", stdout);
   if (o->extended) {
     putchar(','); tnum_(f, r->min_entropy);
     putchar(','); tnum_(f, r->collision_entropy);

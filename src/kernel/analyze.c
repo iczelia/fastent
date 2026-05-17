@@ -52,16 +52,21 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
   const i32 bins = binary ? 2 : 256;
   const f64 totalc = (f64) out->total_samples;
 
-  f64 sum_x  = 0.0;
-  f64 sum_x2 = 0.0;
+  /*  Exact integer moments (i <= 255, hist u64); f64 accumulation
+      would lose the low bits to catastrophic cancellation in the
+      variance subtraction at large N.  */
+  u64 isum_x = 0, isum_x2 = 0;
   Fi(bins,
-     sum_x  += (f64) i * (f64) out->hist[i];
-     sum_x2 += (f64) i * (f64) i * (f64) out->hist[i])
+     isum_x  += (u64) i * out->hist[i];
+     isum_x2 += (u64)(i * i) * out->hist[i])
+  const f64 sum_x  = (f64) isum_x;
+  const f64 sum_x2 = (f64) isum_x2;
 
   const f64 scct1 = (f64) st->cross_product;
   const f64 scct2_sq = sum_x * sum_x;
   const f64 denom = totalc * sum_x2 - scct2_sq;
-  out->scc = (denom == 0.0) ? -100000.0 : (totalc * scct1 - scct2_sq) / denom;
+  out->scc = (denom == 0.0) ? FASTENT_SCC_UNDEF
+                            : (totalc * scct1 - scct2_sq) / denom;
 
   /*  Use +NaN (formats as "nan" everywhere); 0.0/0.0 can print
       "-nan" on glibc x86 but "nan" on musl aarch64.  */

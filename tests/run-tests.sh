@@ -186,16 +186,17 @@ check "uniform -e: min-entropy = 8.000000" bash -c '
     grep -qE "Collision entropy is 8\.000000 bits per byte\." <<< "$out"
 '
 
-check "terse -e: 35 columns" bash -c '
+check "terse -e: 36 columns" bash -c '
   out=$('"${FASTENT}"' -e -t "'"${FIX}"'/lcg.bin")
-  grep -q "Min-Entropy,Collision-Entropy,IC,Poker,Poker-p," <<< "$out" &&
+  grep -q "Chi-square,P-Exceed,Mean," <<< "$out" &&
+    grep -q "Min-Entropy,Collision-Entropy,IC,Poker,Poker-p," <<< "$out" &&
     grep -q "Conditional-Entropy,Mutual-Information,Runs,Longest-Run,Cusum-Max" <<< "$out" &&
-    [ "$(printf "%s\n" "$out" | sed -n 2p | tr , "\n" | wc -l)" -eq 35 ]
+    [ "$(printf "%s\n" "$out" | sed -n 2p | tr , "\n" | wc -l)" -eq 36 ]
 '
 
 check "no -ee: runs/longrun/cusum nan" bash -c '
   out=$('"${FASTENT}"' -e -t "'"${FIX}"'/lcg.bin")
-  printf "%s\n" "$out" | sed -n 2p | awk -F, "{ exit !(\$33==\"nan\" && \$34==\"nan\" && \$35==\"nan\") }"
+  printf "%s\n" "$out" | sed -n 2p | awk -F, "{ exit !(\$34==\"nan\" && \$35==\"nan\" && \$36==\"nan\") }"
 '
 
 check "-ee byte: longest-run set, cusum nan, runs set (mmap median)" bash -c '
@@ -222,14 +223,14 @@ assert d[\"longest_run\"] == d[\"samples\"]" <<< "$out"
 '
 
 check "-ee runs determinism j1 vs j4" bash -c '
-  a=$('"${FASTENT}"' -ee -t -j 1 "'"${FIX}"'/lcg.bin" | sed -n 2p | cut -d, -f33,34,35)
-  b=$('"${FASTENT}"' -ee -t -j 4 "'"${FIX}"'/lcg.bin" | sed -n 2p | cut -d, -f33,34,35)
+  a=$('"${FASTENT}"' -ee -t -j 1 "'"${FIX}"'/lcg.bin" | sed -n 2p | cut -d, -f34,35,36)
+  b=$('"${FASTENT}"' -ee -t -j 4 "'"${FIX}"'/lcg.bin" | sed -n 2p | cut -d, -f34,35,36)
   [ "$a" = "$b" ]
 '
 
 check "no -ee: bigram fields are nan" bash -c '
   out=$('"${FASTENT}"' -e -t "'"${FIX}"'/lcg.bin")
-  printf "%s\n" "$out" | sed -n 2p | awk -F, "{ exit !(\$31==\"nan\" && \$32==\"nan\") }"
+  printf "%s\n" "$out" | sed -n 2p | awk -F, "{ exit !(\$32==\"nan\" && \$33==\"nan\") }"
 '
 
 check "-ee text: low cond-entropy, high MI" bash -c '

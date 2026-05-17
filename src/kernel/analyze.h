@@ -99,6 +99,14 @@ typedef struct {
   i64 cs_max;        /*  max of the walk (>= 0)                   */
 } fastent_chunk_state;
 
+/*  fastent_finalize sets scc to this sentinel when the SCC
+    denominator is zero (no defined serial correlation); a real
+    coefficient is in [-1, 1], so any value past the threshold is the
+    sentinel.  Renderers test FASTENT_SCC_DEFINED instead of
+    open-coding the magic number.  */
+#define FASTENT_SCC_UNDEF      (-100000.0)
+#define FASTENT_SCC_DEFINED(s) ((s) > -99999.0)
+
 /*  Final reduced results.  */
 typedef struct {
   u64 total_samples;

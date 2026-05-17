@@ -346,10 +346,12 @@ void fastent_win32_set_console_fg(int cls) {
   if (cls < 0) {
     attr = initial_attrs;
   } else {
-    static const WORD fg[3] = {
+    /*  4th entry keeps the `cls & 3` mask in bounds; classes 0..2.  */
+    static const WORD fg[4] = {
       FOREGROUND_INTENSITY,
       FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE,
-      FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY
+      FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY,
+      FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE
     };
     WORD bg_bits = initial_attrs & 0x00F0;
     attr = (WORD)(fg[cls & 3] | bg_bits);

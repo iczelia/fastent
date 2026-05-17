@@ -32,7 +32,10 @@ fastent_glyph_mode fastent_term_glyphs(void) {
 }
 
 void fastent_term_set_fg(int cls) {
-  static const char * const ansi[3] = { "\x1b[2m", "\x1b[0m", "\x1b[36m" };
+  /*  4th entry (reset) keeps the `cls & 3` mask in bounds for an
+      out-of-contract class; valid classes are 0..2.  */
+  static const char * const ansi[4] =
+    { "\x1b[2m", "\x1b[0m", "\x1b[36m", "\x1b[0m" };
   if (cls < 0) { fputs("\x1b[0m", stdout); return; }
   fputs(ansi[cls & 3], stdout);
 }

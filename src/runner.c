@@ -121,12 +121,11 @@ static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
      out->total_bytes  += s->total_bytes;
      out->mc_count     += s->mc_count;
      out->mc_inside    += s->mc_inside;
-     /*  Only the last slab carries trailing MC ring bytes; the
-         others end on a 6-aligned boundary.  */
-     if (k == N - 1) {
-       out->mc_pos = s->mc_pos;
-       memcpy(out->mc_buf, s->mc_buf, sizeof(out->mc_buf));
-     })
+     /*  The last non-empty slab's trailing ring (non-final slabs are
+         6-aligned, so their mc_pos is 0 and this is a no-op for
+         them); robust if the final slab is empty.  */
+     out->mc_pos = s->mc_pos;
+     memcpy(out->mc_buf, s->mc_buf, sizeof(out->mc_buf)))
 
   /*  Merge the -ee level-2 reductions.  Per-slab counts are
       partition-invariant; pair, bit-run and cusum stats additionally
