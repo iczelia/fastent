@@ -40,7 +40,7 @@ jobs:
           make dist
 
       - name: upload tarballs
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fastent-dist
           path: |
@@ -65,7 +65,7 @@ jobs:
             build-essential python3
 
       - name: download tarball
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
@@ -140,7 +140,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends qemu-user-static
 
       - name: download tarball
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
@@ -208,7 +208,7 @@ jobs:
           esac
 
       - name: upload binary artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fastent-${{ matrix.target.id }}
           path: |
@@ -243,7 +243,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends $APT
 
       - name: download tarball
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
@@ -289,7 +289,7 @@ jobs:
           (cd dist && tar -czf "${name}.tar.gz" "$name")
 
       - name: upload binary artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fastent-${{ matrix.target.id }}
           path: dist/fastent-*-${{ matrix.target.id }}.tar.gz
@@ -310,7 +310,7 @@ jobs:
             wine wine32:i386
 
       - name: download tarball
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
@@ -380,7 +380,7 @@ jobs:
           (cd dist && zip -9 -r "${name}.zip" "$name")
 
       - name: upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fastent-windows-i686-win95
           path: dist/fastent-*-windows-i686-win95.zip
@@ -418,7 +418,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends dosbox-x
 
       - name: download tarball
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
@@ -468,7 +468,7 @@ jobs:
           (cd dist && zip -9 -r "${name}.zip" "$name")
 
       - name: upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fastent-dos-i386
           path: dist/fastent-*-dos-i386.zip
@@ -501,7 +501,7 @@ jobs:
           node-version: '24'
 
       - name: download tarball
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
@@ -546,7 +546,7 @@ jobs:
           (cd dist && tar -czf "${name}.tar.gz" "$name")
 
       - name: upload binary artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fastent-wasi-${{ matrix.target.id }}
           path: dist/fastent-*-wasi-${{ matrix.target.id }}.tar.gz
@@ -565,7 +565,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends tcc python3
 
       - name: download tarball
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
@@ -607,7 +607,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: download tarball
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
@@ -661,7 +661,7 @@ jobs:
           (cd dist && 7z a "${name}.zip" "$name" >/dev/null)
 
       - name: upload binary artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fastent-windows-x86_64-msvc
           path: dist/fastent-*-windows-x86_64-msvc.zip
