@@ -211,7 +211,11 @@ int fastent_src_open(fastent_source * s, const char * path,
   /*  auto picks IOCP only at -j1 (Win32 analogue of the POSIX
       io_uring-at-j1 rule): single-feed, does not parallelise, so -jN
       keeps the parallel file-mapping slab scan.  */
-  if (mode == FASTENT_IO_AUTO && fastent_num_threads() == 1) {
+  if (mode == FASTENT_IO_AUTO
+#ifdef FASTENT_HAVE_THREADS
+      && fastent_num_threads() == 1
+#endif
+     ) {
     iocp_state * u = iocp_setup(path);
     if (u) {
       s->kind           = FASTENT_SRC_URING;

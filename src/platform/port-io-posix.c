@@ -370,7 +370,10 @@ int fastent_src_open(fastent_source * s, const char * path,
   /*  auto: uring only at -j1 (it loses to the parallel mmap slab scan
       at -jN); explicit --io=uring still uses it at any -j.  */
   if (mode == FASTENT_IO_AUTO && is_regular && file_size > 0
-      && fastent_num_threads() == 1) {
+#ifdef FASTENT_HAVE_THREADS
+      && fastent_num_threads() == 1
+#endif
+     ) {
     uring_state * u = uring_setup(fd, file_size);
     if (u) {
       s->kind           = FASTENT_SRC_URING;
