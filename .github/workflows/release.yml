@@ -126,25 +126,18 @@ jobs:
             CFLAGS="-O2"
           make -j"$(nproc)"
 
-      - name: package (all formats)
+      - name: stage binary
         env:
           BIN: ${{ matrix.target.bin }}
           ID: ${{ matrix.target.id }}
-        run: bash fastent-src/build/ci/package.sh "build/$BIN" "$ID"
+        run: bash fastent-src/build/ci/stage-binary.sh "build/$BIN" "$ID"
 
-      - name: publish binary
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: upload staged binary
+        uses: actions/upload-artifact@v7
         with:
-          files: |
-            dist/fastent-*-${{ matrix.target.id }}.tar
-            dist/fastent-*-${{ matrix.target.id }}.tar.gz
-            dist/fastent-*-${{ matrix.target.id }}.tar.bz2
-            dist/fastent-*-${{ matrix.target.id }}.tar.bz3
-            dist/fastent-*-${{ matrix.target.id }}.tar.xz
-            dist/fastent-*-${{ matrix.target.id }}.tar.zst
-            dist/fastent-*-${{ matrix.target.id }}.zip
+          name: bin-${{ matrix.target.id }}
+          path: staged/
+          if-no-files-found: error
 
   binaries-gcc:
     name: gcc-cross / ${{ matrix.target.id }}
@@ -196,24 +189,17 @@ jobs:
             CFLAGS="-O2"
           make -j"$(nproc)"
 
-      - name: package (all formats)
+      - name: stage binary
         env:
           ID: ${{ matrix.target.id }}
-        run: bash fastent-src/build/ci/package.sh build/fastent "$ID"
+        run: bash fastent-src/build/ci/stage-binary.sh build/fastent "$ID"
 
-      - name: publish binary
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: upload staged binary
+        uses: actions/upload-artifact@v7
         with:
-          files: |
-            dist/fastent-*-${{ matrix.target.id }}.tar
-            dist/fastent-*-${{ matrix.target.id }}.tar.gz
-            dist/fastent-*-${{ matrix.target.id }}.tar.bz2
-            dist/fastent-*-${{ matrix.target.id }}.tar.bz3
-            dist/fastent-*-${{ matrix.target.id }}.tar.xz
-            dist/fastent-*-${{ matrix.target.id }}.tar.zst
-            dist/fastent-*-${{ matrix.target.id }}.zip
+          name: bin-${{ matrix.target.id }}
+          path: staged/
+          if-no-files-found: error
 
   binary-win95:
     name: gcc-mingw / windows-i686-win95
@@ -248,22 +234,15 @@ jobs:
             CFLAGS="-O2"
           make -j"$(nproc)"
 
-      - name: package (all formats)
-        run: bash fastent-src/build/ci/package.sh build/fastent.exe windows-i686-win95
+      - name: stage binary
+        run: bash fastent-src/build/ci/stage-binary.sh build/fastent.exe windows-i686-win95
 
-      - name: publish binary
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: upload staged binary
+        uses: actions/upload-artifact@v7
         with:
-          files: |
-            dist/fastent-*-windows-i686-win95.tar
-            dist/fastent-*-windows-i686-win95.tar.gz
-            dist/fastent-*-windows-i686-win95.tar.bz2
-            dist/fastent-*-windows-i686-win95.tar.bz3
-            dist/fastent-*-windows-i686-win95.tar.xz
-            dist/fastent-*-windows-i686-win95.tar.zst
-            dist/fastent-*-windows-i686-win95.zip
+          name: bin-windows-i686-win95
+          path: staged/
+          if-no-files-found: error
 
   binaries-wasm:
     name: emscripten / ${{ matrix.target.id }}
@@ -304,24 +283,17 @@ jobs:
             LDFLAGS="$fl"
           emmake make -j"$(nproc)"
 
-      - name: package (all formats)
+      - name: stage binary
         env:
           ID: ${{ matrix.target.id }}
-        run: bash fastent-src/build/ci/package.sh build/fastent "wasi-$ID"
+        run: bash fastent-src/build/ci/stage-binary.sh build/fastent "wasi-$ID"
 
-      - name: publish binary
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: upload staged binary
+        uses: actions/upload-artifact@v7
         with:
-          files: |
-            dist/fastent-*-wasi-${{ matrix.target.id }}.tar
-            dist/fastent-*-wasi-${{ matrix.target.id }}.tar.gz
-            dist/fastent-*-wasi-${{ matrix.target.id }}.tar.bz2
-            dist/fastent-*-wasi-${{ matrix.target.id }}.tar.bz3
-            dist/fastent-*-wasi-${{ matrix.target.id }}.tar.xz
-            dist/fastent-*-wasi-${{ matrix.target.id }}.tar.zst
-            dist/fastent-*-wasi-${{ matrix.target.id }}.zip
+          name: bin-wasi-${{ matrix.target.id }}
+          path: staged/
+          if-no-files-found: error
 
   binary-dos:
     name: djgpp / dos-i386
@@ -368,19 +340,79 @@ jobs:
             CFLAGS="-O2" LDFLAGS="-s"
           make -j"$(nproc)"
 
-      - name: package (all formats)
-        run: bash fastent-src/build/ci/package.sh build/fastent.exe dos-i386
+      - name: stage binary
+        run: bash fastent-src/build/ci/stage-binary.sh build/fastent.exe dos-i386
 
-      - name: publish binary
+      - name: upload staged binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: bin-dos-i386
+          path: staged/
+          if-no-files-found: error
+
+  package-release:
+    name: Bundle per-OS archives and publish
+    needs: [binaries-zig, binaries-gcc, binary-win95, binaries-wasm, binary-dos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: download source
+        uses: actions/download-artifact@v7
+        with:
+          name: fastent-dist
+
+      - name: unpack source
+        run: |
+          tar xzf fastent-*.tar.gz
+          ln -s fastent-*/ fastent-src
+
+      - name: download all staged binaries
+        uses: actions/download-artifact@v7
+        with:
+          pattern: bin-*
+          merge-multiple: true
+          path: staged
+
+      - name: bundle per-OS archives
+        run: bash fastent-src/build/ci/bundle-release.sh
+
+      - name: publish binaries
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: |
-            dist/fastent-*-dos-i386.tar
-            dist/fastent-*-dos-i386.tar.gz
-            dist/fastent-*-dos-i386.tar.bz2
-            dist/fastent-*-dos-i386.tar.bz3
-            dist/fastent-*-dos-i386.tar.xz
-            dist/fastent-*-dos-i386.tar.zst
-            dist/fastent-*-dos-i386.zip
+            dist/fastent-*-linux.tar
+            dist/fastent-*-linux.tar.gz
+            dist/fastent-*-linux.tar.bz2
+            dist/fastent-*-linux.tar.bz3
+            dist/fastent-*-linux.tar.xz
+            dist/fastent-*-linux.tar.zst
+            dist/fastent-*-linux.zip
+            dist/fastent-*-windows.tar
+            dist/fastent-*-windows.tar.gz
+            dist/fastent-*-windows.tar.bz2
+            dist/fastent-*-windows.tar.bz3
+            dist/fastent-*-windows.tar.xz
+            dist/fastent-*-windows.tar.zst
+            dist/fastent-*-windows.zip
+            dist/fastent-*-macos.tar
+            dist/fastent-*-macos.tar.gz
+            dist/fastent-*-macos.tar.bz2
+            dist/fastent-*-macos.tar.bz3
+            dist/fastent-*-macos.tar.xz
+            dist/fastent-*-macos.tar.zst
+            dist/fastent-*-macos.zip
+            dist/fastent-*-wasi.tar
+            dist/fastent-*-wasi.tar.gz
+            dist/fastent-*-wasi.tar.bz2
+            dist/fastent-*-wasi.tar.bz3
+            dist/fastent-*-wasi.tar.xz
+            dist/fastent-*-wasi.tar.zst
+            dist/fastent-*-wasi.zip
+            dist/fastent-*-dos.tar
+            dist/fastent-*-dos.tar.gz
+            dist/fastent-*-dos.tar.bz2
+            dist/fastent-*-dos.tar.bz3
+            dist/fastent-*-dos.tar.xz
+            dist/fastent-*-dos.tar.zst
+            dist/fastent-*-dos.zip
