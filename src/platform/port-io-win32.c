@@ -10,6 +10,7 @@
 
 #include "common.h"
 #include "port-io.h"
+#include "port-thread.h"
 
 #ifdef _WIN32
 
@@ -206,6 +207,22 @@ int fastent_src_open(fastent_source * s, const char * path,
 #endif
   }
 
+#ifndef FASTENT_WIN_LEGACY
+  /*  auto picks IOCP only at -j1 (Win32 analogue of the POSIX
+      io_uring-at-j1 rule): single-feed, does not parallelise, so -jN
+      keeps the parallel file-mapping slab scan.  */
+  if (mode == FASTENT_IO_AUTO && fastent_num_threads() == 1) {
+    iocp_state * u = iocp_setup(path);
+    if (u) {
+      s->kind           = FASTENT_SRC_URING;
+      s->size           = u->file_size;
+      s->stream_buf_cap = FASTENT_STREAM_BUF;
+      s->uring_state    = u;
+      return 0;
+    }
+  }
+#endif
+
   int fd = fastent_win32_open_utf8(path, O_RDONLY | O_BINARY);
   if (fd < 0) return -1;
   s->opened_fd = 1;
@@ -321,5 +338,113 @@ void fastent_src_close(fastent_source * s) {
   s->fd = -1;
   s->kind = FASTENT_SRC_NONE;
 }
+
+#ifndef FASTENT_WIN_LEGACY
+
+#define FASTENT_SLAB_SLOTS 2u
+
+struct fastent_uring_slab {
+  HANDLE     h;
+  HANDLE     ev;
+  u64        next_off;
+  u64        end_off;
+  OVERLAPPED ov[FASTENT_SLAB_SLOTS];
+  u8 *       buf[FASTENT_SLAB_SLOTS];
+  void *     buf_raw[FASTENT_SLAB_SLOTS];
+  i32        inflight;
+  int        started;
+};
+
+static int slab_submit(struct fastent_uring_slab * r, i32 slot) {
+  if (r->next_off >= r->end_off) return 0;
+  u64 off = r->next_off;
+  DWORD to_read = (DWORD) FASTENT_STREAM_BUF;
+  if (off + to_read > r->end_off) to_read = (DWORD)(r->end_off - off);
+  memset(&r->ov[slot], 0, sizeof(r->ov[slot]));
+  r->ov[slot].Offset     = (DWORD)(off & 0xFFFFFFFFu);
+  r->ov[slot].OffsetHigh = (DWORD)(off >> 32);
+  r->ov[slot].hEvent     = r->ev;
+  ResetEvent(r->ev);
+  r->next_off = off + (u64) to_read;
+  if (ReadFile(r->h, r->buf[slot], to_read, NULL, &r->ov[slot])) return 1;
+  DWORD e = GetLastError();
+  if (e == ERROR_IO_PENDING) return 1;
+  if (e == ERROR_HANDLE_EOF)  return 0;
+  return -1;
+}
+
+/*  One read in flight over a disjoint range in strict offset order:
+    output is bit-identical to -j1 / mmap.  */
+fastent_uring_slab * fastent_uring_slab_open(int fd, const char * path,
+                                             u64 off, u64 len) {
+  (void) fd;
+  if (!path || len == 0) return NULL;
+  struct fastent_uring_slab * r = calloc(1, sizeof(*r));
+  if (!r) return NULL;
+  u64 fsz = 0;
+  r->h = (HANDLE) fastent_win32_open_overlapped(path, &fsz);
+  if (!r->h) { free(r); return NULL; }
+  r->ev = CreateEventA(NULL, TRUE, FALSE, NULL);
+  if (!r->ev) { CloseHandle(r->h); free(r); return NULL; }
+  r->next_off = off;
+  r->end_off  = off + len;
+  r->inflight = -1;
+  Fi((int) FASTENT_SLAB_SLOTS,
+     void * raw = NULL;
+     void * user = NULL;
+     if (fastent_io_alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) {
+       fastent_uring_slab_close(r);  return NULL;
+     }
+     r->buf[i]     = (u8 *) user;
+     r->buf_raw[i] = raw)
+  return r;
+}
+
+sz fastent_uring_slab_next(fastent_uring_slab * r, const u8 ** out) {
+  if (!r->started) {
+    int s = slab_submit(r, 0);
+    if (s < 0) return (sz) -1;
+    if (s == 0) { r->started = 1;  return 0; }
+    r->inflight = 0;  r->started = 1;
+  }
+  if (r->inflight < 0) return 0;
+  i32 slot = r->inflight;
+  DWORD got = 0;
+  if (!GetOverlappedResult(r->h, &r->ov[slot], &got, TRUE)) {
+    if (GetLastError() != ERROR_HANDLE_EOF) return (sz) -1;
+    got = 0;
+  }
+  i32 nxt = (slot + 1) % (i32) FASTENT_SLAB_SLOTS;
+  int s = slab_submit(r, nxt);
+  if (s < 0) return (sz) -1;
+  r->inflight = s ? nxt : -1;
+  if (got == 0) return 0;
+  *out = r->buf[slot];
+  return (sz) got;
+}
+
+void fastent_uring_slab_close(fastent_uring_slab * r) {
+  if (!r) return;
+  if (r->h && r->h != INVALID_HANDLE_VALUE) {
+    CancelIoEx(r->h, NULL);
+    Fi((int) FASTENT_SLAB_SLOTS,
+       DWORD g;  GetOverlappedResult(r->h, &r->ov[i], &g, TRUE))
+    CloseHandle(r->h);
+  }
+  if (r->ev) CloseHandle(r->ev);
+  Fi((int) FASTENT_SLAB_SLOTS, if (r->buf_raw[i]) free(r->buf_raw[i]))
+  free(r);
+}
+
+#else
+fastent_uring_slab * fastent_uring_slab_open(int fd, const char * path,
+                                             u64 off, u64 len) {
+  (void) fd;  (void) path;  (void) off;  (void) len;  return NULL;
+}
+sz fastent_uring_slab_next(fastent_uring_slab * r, const u8 ** out) {
+  (void) r;  (void) out;  return (sz) -1;
+}
+void fastent_uring_slab_close(fastent_uring_slab * r) { (void) r; }
+#endif
 
 #endif  /*  _WIN32  */

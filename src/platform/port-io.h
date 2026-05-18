@@ -50,4 +50,14 @@ void fastent_src_close(fastent_source * s);
 /*  Aligned buffer alloc used by both backends; lives in port-io.c.  */
 int  fastent_io_alloc_aligned(void ** out_raw, void ** out_user, sz cap);
 
+/*  Per-worker io_uring slab reader: a private ring double-buffering
+    sequential reads over one disjoint [off,off+len) range (N workers,
+    no shared feed).  open NULL = io_uring absent (caller falls back);
+    next: bytes, 0 = slab end, (sz)-1 = error, ptr valid until next.  */
+typedef struct fastent_uring_slab fastent_uring_slab;
+fastent_uring_slab * fastent_uring_slab_open(int fd, const char * path,
+                                             u64 off, u64 len);
+sz   fastent_uring_slab_next(fastent_uring_slab * r, const u8 ** out);
+void fastent_uring_slab_close(fastent_uring_slab * r);
+
 #endif
