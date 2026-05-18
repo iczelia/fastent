@@ -76,10 +76,9 @@ static fastent_digram_bits_fn dg_bits_fn_(void) {
 /*  Reference (oracle) block: per-byte pack + per-transition
     fastent_lr_run loop.  Compiled only for the differential gate; the
     default build dispatches to the templated per-ISA kernel.  */
-static void digram_bits_blk_(fastent_chunk_state * st,
-                             const u8 * FASTENT_RESTRICT buf, sz cl,
-                             const i32 * cs_mn, const i32 * cs_mx,
-                             const i32 * cs_net) {
+static void digram_bits_blk_(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz cl,
+    const i32 * cs_mn, const i32 * cs_mx, const i32 * cs_net) {
   u64 W[FASTENT_DG_BITS_WORDS];
   const sz M  = cl * 8;
   const sz NW = (M + 63) / 64;
@@ -160,8 +159,8 @@ static void digram_bits_blk_(fastent_chunk_state * st,
     chunk boundaries via the carried previous bit) feeds the 2x2
     bigram, longest run, 0/1 run count and the +-1 cusum walk.
     Word-parallel; dg_prev holds the previous bit (0/1).  */
-static void digram_bits_(fastent_chunk_state * st,
-                         const u8 * FASTENT_RESTRICT buf, sz len) {
+static void digram_bits_(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   i32 cs_mn[256], cs_mx[256], cs_net[256];
   i32 v, k;
   for (v = 0; v < 256; v++) {
@@ -200,8 +199,8 @@ static void digram_bits_(fastent_chunk_state * st,
     dg_chunk_bytes would cross FASTENT_DG_U32_CHUNK; split calls are
     bit-identical to one (dg_prev/lr carry), so the drain point depends
     only on byte count (any -j).  Draining first keeps cells < 2^31.  */
-static void digram_bytes_drained_(fastent_chunk_state * st,
-                                  const u8 * FASTENT_RESTRICT buf, sz len) {
+static void digram_bytes_drained_(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   fastent_digram_byte_fn fn = dg_byte_fn_();
   sz off = 0;
   while (off < len) {
@@ -216,8 +215,8 @@ static void digram_bytes_drained_(fastent_chunk_state * st,
   }
 }
 
-void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
-                          sz len, int binary, int fold) {
+void fastent_digram_count(
+    fastent_chunk_state * st, const u8 * buf, sz len, int binary, int fold) {
   if (len == 0) return;
   if (!binary && !st->bigram) return;   /*  byte mode without -ee table  */
 

@@ -103,6 +103,30 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
     printf(",\n  \"longest_run\": ");   jint_(r->longest_run);
     printf(",\n  \"cusum_max\": ");     jint_(r->cusum_max);
   }
+  if (o->extended >= 3) {
+    printf(",\n  \"lz77f\": ");
+    if (r->lz_deviation != r->lz_deviation) {
+      fputs("null", stdout);
+    } else {
+      printf("{\n    \"cr_excess\": ");      jnum_(fmt_fp, r->lz_cr_excess);
+      printf(",\n    \"literal_entropy\": "); jnum_(fmt_fp, r->lz_lit_h);
+      printf(",\n    \"literal_kl\": ");      jnum_(fmt_fp, r->lz_lit_kl);
+      printf(",\n    \"match_coverage\": ");  jnum_(fmt_fp, r->lz_match_cov);
+      printf(",\n    \"offset_concentration\": ");
+      jnum_(fmt_fp, r->lz_off_conc);
+      printf(",\n    \"mlen_excess\": ");     jnum_(fmt_fp, r->lz_mlen_excess);
+      printf(",\n    \"literal_chi_square\": { \"statistic\": ");
+      jnum_(fmt_fp, r->lz_lit_chi);
+      printf(", \"df\": 255, \"p_exceed\": ");
+      jnum_(fmt_fp, r->lz_lit_chi_p);
+      printf(" }");
+      printf(",\n    \"deviation\": ");       jnum_(fmt_fp, r->lz_deviation);
+      printf(",\n    \"matches\": %" PRIu64, (u64) r->lz_nmatch);
+      printf(",\n    \"single_dominant_match\": %s",
+             r->lz_megamatch ? "true" : "false");
+      printf("\n  }");
+    }
+  }
   if (o->counts) {
     printf(",\n  \"occurrences\": [\n");
     const i32 bins = o->binary ? 2 : 256;

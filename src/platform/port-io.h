@@ -39,8 +39,8 @@ typedef struct {
 
 /*  AUTO/STREAM never fail for I/O-mode reasons; MMAP/URING error out
     if their preconditions are missing (stdin, old kernel, etc).  */
-int  fastent_src_open(fastent_source * s, const char * path,
-                      fastent_io_mode mode);
+int fastent_src_open(
+    fastent_source * s, const char * path, fastent_io_mode mode);
 
 /*  STREAM/URING: bytes read, 0 = EOF, <0 = errno set.  */
 sz   fastent_src_read(fastent_source * s);
@@ -55,8 +55,8 @@ int  fastent_io_alloc_aligned(void ** out_raw, void ** out_user, sz cap);
     no shared feed).  open NULL = io_uring absent (caller falls back);
     next: bytes, 0 = slab end, (sz)-1 = error, ptr valid until next.  */
 typedef struct fastent_uring_slab fastent_uring_slab;
-fastent_uring_slab * fastent_uring_slab_open(int fd, const char * path,
-                                             u64 off, u64 len);
+fastent_uring_slab * fastent_uring_slab_open(
+    int fd, const char * path, u64 off, u64 len);
 sz   fastent_uring_slab_next(fastent_uring_slab * r, const u8 ** out);
 void fastent_uring_slab_close(fastent_uring_slab * r);
 

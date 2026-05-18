@@ -5,6 +5,40 @@ This file contains user-visible changes for each release.  For a
 complete source-level history, see the ChangeLog.
 
 -------------------------------------------------------------------------------
+v1.3 (May 2026)
+
+  LZ77F estimator (-eee)
+  ----------------------
+
+  -e / --extended takes a third level.  Passing it three times
+  (-eee, or --extended thrice) runs the LZ77F estimator: a
+  count-only LZ77F match finder (acceleration 1, HLOG 13) that
+  measures structure an order-0/order-1 model misses.  It reports
+  the compressibility excess versus an incompressible baseline
+  (lz_cr_excess), the literal byte-value entropy and its KL
+  divergence to uniform (lz_lit_h / lz_lit_kl), the match coverage
+  (lz_match_cov), the offset and match-length concentration
+  (lz_off_conc / lz_mlen_excess), an advisory literal chi-square
+  against uniform (lz_lit_chi, df 255), and a headline lz_deviation
+  z badged PASS / WEAK / FAIL.  A pristine periodic or
+  exact-duplicate input that collapses to a single dominant match
+  is flagged explicitly; the verdict still fails via the
+  compressibility and coverage signals.
+
+  All of it is reported in the default, terse CSV, JSON, recursive
+  and annotated output and is sortable via --sort-by=lz-deviation,
+  lz-cr or lz-match-cov (which imply -eee).  With -eee -H, three
+  extra plots follow the byte/bit plot: match offsets and match
+  lengths in log2 buckets and the literal byte-value histogram
+  (256 bins, its title carrying H_lit).
+
+  The parse is keyed to a fixed 4 MiB block grid on the absolute
+  file offset, so the result is bit-identical for any thread count,
+  for --io=mmap, stream or uring, and across hosts.  The drift
+  versus a whole-file serial parse is at most about 0.055 percent
+  and does not change any verdict.
+
+-------------------------------------------------------------------------------
 v1.2 (May 2026)
 
   Order-1 bigram statistics (-ee)

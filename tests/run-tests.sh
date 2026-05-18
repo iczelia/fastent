@@ -258,6 +258,42 @@ if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
   '
 fi
 
+check "no -eee: LZ77F fields are nan" bash -c '
+  out=$('"${FASTENT}"' -ee -t "'"${FIX}"'/lcg.bin")
+  printf "%s\n" "$out" | sed -n 1p | grep -qv "LZ-Deviation"
+'
+
+check "-eee zeros: mega-match FAIL" bash -c '
+  out=$('"${FASTENT}"' -eee --json "'"${FIX}"'/all-zeros.bin")
+  python3 -c "import json,sys
+d=json.load(sys.stdin)[\"lz77f\"]
+assert d[\"single_dominant_match\"] is True
+assert d[\"cr_excess\"] > 0.9 and d[\"match_coverage\"] > 0.9
+assert d[\"deviation\"] >= 3.0" <<< "$out"
+'
+
+check "-eee uniform: LZ77F ~ random PASS" bash -c '
+  out=$('"${FASTENT}"' -eee --json "'"${FIX}"'/uniform.bin")
+  python3 -c "import json,sys
+d=json.load(sys.stdin)[\"lz77f\"]
+assert d[\"match_coverage\"] < 0.05
+assert d[\"cr_excess\"] < 0.05
+assert d[\"deviation\"] < 2.0" <<< "$out"
+'
+
+if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
+  check "-eee LZ77F determinism j1 == j4" bash -c '
+    a=$('"${FASTENT}"' -eee -t -j 1 "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    b=$('"${FASTENT}"' -eee -t -j 4 "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    [ "$a" = "$b" ]
+  '
+  check "-eee LZ77F determinism mmap == stream" bash -c '
+    a=$('"${FASTENT}"' -eee -t --io=mmap   "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    b=$('"${FASTENT}"' -eee -t --io=stream "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    [ "$a" = "$b" ]
+  '
+fi
+
 check "-ee bit mode: 2x2 computed" bash -c '
   out=$('"${FASTENT}"' -ee -b --json "'"${FIX}"'/lcg.bin")
   python3 -c "import json,sys

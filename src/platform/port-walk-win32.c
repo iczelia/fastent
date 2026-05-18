@@ -69,8 +69,8 @@ static wchar_t * make_pattern_(const wchar_t * dir) {
 /*  Recursion-depth backstop, matching the POSIX walker.  */
 #define FASTENT_WALK_MAX_DEPTH 4096
 
-static int walk_dir_w_(const wchar_t * dir, fastent_walk_fn fn, void * ctx,
-                       int depth) {
+static int walk_dir_w_(
+    const wchar_t * dir, fastent_walk_fn fn, void * ctx, int depth) {
   if (depth > FASTENT_WALK_MAX_DEPTH) return 0;
   wchar_t * pat = make_pattern_(dir);
   if (!pat) return -1;

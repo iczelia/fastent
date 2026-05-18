@@ -72,9 +72,9 @@ typedef struct {
   char who[24];      /*  copy of the metric carrying `worst`   */
 } verdict_acc;
 
-static void row_(const fastent_options * o, int color, verdict_acc * v,
-                 int core, const char * label, const char * aux,
-                 int badge, const char * expl) {
+static void row_(
+    const fastent_options * o, int color, verdict_acc * v, int core,
+    const char * label, const char * aux, int badge, const char * expl) {
   printf("  %-19s%-25s ", label, aux);
   if (color) fastent_term_set_sev(badge);
   fastent_term_write(badge_txt_(badge));
@@ -90,8 +90,8 @@ static void row_(const fastent_options * o, int color, verdict_acc * v,
   }
 }
 
-void fastent_print_annotated(const fastent_result * r,
-                             const fastent_options * o) {
+void fastent_print_annotated(
+    const fastent_result * r, const fastent_options * o) {
   if (o->histogram) fastent_print_histogram(r, o);
 
   const char * samp = o->binary ? "bit" : "byte";
@@ -276,6 +276,46 @@ void fastent_print_annotated(const fastent_result * r,
        : b == B_PASS ? "prev symbol uninformative"
        : b == B_WEAK ? "prev mildly informative"
        :               "prev highly informative");
+  }
+
+  /*  LZ77F (-eee): lz_deviation is the verdict signal (z_badge_, as
+      Mean/Serial); sub-signals informational, literal chi advisory. */
+  if (r->lz_deviation != r->lz_deviation) {
+    row_(o, color, &v, 0, "LZ77F", "pass -eee", B_NA, "");
+  } else {
+    int b = z_badge_(r->lz_deviation);
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "z=%.17g" : "z=%.4g", r->lz_deviation);
+    row_(o, color, &v, 1, "LZ77F deviation", aux, b,
+         b == B_PASS ? "incompressible"
+       : b == B_WEAK ? "slightly compressible"
+       :               "compressible / structured");
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "%.17g  cov %.17g" : "%.4g  cov %.4g",
+             r->lz_cr_excess, r->lz_match_cov);
+    row_(o, color, &v, 0, "  CR excess / cov", aux, B_NA, "");
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "H_lit=%.17g  KL=%.17g" : "H_lit=%.4g  KL=%.4g",
+             r->lz_lit_h, r->lz_lit_kl);
+    row_(o, color, &v, 0, "  Literal skew", aux, B_NA, "");
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "conc=%.17g  mlen+%.17g" : "conc=%.4g  mlen+%.4g",
+             r->lz_off_conc, r->lz_mlen_excess);
+    row_(o, color, &v, 0, "  Off/len conc.", aux, B_NA, "");
+    {
+      int cb = p_badge_(r->lz_lit_chi_p);
+      snprintf(aux, sizeof aux, o->full_precision
+               ? "%.17g  p=%.17g" : "%.4g  p=%.4f",
+               r->lz_lit_chi, r->lz_lit_chi_p);
+      row_(o, color, &v, 0, "  Literal chi", aux, cb,
+           cb == B_PASS ? "literals uniform (advisory)"
+         : cb == B_WEAK ? "suspect literal bias (advisory)"
+         : cb == B_NA   ? ""
+         :                "literal byte bias (advisory)");
+    }
+    if (r->lz_megamatch)
+      printf("  %-19s%-25s        exact-repeat / single dominant "
+             "match (concentration at limit)\n", "  Note", "");
   }
 
   /*  Informational footer (no verdict).  */

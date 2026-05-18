@@ -83,8 +83,8 @@ typedef struct {
 static long io_uring_setup_sys(u32 entries, struct io_uring_params * p) {
   return syscall(__NR_io_uring_setup, entries, p);
 }
-static long io_uring_enter_sys(int fd, u32 to_submit,
-                               u32 min_complete, u32 flags) {
+static long io_uring_enter_sys(
+    int fd, u32 to_submit, u32 min_complete, u32 flags) {
   return syscall(__NR_io_uring_enter, fd, to_submit, min_complete,
                  flags, NULL, (sz) 0);
 }
@@ -273,8 +273,8 @@ static int slab_submit(fastent_uring_slab * r, i32 slot) {
   }
 }
 
-fastent_uring_slab * fastent_uring_slab_open(int fd, const char * path,
-                                             u64 off, u64 len) {
+fastent_uring_slab * fastent_uring_slab_open(
+    int fd, const char * path, u64 off, u64 len) {
   (void) path;
   if (len == 0) return NULL;
   fastent_uring_slab * r = calloc(1, sizeof(*r));
@@ -321,8 +321,8 @@ void fastent_uring_slab_close(fastent_uring_slab * r) {
 
 #ifndef HAVE_IO_URING
 struct fastent_uring_slab { int unused; };
-fastent_uring_slab * fastent_uring_slab_open(int fd, const char * path,
-                                             u64 off, u64 len) {
+fastent_uring_slab * fastent_uring_slab_open(
+    int fd, const char * path, u64 off, u64 len) {
   (void) fd;  (void) path;  (void) off;  (void) len;  return NULL;
 }
 sz fastent_uring_slab_next(fastent_uring_slab * r, const u8 ** out) {
@@ -331,8 +331,8 @@ sz fastent_uring_slab_next(fastent_uring_slab * r, const u8 ** out) {
 void fastent_uring_slab_close(fastent_uring_slab * r) { (void) r; }
 #endif
 
-int fastent_src_open(fastent_source * s, const char * path,
-                     fastent_io_mode mode) {
+int fastent_src_open(
+    fastent_source * s, const char * path, fastent_io_mode mode) {
   memset(s, 0, sizeof(*s));
   s->kind = FASTENT_SRC_NONE;
   s->fd = -1;

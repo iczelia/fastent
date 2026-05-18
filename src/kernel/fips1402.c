@@ -154,8 +154,8 @@ static void fips_worker_(sz k, void * vctx) {
 }
 #endif
 
-void fastent_fips140_run(const u8 * buf, sz len, int threads,
-                         fastent_fips_report * out) {
+void fastent_fips140_run(
+    const u8 * buf, sz len, int threads, fastent_fips_report * out) {
   memset(out, 0, sizeof *out);
   u64 nblocks = (u64) len / FIPS_BLOCK_BYTES;
   out->leftover = (u64) len - nblocks * FIPS_BLOCK_BYTES;
@@ -190,6 +190,55 @@ void fastent_fips140_run(const u8 * buf, sz len, int threads,
   (void) threads;
 #endif
   run(buf, nblocks, out);
+}
+
+/*  Streaming FIPS driver, bounded memory (one batch stage + sub-2500
+    carry).  Same per-ISA batched runner as fastent_fips140_run, so
+    verdicts/leftover are byte-identical to slurp.  Serial on -j.  */
+
+#define FIPS_BATCH_BLOCKS 4096u    /*  ~10 MiB stage, O(1) in filesize  */
+
+void fastent_fips140_stream_init(
+    fastent_fips_stream * s, fastent_fips_report * out) {
+  memset(out, 0, sizeof *out);
+  s->out = out;
+  s->run = fastent_pick_fips_variant(NULL);
+  s->stage = (u8 *) malloc((sz) FIPS_BATCH_BLOCKS * FIPS_BLOCK_BYTES);
+  s->fill = 0;
+  s->oom = s->stage ? 0 : 1;
+}
+
+/*  Feed an any-size chunk: stage it, dispatch every full batch; the
+    residue (< FIPS_BATCH_BLOCKS * 2500) stays buffered across calls. */
+void fastent_fips140_stream_push(
+    fastent_fips_stream * s, const u8 * buf, sz len) {
+  if (s->oom) return;
+  const sz cap = (sz) FIPS_BATCH_BLOCKS * FIPS_BLOCK_BYTES;
+  while (len > 0) {
+    sz room = cap - s->fill;
+    sz take = len < room ? len : room;
+    memcpy(s->stage + s->fill, buf, take);
+    s->fill += take;  buf += take;  len -= take;
+    if (s->fill == cap) {
+      s->run(s->stage, FIPS_BATCH_BLOCKS, s->out);
+      s->fill = 0;
+    }
+  }
+}
+
+/*  Drain the residue: whole 2500-byte blocks tested, the sub-block
+    tail becomes the final leftover, so the report matches
+    fastent_fips140_run even for a length not a multiple of 2500.  */
+int fastent_fips140_stream_finish(fastent_fips_stream * s) {
+  int oom = s->oom;
+  if (!oom) {
+    u64 nb = (u64) s->fill / FIPS_BLOCK_BYTES;
+    s->out->leftover = (u64) s->fill - nb * FIPS_BLOCK_BYTES;
+    if (nb) s->run(s->stage, nb, s->out);
+  }
+  free(s->stage);
+  s->stage = NULL;
+  return oom;
 }
 
 int fastent_fips140_print(const fastent_fips_report * r, FILE * fp) {

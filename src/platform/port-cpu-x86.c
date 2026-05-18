@@ -14,9 +14,8 @@
     CPUID always exists).  */
 #include <intrin.h>
 static inline int has_cpuid(void) { return 1; }
-static inline void cpuid_(u32 leaf, u32 subleaf,
-                          u32 * a, u32 * b,
-                          u32 * c, u32 * d) {
+static inline void cpuid_(
+    u32 leaf, u32 subleaf, u32 * a, u32 * b, u32 * c, u32 * d) {
   int r[4];
   __cpuidex(r, (int) leaf, (int) subleaf);
   *a = (u32) r[0];  *b = (u32) r[1];
@@ -51,9 +50,8 @@ static int has_cpuid(void) {
 
 /*  i386 -fPIC reserves EBX as the PIC base, so xchg it via a scratch
     instead of clobbering it.  */
-static inline void cpuid_(u32 leaf, u32 subleaf,
-                          u32 * a, u32 * b,
-                          u32 * c, u32 * d) {
+static inline void cpuid_(
+    u32 leaf, u32 subleaf, u32 * a, u32 * b, u32 * c, u32 * d) {
 #if defined(__i386__) && defined(__PIC__)
   __asm__ volatile (
     "xchgl %%ebx, %1\n\t"

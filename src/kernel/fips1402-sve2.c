@@ -41,8 +41,8 @@ static inline void fips_pack_sve2(const u8 * b, u64 W[FIPS_NW]) {
 }
 
 /*  One-pass run-length spectrum (same definition as the scalar TU).  */
-static void fips_runs_sve2(const u64 W[FIPS_NW],
-                           u32 cnt1[7], u32 cnt0[7], int * lr) {
+static void fips_runs_sve2(
+    const u64 W[FIPS_NW], u32 cnt1[7], u32 cnt0[7], int * lr) {
   i32 w;
   u32 run_len = 0, cur_bit = 0;
   int have = 0;
@@ -121,8 +121,8 @@ static void fips_block_sve2(const u8 * b, fastent_fips_report * r) {
   if (mono_ok && poker_ok && runs_ok && long_ok) r->blocks_pass++;
 }
 
-void fastent_fips_run_blocks_sve2(const u8 * buf, u64 nblocks,
-                                  fastent_fips_report * r) {
+void fastent_fips_run_blocks_sve2(
+    const u8 * buf, u64 nblocks, fastent_fips_report * r) {
   u64 i;
   for (i = 0; i < nblocks; i++)
     fips_block_sve2(buf + i * FIPS_BLOCK_BYTES, r);

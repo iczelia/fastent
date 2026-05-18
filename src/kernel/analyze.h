@@ -129,8 +129,11 @@ typedef struct {
 #define FASTENT_SCC_UNDEF      (-100000.0)
 #define FASTENT_SCC_DEFINED(s) ((s) > -99999.0)
 
+/*  LZ77F (-eee) raw tables; defined in lzest.h, only a pointer here.  */
+struct fastent_lz77f_tables;
+
 /*  Final reduced results.  */
-typedef struct {
+typedef struct fastent_result {
   u64 total_samples;
   f64 entropy;
   f64 chi_square;
@@ -163,6 +166,22 @@ typedef struct {
   f64 longest_run;          /*  longest identical-symbol run (bits or
                                 bytes); NaN if no samples  */
   f64 cusum_max;            /*  max |S|, +-1 bit walk; bit mode only  */
+
+  /*  LZ77F estimator (-eee).  NaN sentinel unless extended >= 3.  lz
+      holds the 3 raw tables, heap-allocated only under -eee and freed
+      per result so the recursive row struct stays small.  */
+  f64 lz_cr_excess;         /*  S1 max(0,(outsz_rand-B)/n)  */
+  f64 lz_lit_h;             /*  S2 H_lit (literal byte entropy, bits)  */
+  f64 lz_lit_kl;            /*  S2 8 - H_lit (= KL to uniform)  */
+  f64 lz_match_cov;         /*  S3 1 - lit_bytes/n  */
+  f64 lz_off_conc;          /*  1 - H(off)/log2(65535); 0 if nmatch<2  */
+  f64 lz_mlen_excess;       /*  mean match len - 4; 0 if nmatch<2  */
+  f64 lz_lit_chi;           /*  literal chi-square vs uniform, df=255  */
+  f64 lz_lit_chi_p;         /*  its upper-tail p (advisory companion)  */
+  f64 lz_deviation;         /*  headline z = max(S1,S2/8,S3)/sigma0  */
+  u64 lz_nmatch;            /*  total LZ77 matches  */
+  i32 lz_megamatch;         /*  1 = single dominant match (mega note)  */
+  struct fastent_lz77f_tables * lz;  /*  3 raw tables; NULL unless -eee */
 
   u64 hist[256];            /*  -c output; bits: hist[0]/hist[1]  */
 } fastent_result;
@@ -202,8 +221,9 @@ void  fastent_dg_drain(fastent_chunk_state * st);
     u64 sum is order-independent: flush cadence (any -j, any driver)
     cannot change the result.  */
 void  fastent_hist_flush_(fastent_chunk_state * st);
-void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
-                      fastent_result * FASTENT_RESTRICT out);
+void fastent_finalize(
+    fastent_chunk_state * FASTENT_RESTRICT st, int binary,
+    fastent_result * FASTENT_RESTRICT out);
 
 /*  Variant entries (always declared; analyze.c picks one at runtime).  */
 void analyze_scalar(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -250,8 +270,8 @@ void analyze_fold_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_fold_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX512_BITALG
-void analyze_fold_avx512_bitalg(fastent_chunk_state * st,
-                                const u8 * buf, sz len);
+void analyze_fold_avx512_bitalg(
+    fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_NEON
 void analyze_fold_neon(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -267,8 +287,8 @@ void analyze_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
     run, 0/1 runs and the cusum walk.  Byte mode fills st->bigram, bit
     mode bit_bigram; dg_prev carries across calls.  Byte runs-vs-median
     derived in fastent_finalize from digram counts.  fold matches -f.  */
-void fastent_digram_count(fastent_chunk_state * st, const u8 * buf,
-                          sz len, int binary, int fold);
+void fastent_digram_count(
+    fastent_chunk_state * st, const u8 * buf, sz len, int binary, int fold);
 
 /*  Longest-run state machine, shared by the bit-mode scan and the
     byte digram kernels (scalar reference and SIMD variants).
@@ -296,8 +316,8 @@ void digram_bytes_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 void digram_bytes_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX512_BITALG
-void digram_bytes_avx512_bitalg(fastent_chunk_state * st,
-                                const u8 * buf, sz len);
+void digram_bytes_avx512_bitalg(
+    fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_NEON
 void digram_bytes_neon(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -319,36 +339,43 @@ typedef void (* fastent_digram_bits_fn)(fastent_chunk_state *,
                                         const u8 *, sz,
                                         const i32 *, const i32 *,
                                         const i32 *);
-void digram_bits_blk_scalar(fastent_chunk_state * st, const u8 * buf,
-                            sz cl, const i32 *, const i32 *, const i32 *);
+void digram_bits_blk_scalar(
+    fastent_chunk_state * st, const u8 * buf, sz cl, const i32 *,
+    const i32 *, const i32 *);
 #ifdef HAVE_SSSE3
-void digram_bits_blk_ssse3(fastent_chunk_state * st, const u8 * buf,
-                           sz cl, const i32 *, const i32 *, const i32 *);
+void digram_bits_blk_ssse3(
+    fastent_chunk_state * st, const u8 * buf, sz cl, const i32 *,
+    const i32 *, const i32 *);
 #endif
 #ifdef HAVE_SSE41
-void digram_bits_blk_sse41(fastent_chunk_state * st, const u8 * buf,
-                           sz cl, const i32 *, const i32 *, const i32 *);
+void digram_bits_blk_sse41(
+    fastent_chunk_state * st, const u8 * buf, sz cl, const i32 *,
+    const i32 *, const i32 *);
 #endif
 #ifdef HAVE_AVX2
-void digram_bits_blk_avx2(fastent_chunk_state * st, const u8 * buf,
-                          sz cl, const i32 *, const i32 *, const i32 *);
+void digram_bits_blk_avx2(
+    fastent_chunk_state * st, const u8 * buf, sz cl, const i32 *,
+    const i32 *, const i32 *);
 #endif
 #ifdef HAVE_AVX512
-void digram_bits_blk_avx512(fastent_chunk_state * st, const u8 * buf,
-                            sz cl, const i32 *, const i32 *, const i32 *);
+void digram_bits_blk_avx512(
+    fastent_chunk_state * st, const u8 * buf, sz cl, const i32 *,
+    const i32 *, const i32 *);
 #endif
 #ifdef HAVE_AVX512_BITALG
-void digram_bits_blk_avx512_bitalg(fastent_chunk_state * st, const u8 * buf,
-                                   sz cl, const i32 *, const i32 *,
-                                   const i32 *);
+void digram_bits_blk_avx512_bitalg(
+    fastent_chunk_state * st, const u8 * buf, sz cl, const i32 *,
+    const i32 *, const i32 *);
 #endif
 #ifdef HAVE_NEON
-void digram_bits_blk_neon(fastent_chunk_state * st, const u8 * buf,
-                          sz cl, const i32 *, const i32 *, const i32 *);
+void digram_bits_blk_neon(
+    fastent_chunk_state * st, const u8 * buf, sz cl, const i32 *,
+    const i32 *, const i32 *);
 #endif
 #ifdef HAVE_WASM128
-void digram_bits_blk_wasm128(fastent_chunk_state * st, const u8 * buf,
-                             sz cl, const i32 *, const i32 *, const i32 *);
+void digram_bits_blk_wasm128(
+    fastent_chunk_state * st, const u8 * buf, sz cl, const i32 *,
+    const i32 *, const i32 *);
 #endif
 fastent_digram_bits_fn fastent_pick_digram_bits_variant(fastent_variant * w);
 
@@ -372,8 +399,8 @@ void analyze_bits_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_bits_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX512_BITALG
-void analyze_bits_avx512_bitalg(fastent_chunk_state * st,
-                                const u8 * buf, sz len);
+void analyze_bits_avx512_bitalg(
+    fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_NEON
 void analyze_bits_neon(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -386,7 +413,8 @@ void analyze_bits_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
 /*  Fused fold + bit-mode analysers.  */
-void analyze_bits_fold_scalar(fastent_chunk_state * st, const u8 * buf, sz len);
+void analyze_bits_fold_scalar(
+    fastent_chunk_state * st, const u8 * buf, sz len);
 #ifdef HAVE_SSSE3
 void analyze_bits_fold_ssse3(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
@@ -397,11 +425,12 @@ void analyze_bits_fold_sse41(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_bits_fold_avx2(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX512
-void analyze_bits_fold_avx512(fastent_chunk_state * st, const u8 * buf, sz len);
+void analyze_bits_fold_avx512(
+    fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_AVX512_BITALG
-void analyze_bits_fold_avx512_bitalg(fastent_chunk_state * st,
-                                     const u8 * buf, sz len);
+void analyze_bits_fold_avx512_bitalg(
+    fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_NEON
 void analyze_bits_fold_neon(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -410,8 +439,8 @@ void analyze_bits_fold_neon(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_bits_fold_sve2(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 #ifdef HAVE_WASM128
-void analyze_bits_fold_wasm128(fastent_chunk_state * st,
-                               const u8 * buf, sz len);
+void analyze_bits_fold_wasm128(
+    fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
 fastent_analyze_fn fastent_pick_bits_variant(fastent_variant * which);

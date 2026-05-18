@@ -55,8 +55,8 @@ static inline svuint8_t sve2_fold_vec(svbool_t pg, svuint8_t v) {
     (_st)->mc_pos = 0;                                                     \
   } while (0)
 
-static void analyze_sve2_byte_impl(fastent_chunk_state * st,
-                                   const u8 * buf, sz len, int fold) {
+static void analyze_sve2_byte_impl(
+    fastent_chunk_state * st, const u8 * buf, sz len, int fold) {
   if (len == 0) return;
   const u64 stride = svcntb();
   svbool_t pg8  = svptrue_b8();
@@ -157,8 +157,8 @@ static inline void sve2_consume_bit_byte(fastent_chunk_state * st, u8 b) {
   st->total_bytes += 8;
 }
 
-static void analyze_bits_sve2_impl(fastent_chunk_state * st,
-                                   const u8 * buf, sz len, int fold) {
+static void analyze_bits_sve2_impl(
+    fastent_chunk_state * st, const u8 * buf, sz len, int fold) {
   if (len == 0) return;
   const u64 stride = svcntb();
   svbool_t pg = svptrue_b8();
@@ -247,8 +247,8 @@ void fold_sve2(u8 * buf, sz len) {
 
 #define SVE2_DG_MAXVL 256u   /*  SVE max VL is 2048 bits = 256 bytes  */
 
-void digram_bytes_sve2(fastent_chunk_state * st,
-                       const u8 * FASTENT_RESTRICT buf, sz len) {
+void digram_bytes_sve2(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   if (len == 0) return;
   u32 * FASTENT_RESTRICT t = st->dg_u32;
 

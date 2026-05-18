@@ -35,8 +35,8 @@ static void print_counts_(const fastent_result * r, int binary) {
          (u64) r->total_samples, 1.0);
 }
 
-void fastent_print_default(const fastent_result * r,
-                           const fastent_options * o) {
+void fastent_print_default(
+    const fastent_result * r, const fastent_options * o) {
   const char * samp = o->binary ? "bit" : "byte";
   const int fp = o->full_precision;
 
@@ -172,5 +172,37 @@ void fastent_print_default(const fastent_result * r,
       printf("Runs is %.0f.\n", r->runs);
     if (r->cusum_max == r->cusum_max)
       printf("Cusum max excursion is %.0f.\n", r->cusum_max);
+  }
+
+  if (r->lz_deviation != r->lz_deviation) {
+    printf("LZ77F estimator: pass -eee to compute it.\n");
+  } else {
+    printf("\nLZ77F compressibility excess is ");
+    dnum_(fp ? "%.17g" : "%f", r->lz_cr_excess);
+    printf(" (0 = incompressible).\n");
+    printf("LZ77F literal entropy H_lit is ");
+    dnum_(fp ? "%.17g" : "%f", r->lz_lit_h);
+    printf(" bits (KL to uniform ");
+    dnum_(fp ? "%.17g" : "%f", r->lz_lit_kl);
+    printf(").\n");
+    printf("LZ77F match coverage is ");
+    dnum_(fp ? "%.17g" : "%f", r->lz_match_cov);
+    printf(" (fraction of matched bytes).\n");
+    printf("LZ77F offset concentration is ");
+    dnum_(fp ? "%.17g" : "%f", r->lz_off_conc);
+    printf(", mean match-length excess ");
+    dnum_(fp ? "%.17g" : "%f", r->lz_mlen_excess);
+    printf(".\n");
+    printf("LZ77F literal chi square (df=255) is ");
+    dnum_(fp ? "%.17g" : "%1.2f", r->lz_lit_chi);
+    printf(" (p ");
+    dnum_(fp ? "%.17g" : "%f", r->lz_lit_chi_p);
+    printf(", advisory).\n");
+    if (r->lz_megamatch)
+      printf("LZ77F note: exact-repeat / single dominant match "
+             "(offset/length concentration at limit).\n");
+    printf("LZ77F deviation z is ");
+    dnum_(fp ? "%.17g" : "%f", r->lz_deviation);
+    printf(" (%" PRIu64 " matches).\n", (u64) r->lz_nmatch);
   }
 }

@@ -136,8 +136,8 @@ FASTENT_FN(fold_vec_inline)(FASTENT_SIMD_VEC c) {
 /*  Scalar single-byte update: histogram + SCC + MC Pi + first/last.
     Used by head/tail of all variants and the whole scalar body.  */
 
-static inline void FASTENT_FN(consume_byte)(fastent_chunk_state * st, u8 b,
-                                        u32 bank_idx) {
+static inline void FASTENT_FN(consume_byte)(
+    fastent_chunk_state * st, u8 b, u32 bank_idx) {
   st->bank[bank_idx & (FASTENT_BANKS - 1)][b]++;
   if (st->have_carry) {
     st->cross_product += (i64) st->carry_byte * (i64) b;
@@ -168,9 +168,9 @@ static inline void FASTENT_FN(consume_byte)(fastent_chunk_state * st, u8 b,
     on the compile-time `fold` constant; the branch dead-eliminates.  */
 
 static FASTENT_ALWAYS_INLINE sz
-FASTENT_FN(scalar_body_impl)(fastent_chunk_state * st,
-                             const u8 * FASTENT_RESTRICT buf,
-                             sz len, sz start_bank, int fold) {
+FASTENT_FN(scalar_body_impl)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len,
+    sz start_bank, int fold) {
   sz i;
   for (i = 0; i < len; i++) {
     u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[i]) : buf[i];
@@ -179,9 +179,9 @@ FASTENT_FN(scalar_body_impl)(fastent_chunk_state * st,
   return i;
 }
 
-static inline sz FASTENT_FN(scalar_body)(fastent_chunk_state * st,
-                                     const u8 * FASTENT_RESTRICT buf,
-                                     sz len, sz start_bank) {
+static inline sz FASTENT_FN(scalar_body)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len,
+    sz start_bank) {
   return FASTENT_FN(scalar_body_impl)(st, buf, len, start_bank, 0);
 }
 
@@ -191,9 +191,9 @@ static inline sz FASTENT_FN(scalar_body)(fastent_chunk_state * st,
 #if defined(FASTENT_VARIANT_AVX2)
 
 static FASTENT_ALWAYS_INLINE sz
-FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
-                           const u8 * FASTENT_RESTRICT buf,
-                           sz len, int fold) {
+FASTENT_FN(simd_body_impl)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len,
+    int fold) {
   /*  Stride 64 (two 32-byte vectors). SCC needs byte +1 readable, so
       the body stops at len - 32 (32-byte read-ahead margin).  */
   if (len < 65) return 0;
@@ -438,9 +438,9 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     inc-mem chain by 1.5-3x.  */
 
 static FASTENT_ALWAYS_INLINE sz
-FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
-                           const u8 * FASTENT_RESTRICT buf,
-                           sz len, int fold) {
+FASTENT_FN(simd_body_impl)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len,
+    int fold) {
   /*  Stride 128 (two 64-byte vectors). SCC needs byte +1 readable, so
       the body stops at len - 64 (64-byte read-ahead margin).  */
   if (len < 129) return 0;
@@ -692,9 +692,9 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 #elif defined(FASTENT_VARIANT_SSE41) || defined(FASTENT_VARIANT_SSSE3)
 
 static FASTENT_ALWAYS_INLINE sz
-FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
-                           const u8 * FASTENT_RESTRICT buf,
-                           sz len, int fold) {
+FASTENT_FN(simd_body_impl)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len,
+    int fold) {
   /*  SSE stride = 32 bytes (two 16-byte vectors). Need 16-byte read-ahead.  */
   if (len < 33) return 0;
   const sz body_max = len - 16;
@@ -881,9 +881,9 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     4-banked inc-mem, laundered L1 stage in fold mode.  */
 
 static FASTENT_ALWAYS_INLINE sz
-FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
-                           const u8 * FASTENT_RESTRICT buf,
-                           sz len, int fold) {
+FASTENT_FN(simd_body_impl)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len,
+    int fold) {
   if (len < 33) return 0;
   const sz body_max = len - 16;
   sz iters = body_max / 32;
@@ -1066,9 +1066,9 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
     extadd-pairwise ladder; histogram + MC Pi scalar 4-banked.  */
 
 static FASTENT_ALWAYS_INLINE sz
-FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
-                           const u8 * FASTENT_RESTRICT buf,
-                           sz len, int fold) {
+FASTENT_FN(simd_body_impl)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len,
+    int fold) {
   if (len < 33) return 0;
   const sz body_max = len - 16;
   sz iters = body_max / 32;
@@ -1250,12 +1250,12 @@ FASTENT_FN(simd_body_impl)(fastent_chunk_state * st,
 /*  SIMD trampolines: pin the compile-time `fold` constant of
     simd_body_impl for the two analyse entry points.  */
 #ifdef FASTENT_HAVE_SIMD
-static inline sz FASTENT_FN(simd_body)(fastent_chunk_state * st,
-    const u8 * FASTENT_RESTRICT buf, sz len) {
+static inline sz FASTENT_FN(simd_body)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   return FASTENT_FN(simd_body_impl)(st, buf, len, 0);
 }
-static inline sz FASTENT_FN(simd_body_fold)(fastent_chunk_state * st,
-    const u8 * FASTENT_RESTRICT buf, sz len) {
+static inline sz FASTENT_FN(simd_body_fold)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   return FASTENT_FN(simd_body_impl)(st, buf, len, 1);
 }
 #endif
@@ -1263,8 +1263,9 @@ static inline sz FASTENT_FN(simd_body_fold)(fastent_chunk_state * st,
 /*  Public entry point.  */
 
 static FASTENT_ALWAYS_INLINE void
-FASTENT_FN(analyze_impl)(fastent_chunk_state * st,
-                         const u8 * FASTENT_RESTRICT buf, sz len, int fold) {
+FASTENT_FN(analyze_impl)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len,
+    int fold) {
   if (len == 0) return;
 
 #ifdef FASTENT_HAVE_SIMD
@@ -1284,16 +1285,16 @@ FASTENT_FN(analyze_impl)(fastent_chunk_state * st,
   /*  MC Pi is folded into the histogram/SCC pass; no separate walk.  */
 }
 
-void FASTENT_FN(analyze)(fastent_chunk_state * st,
-                         const u8 * FASTENT_RESTRICT buf, sz len) {
+void FASTENT_FN(analyze)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   FASTENT_FN(analyze_impl)(st, buf, len, 0);
 #if defined(FASTENT_VARIANT_AVX2) || defined(FASTENT_VARIANT_AVX512)
   _mm256_zeroupper();
 #endif
 }
 
-void FASTENT_FN(analyze_fold)(fastent_chunk_state * st,
-                              const u8 * FASTENT_RESTRICT buf, sz len) {
+void FASTENT_FN(analyze_fold)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   FASTENT_FN(analyze_impl)(st, buf, len, 1);
 }
 
@@ -1354,9 +1355,9 @@ void FASTENT_FN(fold)(u8 * buf, sz len) {
 #ifdef FASTENT_HAVE_SIMD
 
 static FASTENT_ALWAYS_INLINE sz
-FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
-                                const u8 * FASTENT_RESTRICT buf,
-                                sz len, int fold) {
+FASTENT_FN(bits_simd_body_impl)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len,
+    int fold) {
   /*  Cross-byte needs buf[i+VLEN] readable, so the body stops at
       len - VLEN.  */
   if (len < (sz) FASTENT_SIMD_VLEN + 1) return 0;
@@ -1678,12 +1679,12 @@ FASTENT_FN(bits_simd_body_impl)(fastent_chunk_state * st,
 }
 
 /*  Bit-mode SIMD trampolines.  */
-static inline sz FASTENT_FN(bits_simd_body)(fastent_chunk_state * st,
-    const u8 * FASTENT_RESTRICT buf, sz len) {
+static inline sz FASTENT_FN(bits_simd_body)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   return FASTENT_FN(bits_simd_body_impl)(st, buf, len, 0);
 }
-static inline sz FASTENT_FN(bits_simd_body_fold)(fastent_chunk_state * st,
-    const u8 * FASTENT_RESTRICT buf, sz len) {
+static inline sz FASTENT_FN(bits_simd_body_fold)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   return FASTENT_FN(bits_simd_body_impl)(st, buf, len, 1);
 }
 
@@ -1692,9 +1693,9 @@ static inline sz FASTENT_FN(bits_simd_body_fold)(fastent_chunk_state * st,
 /*  Scalar bit-mode walker (scalar entry and SIMD tail). Templated on
     `fold` for the fused -f -b path.  */
 static FASTENT_ALWAYS_INLINE void
-FASTENT_FN(bits_scalar_body_impl)(fastent_chunk_state * st,
-                                  const u8 * FASTENT_RESTRICT buf,
-                                  sz len, int fold) {
+FASTENT_FN(bits_scalar_body_impl)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len,
+    int fold) {
   for (sz i = 0; i < len; i++) {
     const u8 byte = fold ? FASTENT_FN(fold_byte_inline)(buf[i]) : buf[i];
     const u32 ones_in_byte = (u32) FASTENT_POPCOUNT32(byte);
@@ -1729,15 +1730,15 @@ FASTENT_FN(bits_scalar_body_impl)(fastent_chunk_state * st,
   }
 }
 
-static inline void FASTENT_FN(bits_scalar_body)(fastent_chunk_state * st,
-                                                const u8 * FASTENT_RESTRICT buf,
-                                                sz len) {
+static inline void FASTENT_FN(bits_scalar_body)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   FASTENT_FN(bits_scalar_body_impl)(st, buf, len, 0);
 }
 
 static FASTENT_ALWAYS_INLINE void
-FASTENT_FN(analyze_bits_impl)(fastent_chunk_state * st,
-    const u8 * FASTENT_RESTRICT buf, sz len, int fold) {
+FASTENT_FN(analyze_bits_impl)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len,
+    int fold) {
   if (len == 0) return;
 #ifdef FASTENT_HAVE_SIMD
   sz body = fold ? FASTENT_FN(bits_simd_body_fold)(st, buf, len)
@@ -1748,13 +1749,13 @@ FASTENT_FN(analyze_bits_impl)(fastent_chunk_state * st,
 #endif
 }
 
-void FASTENT_FN(analyze_bits)(fastent_chunk_state * st,
-                              const u8 * FASTENT_RESTRICT buf, sz len) {
+void FASTENT_FN(analyze_bits)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   FASTENT_FN(analyze_bits_impl)(st, buf, len, 0);
 }
 
-void FASTENT_FN(analyze_bits_fold)(fastent_chunk_state * st,
-                                   const u8 * FASTENT_RESTRICT buf, sz len) {
+void FASTENT_FN(analyze_bits_fold)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   FASTENT_FN(analyze_bits_impl)(st, buf, len, 1);
 }
 
@@ -1781,8 +1782,8 @@ FASTENT_FN(lr_run_i)(fastent_chunk_state * st, u32 q, u64 n) {
 }
 
 static FASTENT_ALWAYS_INLINE void
-FASTENT_FN(digram_scalar_run)(fastent_chunk_state * st,
-                              const u8 * FASTENT_RESTRICT buf, sz len) {
+FASTENT_FN(digram_scalar_run)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
   u32 * FASTENT_RESTRICT t = st->dg_u32;
   u32 prev;
   sz i = 0;
@@ -1841,8 +1842,8 @@ FASTENT_FN(eq_mask)(const u8 * FASTENT_RESTRICT buf, sz base) {
     machine (boundary buf[i]!=buf[i-1]).  fastent_lr_run per run = scalar
     fastent_lr_one per byte, merges the carried open run by symbol, so
     state threads as the scalar loop; left(i)=buf[i-1] else dg_prev.  */
-void FASTENT_FN(digram_bytes)(fastent_chunk_state * st,
-                              const u8 * FASTENT_RESTRICT buf, sz len) {
+void FASTENT_FN(digram_bytes)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
 #ifndef FASTENT_HAVE_SIMD
   FASTENT_FN(digram_scalar_run)(st, buf, len);
 #else
@@ -2032,8 +2033,8 @@ FASTENT_FN(expref_i64)(__m512i v) {
     o/gmn/gmx fold in place.  Byte-identical to the scalar byte-LUT
     residue (nibble compose + 8-pos scan + cross-word net prefix).  */
 static FASTENT_ALWAYS_INLINE sz
-FASTENT_FN(cusum_full_words)(const u64 * W, sz nfull, i64 * po,
-                             i64 * pgmn, i64 * pgmx) {
+FASTENT_FN(cusum_full_words)(
+    const u64 * W, sz nfull, i64 * po, i64 * pgmn, i64 * pgmx) {
   static const i8 nnet[16] = FASTENT_DG_NIB_NET;
   static const i8 nmn[16]  = FASTENT_DG_NIB_MN;
   static const i8 nmx[16]  = FASTENT_DG_NIB_MX;
@@ -2243,8 +2244,9 @@ FASTENT_FN(longest_run1)(__m512i zv) {
     hi=popcount(S)-1, longest-run loop-free; only the serial cross-
     word gap/first/last fold is scalar.  Byte-identical to B3.  */
 static FASTENT_ALWAYS_INLINE sz
-FASTENT_FN(maxgap_full_words)(const u64 * W, sz ntw, u64 * pgap,
-                              i64 * pfirst, i64 * plast, int * phave) {
+FASTENT_FN(maxgap_full_words)(
+    const u64 * W, sz ntw, u64 * pgap, i64 * pfirst, i64 * plast,
+    int * phave) {
   i64 first = *pfirst, last = *plast;
   u64 gap = *pgap;
   int have = *phave;
@@ -2302,9 +2304,9 @@ FASTENT_FN(maxgap_full_words)(const u64 * W, sz ntw, u64 * pgap,
     fastent_lr_run sequence (the block's runs strictly alternate, so
     completed runs only raise lr_max and the tail reopens).  */
 static FASTENT_ALWAYS_INLINE void
-FASTENT_FN(lr_runs_summary)(fastent_chunk_state * st,
-                            u32 head_sym, u64 head_len, u64 internal_max,
-                            u32 tail_sym, u64 tail_len, int multi) {
+FASTENT_FN(lr_runs_summary)(
+    fastent_chunk_state * st, u32 head_sym, u64 head_len, u64 internal_max,
+    u32 tail_sym, u64 tail_len, int multi) {
   if (!multi) { FASTENT_FN(lr_run_i)(st, head_sym, head_len); return; }
   FASTENT_FN(lr_run_i)(st, head_sym, head_len);
   if (st->lr_cur > st->lr_max) st->lr_max = st->lr_cur;
@@ -2314,10 +2316,9 @@ FASTENT_FN(lr_runs_summary)(fastent_chunk_state * st,
   st->lr_cur = tail_len;
 }
 
-void FASTENT_FN(digram_bits_blk)(fastent_chunk_state * st,
-                                 const u8 * FASTENT_RESTRICT buf, sz cl,
-                                 const i32 * cs_mn, const i32 * cs_mx,
-                                 const i32 * cs_net) {
+void FASTENT_FN(digram_bits_blk)(
+    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz cl,
+    const i32 * cs_mn, const i32 * cs_mx, const i32 * cs_net) {
   u64 W[FASTENT_DG_BITS_WORDS_T];
   const sz M  = cl * 8;
   const sz NW = (M + 63) / 64;

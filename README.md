@@ -22,7 +22,12 @@ the most/least common symbol, and the per-bit-position bias.  Repeating
 the flag (`-ee`) adds the order-1 bigram conditional entropy
 `H(cur|prev)` and adjacent mutual information `I(prev;cur)`, which expose
 order-1 structure (text, code, many binary formats) that the order-0
-measures and the linear serial correlation miss.  Byte mode by default;
+measures and the linear serial correlation miss.  A third level
+(`-eee`) runs the LZ77F estimator: a count-only match finder
+reporting the compressibility excess, literal byte skew, match
+coverage, offset/length concentration and a headline `lz_deviation`
+z, catching repetition and dictionary structure the entropy and
+bigram measures miss.  Byte mode by default;
 bit mode under `-b`.  Output formats: human-readable, CSV (`-t`), JSON
 (`-J`), and an interpretive pass/fail report (`-a`/`--annotate`); add a
 per-value
@@ -53,6 +58,16 @@ with `-H`.
   across the `-j` workers and merged with a boundary stitch,
   deterministic and bit-identical across thread counts (~1 MiB/thread
   byte table, 2x2 in bit mode)
+- LZ77F estimator (`-eee`): a count-only (acceleration 1,
+  HLOG 13) match finder; compressibility excess, literal byte
+  entropy / KL, match coverage, offset and match-length
+  concentration, an advisory literal chi-square, and a headline
+  `lz_deviation` z badged PASS / WEAK / FAIL.  Keyed to a fixed
+  4 MiB absolute-offset block grid: bit-identical for any thread
+  count, I/O mode and host (drift versus a whole-file serial parse
+  at most ~0.055%, verdict-neutral).  Sortable via
+  `--sort-by=lz-deviation` / `lz-cr` / `lz-match-cov`; `-eee -H`
+  adds log2-bucket offset / length plots and a literal byte plot
 - recursive mode (`-r DIR`): one CSV / JSON row per file, sortable via
   `--sort-by` (path, entropy, chisq, the extended columns, ...)
 - terminal histogram (`-H`) with Unicode block glyphs, a Y-axis

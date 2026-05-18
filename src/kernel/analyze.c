@@ -116,8 +116,9 @@ static u64 bg_cell_(const u64 * bg, i32 key) {
   return c;
 }
 
-void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
-                      fastent_result * FASTENT_RESTRICT out) {
+void fastent_finalize(
+    fastent_chunk_state * FASTENT_RESTRICT st, int binary,
+    fastent_result * FASTENT_RESTRICT out) {
   memset(out, 0, sizeof(*out));
 
   /*  Flush any pending u32 digram chunk into the u64 master before
@@ -326,6 +327,15 @@ void fastent_finalize(fastent_chunk_state * FASTENT_RESTRICT st, int binary,
       out->runs = (f64) (1 + chg);
     }
   }
+
+  /*  LZ77F (-eee) sentinels: fastent_lz_finalize overwrites these
+      when extended >= 3, else NaN (as conditional_entropy below).  */
+  out->lz_cr_excess = out->lz_lit_h = out->lz_lit_kl = NAN;
+  out->lz_match_cov = out->lz_off_conc = out->lz_mlen_excess = NAN;
+  out->lz_lit_chi = out->lz_lit_chi_p = out->lz_deviation = NAN;
+  out->lz_nmatch = 0;
+  out->lz_megamatch = 0;
+  out->lz = NULL;
 }
 
 /*  Variant table.  Order matters: dispatcher picks the LAST entry

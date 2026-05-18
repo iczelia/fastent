@@ -40,8 +40,8 @@ static void cnum_(const char * fmt, f64 v) {
   printf(fmt, v);
 }
 
-void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
-                                 const fastent_options * o) {
+void fastent_print_recursive_csv(
+    const fastent_recursive_row * rows, sz n, const fastent_options * o) {
   const int fp = o->full_precision;
   const char * f = fp ? "%.17g" : "%g";
   fputs("path,unit,samples,entropy,chi_square,p_exceed,"
@@ -53,6 +53,10 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
           "bit_bias_max,bit_bias_worst,"
           "conditional_entropy,mutual_information,"
           "runs,longest_run,cusum_max", stdout);
+  if (o->extended >= 3)
+    fputs(",lz_cr_excess,lz_lit_h,lz_lit_kl,lz_match_cov,lz_off_conc,"
+          "lz_mlen_excess,lz_lit_chi,lz_lit_chi_p,lz_deviation,"
+          "lz_matches,lz_megamatch", stdout);
   putchar('\n');
   for (sz i = 0; i < n; i++) {
     const fastent_recursive_row * r = &rows[i];
@@ -97,6 +101,19 @@ void fastent_print_recursive_csv(const fastent_recursive_row * rows, sz n,
         printf("%.0f", r->result.cusum_max);
       else fputs("nan", stdout);
     }
+    if (o->extended >= 3) {
+      putchar(','); cnum_(f, r->result.lz_cr_excess);
+      putchar(','); cnum_(f, r->result.lz_lit_h);
+      putchar(','); cnum_(f, r->result.lz_lit_kl);
+      putchar(','); cnum_(f, r->result.lz_match_cov);
+      putchar(','); cnum_(f, r->result.lz_off_conc);
+      putchar(','); cnum_(f, r->result.lz_mlen_excess);
+      putchar(','); cnum_(f, r->result.lz_lit_chi);
+      putchar(','); cnum_(f, r->result.lz_lit_chi_p);
+      putchar(','); cnum_(f, r->result.lz_deviation);
+      printf(",%" PRIu64 ",%d",
+             (u64) r->result.lz_nmatch, r->result.lz_megamatch);
+    }
     putchar('\n');
   }
 }
@@ -138,8 +155,8 @@ static void json_int_(f64 v) {
   else              printf("%.0f", v);
 }
 
-void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
-                                  const fastent_options * o) {
+void fastent_print_recursive_json(
+    const fastent_recursive_row * rows, sz n, const fastent_options * o) {
   const int fp = o->full_precision;
   const char * f = fp ? "%.17g" : "%g";
   printf("{\n  \"unit\": \"%s\",\n  \"files\": [\n",
@@ -212,6 +229,36 @@ void fastent_print_recursive_json(const fastent_recursive_row * rows, sz n,
       fputs(", \"runs\": ", stdout);         json_int_(r->result.runs);
       fputs(", \"longest_run\": ", stdout);  json_int_(r->result.longest_run);
       fputs(", \"cusum_max\": ", stdout);    json_int_(r->result.cusum_max);
+    }
+    if (o->extended >= 3) {
+      fputs(", \"lz77f\": ", stdout);
+      if (r->result.lz_deviation != r->result.lz_deviation) {
+        fputs("null", stdout);
+      } else {
+        fputs("{ \"cr_excess\": ", stdout);
+        json_num_(f, r->result.lz_cr_excess);
+        fputs(", \"literal_entropy\": ", stdout);
+        json_num_(f, r->result.lz_lit_h);
+        fputs(", \"literal_kl\": ", stdout);
+        json_num_(f, r->result.lz_lit_kl);
+        fputs(", \"match_coverage\": ", stdout);
+        json_num_(f, r->result.lz_match_cov);
+        fputs(", \"offset_concentration\": ", stdout);
+        json_num_(f, r->result.lz_off_conc);
+        fputs(", \"mlen_excess\": ", stdout);
+        json_num_(f, r->result.lz_mlen_excess);
+        fputs(", \"literal_chi_square\": { \"statistic\": ", stdout);
+        json_num_(f, r->result.lz_lit_chi);
+        fputs(", \"df\": 255, \"p_exceed\": ", stdout);
+        json_num_(f, r->result.lz_lit_chi_p);
+        fputs(" }", stdout);
+        fputs(", \"deviation\": ", stdout);
+        json_num_(f, r->result.lz_deviation);
+        printf(", \"matches\": %" PRIu64, (u64) r->result.lz_nmatch);
+        printf(", \"single_dominant_match\": %s",
+               r->result.lz_megamatch ? "true" : "false");
+        fputs(" }", stdout);
+      }
     }
     fputs(" }", stdout);
     if (i + 1 < n) putchar(',');

@@ -5,6 +5,8 @@
 #include "common.h"
 #include "runner.h"
 
+#include "lzest.h"
+#include "output.h"
 #include "port-thread.h"
 #include "port-walk.h"
 #include "port-io.h"
@@ -20,8 +22,9 @@
     draining the u32 order-0 banks before a chunk overflows.  Split
     calls thread all state like one call and the drain is an order-
     independent u64 sum: bit-identical for any cadence/driver/-j.  */
-static void body_drained_(fastent_chunk_state * st, fastent_analyze_fn body,
-                          const u8 * data, sz len) {
+static void body_drained_(
+    fastent_chunk_state * st, fastent_analyze_fn body, const u8 * data,
+    sz len) {
   sz off = 0;
   while (off < len) {
     if (st->hist_chunk_bytes >= FASTENT_HIST_CHUNK)
@@ -49,11 +52,10 @@ static fastent_fold_fn fused_fold_fn_(void) {
     sub-block so extras hit cache not DRAM; state threads as the stream
     path, byte-identical to one whole pass.  Byte -ee -f folds each
     sub-block once into scratch fed to both kernels (= in-register).  */
-static void analyze_fused_(fastent_chunk_state * st,
-                           fastent_analyze_fn body,
-                           fastent_analyze_fn body_plain,
-                           const u8 * data, sz len,
-                           int extended, int binary, int fold) {
+static void analyze_fused_(
+    fastent_chunk_state * st, fastent_analyze_fn body,
+    fastent_analyze_fn body_plain, const u8 * data, sz len, int extended,
+    int binary, int fold) {
   if (extended < 2) { body_drained_(st, body, data, len);  return; }
 
   if (fold && !binary && body_plain) {
@@ -117,9 +119,10 @@ static void mt_worker_(sz k, void * vctx) {
   fastent_hist_flush_(&c->states[k]);
 }
 
-static void run_mmap_mt_(fastent_chunk_state * out, const fastent_options * o,
-                         fastent_analyze_fn fn, fastent_analyze_fn fn_plain,
-                         const u8 * data, u64 size) {
+static void run_mmap_mt_(
+    fastent_chunk_state * out, const fastent_options * o,
+    fastent_analyze_fn fn, fastent_analyze_fn fn_plain, const u8 * data,
+    u64 size) {
   i32 N = o->threads;
   fastent_set_num_threads(N);
 
@@ -402,11 +405,9 @@ static int stream_edge_cmp_(const void * a, const void * b) {
   return sa < sb ? -1 : sa > sb ? 1 : 0;
 }
 
-static void run_stream_mt_(fastent_chunk_state * out,
-                           const fastent_options * o,
-                           fastent_analyze_fn fn,
-                           fastent_analyze_fn fn_plain,
-                           fastent_source * src) {
+static void run_stream_mt_(
+    fastent_chunk_state * out, const fastent_options * o,
+    fastent_analyze_fn fn, fastent_analyze_fn fn_plain, fastent_source * src) {
   i32 W = o->threads;
   fastent_set_num_threads(W);
   if (W < 2) {                          /*  no real pool: serial  */
@@ -613,9 +614,9 @@ static void uring_mt_worker_(sz k, void * vctx) {
 
 /*  Returns 0 on success, -1 if uring is unavailable (caller falls back
     to the stream driver, preserving the graceful-degradation gate).  */
-static int run_uring_mt_(fastent_chunk_state * out, const fastent_options * o,
-                         fastent_analyze_fn fn, fastent_analyze_fn fn_plain,
-                         fastent_source * src) {
+static int run_uring_mt_(
+    fastent_chunk_state * out, const fastent_options * o,
+    fastent_analyze_fn fn, fastent_analyze_fn fn_plain, fastent_source * src) {
   i32 N = o->threads;
   fastent_set_num_threads(N);
   u64 size = src->size;
@@ -743,12 +744,193 @@ static int run_uring_mt_(fastent_chunk_state * out, const fastent_options * o,
 }
 #endif
 
-void fastent_run_mmap(fastent_chunk_state * st, const fastent_options * o,
-                      fastent_analyze_fn fn_byte,
-                      fastent_analyze_fn fn_bits,
-                      fastent_analyze_fn fn_byte_fold,
-                      fastent_analyze_fn fn_bits_fold,
-                      const u8 * data, u64 size) {
+/*  LZ77F driver: parse decomposed on the absolute 4 MiB grid
+    (lzest.h).  Each block parses whole with a fresh table, so the
+    accumulators sum-merge order-independent: -j1 == -jN == ref.  */
+
+#define FASTENT_LZ_GRID_U64 ((u64) FASTENT_LZ_GRID)
+
+#ifdef FASTENT_HAVE_THREADS
+typedef struct {
+  const u8 *      data;     /*  resident buffer (mmap)  */
+  u64             size;
+  u64             nblk;     /*  number of 4 MiB grid blocks  */
+  fastent_lz_acc * accs;    /*  one per worker  */
+  i32             nthreads;
+  volatile int    oom;
+} lz_mmap_ctx;
+
+/*  Worker w parses grid blocks w, w+T, w+2T, ...  No cross-block
+    state (fresh table per block), abs_base reset per block.  */
+static void lz_mmap_worker_(sz w, void * vctx) {
+  lz_mmap_ctx * c = (lz_mmap_ctx *) vctx;
+  fastent_lz_acc * a = &c->accs[w];
+  for (u64 g = (u64) w; g < c->nblk; g += (u64) c->nthreads) {
+    u64 off = g * FASTENT_LZ_GRID_U64;
+    u64 len = c->size - off;
+    if (len > FASTENT_LZ_GRID_U64) len = FASTENT_LZ_GRID_U64;
+    fastent_lz_acc blk;
+    fastent_lz_acc_init(&blk, off);
+    if (fastent_lz_acc_feed(&blk, c->data + off, (sz) len) != 0 ||
+        fastent_lz_acc_flush(&blk) != 0) {
+      c->oom = 1;  fastent_lz_acc_free(&blk);  return;
+    }
+    fastent_lz_acc_merge(a, &blk);
+    fastent_lz_acc_free(&blk);
+  }
+}
+#endif
+
+/*  Resident-buffer path (mmap): grid-block parallel, else serial.  */
+static int lz_run_resident_(
+    fastent_lz_acc * acc, const fastent_options * o, const u8 * data,
+    u64 size) {
+  if (size == 0) return 0;
+  u64 nblk = (size + FASTENT_LZ_GRID_U64 - 1) / FASTENT_LZ_GRID_U64;
+
+#ifdef FASTENT_HAVE_THREADS
+  if (o->threads > 1 && nblk > 1) {
+    i32 N = o->threads;
+    if ((u64) N > nblk) N = (i32) nblk;
+    fastent_set_num_threads(N);
+    fastent_lz_acc * accs =
+      (fastent_lz_acc *) calloc((sz) N, sizeof(*accs));
+    if (!accs) return -1;
+    Fk(N, fastent_lz_acc_init(&accs[k], 0))
+    lz_mmap_ctx c;
+    c.data = data;  c.size = size;  c.nblk = nblk;
+    c.accs = accs;  c.nthreads = N;  c.oom = 0;
+    fastent_parallel_for((sz) N, lz_mmap_worker_, &c);
+    int rc = c.oom ? -1 : 0;
+    /*  Fixed worker-index merge order (sum is order-independent; the
+        fixed order keeps the reduction itself deterministic).  */
+    Fk(N, fastent_lz_acc_merge(acc, &accs[k]);
+          fastent_lz_acc_free(&accs[k]))
+    free(accs);
+    if (acc->oom) rc = -1;
+    return rc;
+  }
+#else
+  (void) o;
+#endif
+
+  /*  Serial: one acc fed the whole resident range; its grid logic
+      resets the table at every absolute 4 MiB line.  */
+  if (fastent_lz_acc_feed(acc, data, (sz) size) != 0) return -1;
+  if (fastent_lz_acc_flush(acc) != 0) return -1;
+  return 0;
+}
+
+#ifdef FASTENT_HAVE_THREADS
+typedef struct {
+  int               fd;
+  const char *      path;
+  const u64 *       bounds;   /*  N+1 grid-aligned slab edges  */
+  fastent_lz_acc *  accs;
+  volatile int      failed;   /*  uring unavailable  */
+  volatile int      oom;
+} lz_uring_ctx;
+
+/*  Each worker owns a grid-aligned slab, so every 4 MiB block is
+    parsed whole by one worker and matches the serial reference.  */
+static void lz_uring_worker_(sz k, void * vctx) {
+  lz_uring_ctx * c = (lz_uring_ctx *) vctx;
+  u64 start = c->bounds[k], end = c->bounds[k + 1];
+  fastent_lz_acc * a = &c->accs[k];
+  if (end <= start) return;
+  fastent_uring_slab * r =
+    fastent_uring_slab_open(c->fd, c->path, start, end - start);
+  if (!r) { c->failed = 1;  return; }
+  for (;;) {
+    const u8 * blk = NULL;
+    sz n = fastent_uring_slab_next(r, &blk);
+    if (n == (sz) -1) { c->failed = 1;  fastent_uring_slab_close(r);  return; }
+    if (n == 0) break;
+    if (fastent_lz_acc_feed(a, blk, n) != 0) {
+      c->oom = 1;  fastent_uring_slab_close(r);  return;
+    }
+  }
+  fastent_uring_slab_close(r);
+  if (fastent_lz_acc_flush(a) != 0) c->oom = 1;
+}
+
+/*  Returns 0 on success, -1 if io_uring is unavailable (caller falls
+    back to the serial stream feed).  */
+static int lz_run_uring_(
+    fastent_lz_acc * acc, const fastent_options * o, fastent_source * src) {
+  u64 size = src->size;
+  if (size == 0) return 0;
+  i32 N = o->threads;
+  if (N < 1) N = 1;
+  u64 nblk = (size + FASTENT_LZ_GRID_U64 - 1) / FASTENT_LZ_GRID_U64;
+  if ((u64) N > nblk) N = (i32) nblk;
+  fastent_set_num_threads(N);
+
+  u64 * bounds = (u64 *) malloc((sz)(N + 1) * sizeof(u64));
+  fastent_lz_acc * accs =
+    (fastent_lz_acc *) calloc((sz) N, sizeof(*accs));
+  if (!bounds || !accs) { free(bounds);  free(accs);  return 0; }
+  bounds[0] = 0;  bounds[N] = size;
+  Fk0(N, 1,
+      u64 blk = (u64)((f64) nblk * (f64) k / (f64) N);
+      u64 b = blk * FASTENT_LZ_GRID_U64;
+      if (b > size) b = size;
+      bounds[k] = b)
+  Fk(N, fastent_lz_acc_init(&accs[k], bounds[k]))
+
+  lz_uring_ctx c;
+  c.fd = src->fd;  c.path = o->path;  c.bounds = bounds;
+  c.accs = accs;  c.failed = 0;  c.oom = 0;
+  fastent_parallel_for((sz) N, lz_uring_worker_, &c);
+
+  int rc;
+  if (c.failed) {
+    rc = -1;                              /*  graceful fallback  */
+  } else {
+    Fk(N, fastent_lz_acc_merge(acc, &accs[k]))
+    rc = (c.oom || acc->oom) ? -2 : 0;
+  }
+  Fk(N, fastent_lz_acc_free(&accs[k]))
+  free(accs);  free(bounds);
+  return rc;
+}
+#endif
+
+void fastent_run_lz(
+    fastent_lz_acc * acc, const fastent_options * o, fastent_source * src) {
+  int rc = 0;
+  if (src->kind == FASTENT_SRC_MMAP) {
+    rc = lz_run_resident_(acc, o, (const u8 *) src->map, src->size);
+  } else {
+#ifdef FASTENT_HAVE_THREADS
+    if (src->kind == FASTENT_SRC_URING && src->fd >= 0 && src->size > 0
+        && o->threads != 1) {
+      int u = lz_run_uring_(acc, o, src);
+      if (u == 0)  return;
+      if (u == -2) { acc->oom = 1;  return; }
+      /*  u == -1: uring absent, fall through to the serial feed.  */
+    }
+#endif
+    /*  Stream/pipe: read sequentially, feed one acc in absolute order.
+        It buffers whole grid blocks, so the parse matches the ref.  */
+    for (;;) {
+      sz n = fastent_src_read(src);
+      if (n == (sz) -1) { perror("read");  exit(2); }
+      if (n == 0) break;
+      if (fastent_lz_acc_feed(acc, src->stream_buf, n) != 0) {
+        acc->oom = 1;  return;
+      }
+    }
+    if (fastent_lz_acc_flush(acc) != 0) acc->oom = 1;
+  }
+  if (rc != 0) acc->oom = 1;
+}
+
+void fastent_run_mmap(
+    fastent_chunk_state * st, const fastent_options * o,
+    fastent_analyze_fn fn_byte, fastent_analyze_fn fn_bits,
+    fastent_analyze_fn fn_byte_fold, fastent_analyze_fn fn_bits_fold,
+    const u8 * data, u64 size) {
   fastent_analyze_fn body = o->binary
     ? (o->fold ? fn_bits_fold : fn_bits)
     : (o->fold ? fn_byte_fold : fn_byte);
@@ -766,12 +948,11 @@ void fastent_run_mmap(fastent_chunk_state * st, const fastent_options * o,
                  o->extended, o->binary, o->fold);
 }
 
-void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
-                        fastent_analyze_fn fn_byte,
-                        fastent_analyze_fn fn_bits,
-                        fastent_analyze_fn fn_byte_fold,
-                        fastent_analyze_fn fn_bits_fold,
-                        fastent_source * src) {
+void fastent_run_stream(
+    fastent_chunk_state * st, const fastent_options * o,
+    fastent_analyze_fn fn_byte, fastent_analyze_fn fn_bits,
+    fastent_analyze_fn fn_byte_fold, fastent_analyze_fn fn_bits_fold,
+    fastent_source * src) {
   fastent_analyze_fn body = o->binary
     ? (o->fold ? fn_bits_fold : fn_bits)
     : (o->fold ? fn_byte_fold : fn_byte);
@@ -801,6 +982,32 @@ void fastent_run_stream(fastent_chunk_state * st, const fastent_options * o,
     analyze_fused_(st, body, body_plain, src->stream_buf, n,
                    o->extended, o->binary, o->fold);
   }
+}
+
+/*  -eee non-mmap tee: one bounded pass feeds each chunk to both the
+    order-0/-ee analyzer (analyze_fused_) and the LZ77F acc, O(chunk +
+    grid block).  Serial on -j, bit-identical to -j1/mmap.  */
+void fastent_run_stream_lz_tee(
+    fastent_chunk_state * st, fastent_lz_acc * acc,
+    const fastent_options * o, fastent_analyze_fn fn_byte,
+    fastent_analyze_fn fn_bits, fastent_analyze_fn fn_byte_fold,
+    fastent_analyze_fn fn_bits_fold, fastent_source * src) {
+  fastent_analyze_fn body = o->binary
+    ? (o->fold ? fn_bits_fold : fn_bits)
+    : (o->fold ? fn_byte_fold : fn_byte);
+  fastent_analyze_fn body_plain = (!o->binary && o->fold) ? fn_byte : NULL;
+
+  for (;;) {
+    sz n = fastent_src_read(src);
+    if (n == (sz) -1) { perror("read");  exit(2); }
+    if (n == 0) break;
+    analyze_fused_(st, body, body_plain, src->stream_buf, n,
+                   o->extended, o->binary, o->fold);
+    if (fastent_lz_acc_feed(acc, src->stream_buf, n) != 0) {
+      acc->oom = 1;  return;
+    }
+  }
+  if (fastent_lz_acc_flush(acc) != 0) acc->oom = 1;
 }
 
 /*  Recursive mode.  */
@@ -834,7 +1041,25 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
       fprintf(stderr, "out of memory\n"); exit(2);
     }
   }
-  if (src.kind == FASTENT_SRC_MMAP) {
+  /*  -eee: mmap feeds both consumers directly, a stream tees per
+      chunk (bit-identical to mmap/-j1).  The stored row keeps lz=NULL;
+      under -H the tables are materialised transiently then freed.  */
+  const int do_lz   = (c->o->extended >= 3);
+  /*  -H per-file plots: human side output in walk order before the
+      sorted rows.  JSON stays pure (no plot), as single-file does.  */
+  const int do_plot = do_lz && c->o->histogram && !c->o->json;
+  fastent_lz_acc lz;
+  if (do_lz) fastent_lz_acc_init(&lz, 0);
+
+  if (do_lz && src.kind == FASTENT_SRC_MMAP) {
+    fastent_run_mmap(&st, c->o, c->fn_byte, c->fn_bits,
+                     c->fn_byte_fold, c->fn_bits_fold,
+                     (const u8 *) src.map, src.size);
+    fastent_run_lz(&lz, c->o, &src);
+  } else if (do_lz) {
+    fastent_run_stream_lz_tee(&st, &lz, c->o, c->fn_byte, c->fn_bits,
+                              c->fn_byte_fold, c->fn_bits_fold, &src);
+  } else if (src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, c->o, c->fn_byte, c->fn_bits,
                      c->fn_byte_fold, c->fn_bits_fold,
                      (const u8 *) src.map, src.size);
@@ -844,6 +1069,22 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   }
   fastent_result r;
   fastent_finalize(&st, c->o->binary, &r);
+
+  if (do_lz) {
+    if (lz.oom) { fprintf(stderr, "out of memory\n"); exit(2); }
+    if (do_plot) {
+      r.lz = fastent_lz77f_tables_alloc();
+      if (!r.lz) { fprintf(stderr, "out of memory\n"); exit(2); }
+    }
+    fastent_lz_finalize(&lz, st.total_bytes, &r);
+    fastent_lz_acc_free(&lz);
+    if (do_plot) {
+      printf("%s\n", path);
+      fastent_print_histogram(&r, c->o);
+      fastent_lz77f_tables_free(r.lz);
+      r.lz = NULL;                        /*  no per-row tables  */
+    }
+  }
 
   fastent_src_close(&src);
   fastent_bigram_free(st.bigram);
@@ -869,13 +1110,11 @@ static int walk_cb_(const char * path, void * vctx) {
   return analyse_one_(path, (recursive_ctx *) vctx);
 }
 
-int fastent_run_recursive(const char * root, const fastent_options * o,
-                          fastent_analyze_fn fn_byte,
-                          fastent_analyze_fn fn_bits,
-                          fastent_analyze_fn fn_byte_fold,
-                          fastent_analyze_fn fn_bits_fold,
-                          fastent_recursive_row ** out_rows,
-                          sz * out_n) {
+int fastent_run_recursive(
+    const char * root, const fastent_options * o,
+    fastent_analyze_fn fn_byte, fastent_analyze_fn fn_bits,
+    fastent_analyze_fn fn_byte_fold, fastent_analyze_fn fn_bits_fold,
+    fastent_recursive_row ** out_rows, sz * out_n) {
   recursive_ctx c;
   c.o            = o;
   c.fn_byte      = fn_byte;
@@ -922,6 +1161,9 @@ static f64 row_key_(const fastent_recursive_row * r) {
     case FASTENT_SORT_BIT_BIAS:   return r->result.bit_bias_max;
     case FASTENT_SORT_COND_ENTROPY: return r->result.conditional_entropy;
     case FASTENT_SORT_MUTUAL_INFO:  return r->result.mutual_information;
+    case FASTENT_SORT_LZ_DEVIATION: return r->result.lz_deviation;
+    case FASTENT_SORT_LZ_CR:        return r->result.lz_cr_excess;
+    case FASTENT_SORT_LZ_MATCH_COV: return r->result.lz_match_cov;
     default:                      return 0.0;
   }
 }
@@ -940,8 +1182,8 @@ static int cmp_(const void * a, const void * b) {
   return g_sort_desc_ ? -rc : rc;
 }
 
-void fastent_rows_sort(fastent_recursive_row * rows, sz n,
-                       const fastent_options * o) {
+void fastent_rows_sort(
+    fastent_recursive_row * rows, sz n, const fastent_options * o) {
   if (o->sort_by == FASTENT_SORT_NONE || n < 2) return;
   g_sort_by_  = o->sort_by;
   g_sort_desc_ = o->sort_desc;

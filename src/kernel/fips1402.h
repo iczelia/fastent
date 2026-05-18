@@ -27,12 +27,8 @@ typedef struct {
     runs serially; otherwise the (independent) blocks are split
     across the worker pool.  Bit-identical regardless of thread
     count.  */
-void fastent_fips140_run(const u8 * buf, sz len, int threads,
-                         fastent_fips_report * out);
-
-/*  Human-readable report.  Returns 1 if the input passes (>= 1 block
-    and every block passed all four tests), else 0.  */
-int  fastent_fips140_print(const fastent_fips_report * r, FILE * fp);
+void fastent_fips140_run(
+    const u8 * buf, sz len, int threads, fastent_fips_report * out);
 
 /*  Batched block runner: tests nblocks consecutive 2500-byte blocks
     starting at buf and folds the verdicts into *r (integer, sum-
@@ -40,6 +36,27 @@ int  fastent_fips140_print(const fastent_fips_report * r, FILE * fp);
     exact output is identical across all of them.  */
 typedef void (* fastent_fips_run_fn)(const u8 * buf, u64 nblocks,
                                      fastent_fips_report * r);
+
+/*  Bounded streaming FIPS driver: init binds *out, push folds whole
+    blocks via the per-ISA runner, finish drains the residue and frees
+    (non-zero on prior OOM).  Byte-identical to fastent_fips140_run.  */
+typedef struct {
+  fastent_fips_report * out;
+  fastent_fips_run_fn   run;
+  u8 *                  stage;   /*  FIPS_BATCH_BLOCKS * 2500 bytes  */
+  sz                    fill;    /*  bytes currently staged          */
+  int                   oom;     /*  stage allocation failed         */
+} fastent_fips_stream;
+
+void fastent_fips140_stream_init(
+    fastent_fips_stream * s, fastent_fips_report * out);
+void fastent_fips140_stream_push(
+    fastent_fips_stream * s, const u8 * buf, sz len);
+int  fastent_fips140_stream_finish(fastent_fips_stream * s);
+
+/*  Human-readable report.  Returns 1 if the input passes (>= 1 block
+    and every block passed all four tests), else 0.  */
+int  fastent_fips140_print(const fastent_fips_report * r, FILE * fp);
 
 /*  Resolve the best available FIPS block runner for this CPU and, if
     `which` is non-NULL, report which variant was chosen.  Mirrors
@@ -53,10 +70,10 @@ void fastent_fips_run_blocks_ssse3(const u8 *, u64, fastent_fips_report *);
 void fastent_fips_run_blocks_sse41(const u8 *, u64, fastent_fips_report *);
 void fastent_fips_run_blocks_avx2(const u8 *, u64, fastent_fips_report *);
 void fastent_fips_run_blocks_avx512(const u8 *, u64, fastent_fips_report *);
-void fastent_fips_run_blocks_avx512_bitalg(const u8 *, u64,
-                                           fastent_fips_report *);
-void fastent_fips_run_blocks_avx512_vpopcntdq(const u8 *, u64,
-                                              fastent_fips_report *);
+void fastent_fips_run_blocks_avx512_bitalg(
+    const u8 *, u64, fastent_fips_report *);
+void fastent_fips_run_blocks_avx512_vpopcntdq(
+    const u8 *, u64, fastent_fips_report *);
 void fastent_fips_run_blocks_neon(const u8 *, u64, fastent_fips_report *);
 void fastent_fips_run_blocks_sve2(const u8 *, u64, fastent_fips_report *);
 void fastent_fips_run_blocks_wasm128(const u8 *, u64, fastent_fips_report *);

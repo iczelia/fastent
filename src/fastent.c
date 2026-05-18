@@ -111,38 +111,36 @@ int main(int argc, char ** argv) {
   }
 
   if (o.fips140) {
-    const u8 * data;
-    sz dlen;
-    void * owned = NULL;
+    fastent_fips_report rep;
     if (src.kind == FASTENT_SRC_MMAP) {
-      data = (const u8 *) src.map;  dlen = (sz) src.size;
+      /*  mmap: pass the map directly (block-parallel under -j).  */
+      fastent_fips140_run((const u8 *) src.map, (sz) src.size,
+                          o.threads, &rep);
     } else {
-      u8 * acc = NULL;
-      sz cap = 0, used = 0;
+      /*  Stream/pipe/uring: a bounded read loop feeds the streaming
+          FIPS driver, O(stage) memory.  Verdicts and leftover are
+          byte-identical to the mmap/slurp path.  */
+      fastent_fips_stream fs;
+      fastent_fips140_stream_init(&fs, &rep);
+      if (fs.oom) {
+        fprintf(stderr, "out of memory\n");
+        fastent_src_close(&src);  free((void *) o.path);  return 2;
+      }
       for (;;) {
         sz n = fastent_src_read(&src);
         if (n == (sz) -1) {
-          perror("read");  free(acc);
+          perror("read");  fastent_fips140_stream_finish(&fs);
           fastent_src_close(&src);  free((void *) o.path);  return 2;
         }
         if (n == 0) break;
-        if (used + n > cap) {
-          sz nc = (used + n) * 2;
-          u8 * g = (u8 *) realloc(acc, nc ? nc : (used + n));
-          if (!g) {
-            fprintf(stderr, "out of memory\n");  free(acc);
-            fastent_src_close(&src);  free((void *) o.path);  return 2;
-          }
-          acc = g;  cap = nc ? nc : (used + n);
-        }
-        memcpy(acc + used, src.stream_buf, n);  used += n;
+        fastent_fips140_stream_push(&fs, src.stream_buf, n);
       }
-      data = acc;  dlen = used;  owned = acc;
+      if (fastent_fips140_stream_finish(&fs)) {
+        fprintf(stderr, "out of memory\n");
+        fastent_src_close(&src);  free((void *) o.path);  return 2;
+      }
     }
-    fastent_fips_report rep;
-    fastent_fips140_run(data, dlen, o.threads, &rep);
     int ok = fastent_fips140_print(&rep, stdout);
-    free(owned);
     fastent_src_close(&src);
     free((void *) o.path);
     return ok ? 0 : 1;
@@ -160,7 +158,21 @@ int main(int argc, char ** argv) {
     }
   }
 
-  if (src.kind == FASTENT_SRC_MMAP) {
+  /*  -eee reads the bytes twice (SIMD order-0/-ee scan + absolute-grid
+      LZ77F parse).  mmap feeds both directly; a stream tees each chunk
+      to both, O(chunk + grid block) and bit-identical to mmap/-j1.  */
+  fastent_lz_acc lz;
+  int lz_active = (o.extended >= 3);
+  if (lz_active) fastent_lz_acc_init(&lz, 0);
+
+  if (o.extended >= 3 && src.kind == FASTENT_SRC_MMAP) {
+    fastent_run_mmap(&st, &o, fn_byte, fn_bits, fn_byte_fold, fn_bits_fold,
+                     (const u8 *) src.map, src.size);
+    fastent_run_lz(&lz, &o, &src);
+  } else if (o.extended >= 3) {
+    fastent_run_stream_lz_tee(&st, &lz, &o, fn_byte, fn_bits,
+                              fn_byte_fold, fn_bits_fold, &src);
+  } else if (src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, &o, fn_byte, fn_bits, fn_byte_fold, fn_bits_fold,
                      (const u8 *) src.map, src.size);
   } else {
@@ -171,6 +183,24 @@ int main(int argc, char ** argv) {
   fastent_result result;
   fastent_finalize(&st, o.binary, &result);
 
+  /*  LZ77F (-eee): finalize the merged accumulator; sentinels stay
+      NaN below level 3.  */
+  if (lz_active) {
+    result.lz = fastent_lz77f_tables_alloc();
+    if (lz.oom || !result.lz) {
+      fprintf(stderr, "out of memory\n");
+      fastent_lz_acc_free(&lz);
+      fastent_lz77f_tables_free(result.lz);
+      fastent_src_close(&src);
+      fastent_bigram_free(st.bigram);
+      fastent_dg_u32_free(st.dg_u32);
+      free((void *) o.path);
+      return 2;
+    }
+    fastent_lz_finalize(&lz, st.total_bytes, &result);
+    fastent_lz_acc_free(&lz);
+  }
+
   fastent_src_close(&src);
   fastent_bigram_free(st.bigram);
   fastent_dg_u32_free(st.dg_u32);
@@ -180,6 +210,7 @@ int main(int argc, char ** argv) {
   else if (o.annotate) fastent_print_annotated(&result, &o);
   else                 fastent_print_default(&result, &o);
 
+  fastent_lz77f_tables_free(result.lz);
   free((void *) o.path);
   return 0;
 }

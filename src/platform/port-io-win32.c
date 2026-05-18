@@ -174,8 +174,8 @@ static iocp_state * iocp_setup(const char * path) {
 
 /*  Public API.  */
 
-int fastent_src_open(fastent_source * s, const char * path,
-                     fastent_io_mode mode) {
+int fastent_src_open(
+    fastent_source * s, const char * path, fastent_io_mode mode) {
   memset(s, 0, sizeof(*s));
   s->kind = FASTENT_SRC_NONE;
   s->fd = -1;
@@ -379,8 +379,8 @@ static int slab_submit(struct fastent_uring_slab * r, i32 slot) {
 
 /*  One read in flight over a disjoint range in strict offset order:
     output is bit-identical to -j1 / mmap.  */
-fastent_uring_slab * fastent_uring_slab_open(int fd, const char * path,
-                                             u64 off, u64 len) {
+fastent_uring_slab * fastent_uring_slab_open(
+    int fd, const char * path, u64 off, u64 len) {
   (void) fd;
   if (!path || len == 0) return NULL;
   struct fastent_uring_slab * r = calloc(1, sizeof(*r));
@@ -441,8 +441,8 @@ void fastent_uring_slab_close(fastent_uring_slab * r) {
 }
 
 #else
-fastent_uring_slab * fastent_uring_slab_open(int fd, const char * path,
-                                             u64 off, u64 len) {
+fastent_uring_slab * fastent_uring_slab_open(
+    int fd, const char * path, u64 off, u64 len) {
   (void) fd;  (void) path;  (void) off;  (void) len;  return NULL;
 }
 sz fastent_uring_slab_next(fastent_uring_slab * r, const u8 ** out) {

@@ -31,16 +31,14 @@ i64  fastent_win32_num_cpus(void);
 
 /*  CreateFileMapping + MapViewOfFile.  Caller frees via munmap.
     Returns -1 on non-disk fd, empty file, or AS exhaustion.  */
-int  fastent_win32_mmap(int fd, void ** out_base,
-                        u64 * out_size,
-                        void ** out_handle);
+int fastent_win32_mmap(
+    int fd, void ** out_base, u64 * out_size, void ** out_handle);
 void fastent_win32_munmap(void * base, void * handle);
 
 /*  Open for async reads (FILE_FLAG_OVERLAPPED +
     FILE_FLAG_SEQUENTIAL_SCAN).  Returns a HANDLE to bind to an IOCP,
     or NULL on failure.  *out_size set to file size on success.  */
-void * fastent_win32_open_overlapped(const char * utf8_path,
-                                     u64 * out_size);
+void * fastent_win32_open_overlapped(const char * utf8_path, u64 * out_size);
 
 /*  PrefetchVirtualMemory (Win 8+); no-op below.  */
 void fastent_win32_mmap_prefetch(void * base, u64 size);

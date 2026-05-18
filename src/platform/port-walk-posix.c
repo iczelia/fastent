@@ -30,8 +30,8 @@ static char * join_path_(const char * a, const char * b) {
     (symlinked dirs are already excluded by the lstat below).  */
 #define FASTENT_WALK_MAX_DEPTH 4096
 
-static int walk_dir_(const char * path, fastent_walk_fn fn, void * ctx,
-                     int depth) {
+static int walk_dir_(
+    const char * path, fastent_walk_fn fn, void * ctx, int depth) {
   if (depth > FASTENT_WALK_MAX_DEPTH) return 0;
   DIR * d = opendir(path);
   if (!d) return 0;  /*  Skip unreadable directories.  */

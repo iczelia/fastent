@@ -130,8 +130,8 @@ FASTENT_FN(fips_succn)(const u64 src[FIPS_NW], u64 dst[FIPS_NW], u32 n) {
     ge[k]-ge[k+1], long-run=34-equal window via log-doubling AND
     (1,2,4,8,16,+2).  Out-of-block zero = reference recurrence.  */
 
-static void FASTENT_FN(fips_runs_side)(const u64 P[FIPS_NW],
-                                       u32 ge[7], int * lr34) {
+static void FASTENT_FN(fips_runs_side)(
+    const u64 P[FIPS_NW], u32 ge[7], int * lr34) {
   u64 S[FIPS_NW], A[FIPS_NW], nx[FIPS_NW];
   i32 w;
   u32 k;
@@ -186,8 +186,8 @@ static void FASTENT_FN(fips_runs_side)(const u64 P[FIPS_NW],
 /*  Run-length spectrum for both polarities.  cnt1/cnt0 hold exact-
     length buckets 1..5 and bucket 6 = length >= 6; *lr = 1 iff some
     run (either polarity) reaches 34.  */
-static void FASTENT_FN(fips_runs)(const u64 W[FIPS_NW],
-                                  u32 cnt1[7], u32 cnt0[7], int * lr) {
+static void FASTENT_FN(fips_runs)(
+    const u64 W[FIPS_NW], u32 cnt1[7], u32 cnt0[7], int * lr) {
   u64 C[FIPS_NW];
   u32 ge1[7], ge0[7];
   int lr1, lr0;
@@ -385,8 +385,8 @@ FASTENT_FN(fips_block)(const u8 * b, fastent_fips_report * r) {
 }
 
 /*  Batched runner: process nblocks consecutive blocks.  */
-void FASTENT_FN(fastent_fips_run_blocks)(const u8 * buf, u64 nblocks,
-                                         fastent_fips_report * r) {
+void FASTENT_FN(fastent_fips_run_blocks)(
+    const u8 * buf, u64 nblocks, fastent_fips_report * r) {
   u64 i;
   for (i = 0; i < nblocks; i++)
     FASTENT_FN(fips_block)(buf + i * FIPS_BLOCK_BYTES, r);

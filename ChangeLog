@@ -1,3 +1,48 @@
+2026-05-18  Kamila Szewczyk  <k@iczelia.net>
+
+	v1.3:  LZ77F estimator (-eee, extended level 3).
+
+	A count-only LZ77F (acceleration 1, HLOG 13) match finder: it
+	never emits a byte and keeps no output buffer.  It produces the
+	exact count-only encoded size
+	and three raw tables (per-offset match count, per-match-length
+	count, LZ77-unmatched byte-value histogram), from which the
+	finalizer derives:
+	  - lz_cr_excess (S1): compressibility excess versus the
+	    incompressible baseline outsz_rand(n).
+	  - lz_lit_h / lz_lit_kl (S2): literal byte-value Shannon
+	    entropy and its KL divergence to uniform (8 - H_lit).
+	  - lz_match_cov (S3): fraction of bytes inside an LZ77 match.
+	  - lz_off_conc: offset concentration 1 - H(off)/log2(65535);
+	    lz_mlen_excess: mean match length minus MINMATCH.  Both
+	    take their continuous 0 limit when fewer than two matches.
+	  - lz_lit_chi: advisory literal chi-square versus uniform
+	    (df 255) with its upper-tail p, kept separate from the
+	    compressibility headline exactly as order-0 entropy and
+	    its chi-square stay separate.
+	  - lz_deviation: headline z from max(S1, S2/8, S3) over
+	    sigma0 = max(2/n, 2^-7), badged PASS / WEAK / FAIL.
+	  An exact-repeat / single dominant match (fewer than two
+	  matches with high coverage) is flagged explicitly so a
+	  zero offset/length concentration does not read as no
+	  structure; the verdict still fails via S1/S3.
+
+	The parse is keyed to a fixed 4 MiB block grid on the
+	absolute file offset with a fresh hash table per block, so
+	the count-only size and every table are exactly additive and
+	the integer sum-merge is bit-identical for any thread count,
+	I/O mode (mmap / stream / io_uring) and host.  Drift versus a
+	whole-file table-carrying serial parse is at most about
+	0.055 percent and verdict-neutral.
+
+	Surfaced in the default, terse CSV, JSON, recursive and
+	annotated output; new --sort-by columns lz-deviation, lz-cr
+	and lz-match-cov (selecting one implies -eee).  With -eee -H,
+	three extra plots follow the byte/bit plot: match offsets and
+	match lengths in log2 buckets and the literal byte-value
+	histogram (256 bins, title carries H_lit), using the same
+	Unicode-glyph / --log / axis rendering.
+
 2026-05-16  Kamila Szewczyk  <k@iczelia.net>
 
 	v1.2:  extended statistics, FIPS 140-2 RNG self-tests,

@@ -36,50 +36,45 @@ void fastent_print_version(void) {
 void fastent_print_help(void) {
   fputs(
     "fastent: measure randomness of a byte (or bit) stream.\n"
-    "Usage:     fastent [options] [file]\n"
+    "Usage: fastent [options] [file]   (full detail in fastent(1))\n"
     "\n"
-    "Options:   -b,  --bits               Treat input as a stream of bits\n"
-    "           -c,  --counts             Print occurrence counts\n"
-    "           -f,  --fold               Fold upper- to lower-case letters\n"
-    "           -t,  --terse              Terse output in CSV format\n"
-    "           -J,  --json               Emit results as JSON\n"
-    "           -H,  --histogram          Render a block bar plot\n"
-    "                                     of the byte distribution\n"
-    "           -l,  --log                Logarithmic y-axis for --histogram\n"
-    "           -C,  --color=MODE         auto, always, never\n"
-    "           -p,  --full-precision     Render every float at %.17g\n"
-    "           -e,  --extended           Also report min-entropy,\n"
-    "                                     collision entropy / IC, poker\n"
-    "                                     test, variance, distinct,\n"
-    "                                     per-bit-position bias, etc.\n"
-    "                                     Repeatable: -ee (level 2)\n"
-    "                                     adds the order-1 bigram\n"
-    "                                     H(cur|prev) + mutual info.\n"
-    "           -a,  --annotate           Interpretive pass/fail report\n"
-    "                                     (implies --extended)\n"
-    "           -i,  --io=MODE            auto (default), mmap, stream,\n"
-    "                                     uring (io_uring / Win32 IOCP)\n",
+    "  -b, --bits            Treat input as a bit stream\n"
+    "  -c, --counts          Print per-value occurrence counts\n"
+    "  -f, --fold            Fold upper- to lower-case before counting\n"
+    "  -t, --terse           CSV output\n"
+    "  -J, --json            JSON output\n"
+    "  -H, --histogram       Block bar plot of the distribution\n"
+    "  -l, --log             Logarithmic y-axis for -H\n"
+    "  -C, --color=MODE      Colour: auto, always, never\n"
+    "  -p, --full-precision  Render every float at %.17g\n"
+    "  -e, --extended        Extended stats: min-entropy, collision/IC,"
+                                                            " poker,\n"
+    "                        variance, distinct, per-bit bias. Repeat:"
+                                                          " -ee adds\n"
+    "                        order-1 bigram H(cur|prev)+I(prev;cur);"
+                                                       " -eee adds the\n"
+    "                        LZ77F estimator (with -H, 3 log2-bucket"
+                                                           " plots)\n"
+    "  -a, --annotate        Interpretive pass/fail report (implies -e)\n"
+    "  -i, --io=MODE         Input: auto (default), mmap, stream, uring\n",
     stdout);
 #ifdef FASTENT_HAVE_THREADS
-  fputs("           -j N --threads=N          Use N worker threads"
-        " (default 1)\n", stdout);
+  fputs(
+    "  -j N, --threads=N     Use N worker threads (default 1)\n", stdout);
 #endif
   fputs(
-    "           -r,  --recursive          Treat the positional arg as a\n"
-    "                                     directory; emit one row per file\n"
-    "                --sort-by=COL[:dir]  Sort recursive output by COL:\n"
-    "                                     path, samples, entropy, chisq,\n"
-    "                                     mean, pi, scc, min-entropy,\n"
-    "                                     collision, ic, poker, variance,\n"
-    "                                     redundancy, distinct, bitbias.\n"
-    "                                     dir = asc | desc\n"
-    "                --fips-140-2         Run the FIPS 140-2 RNG\n"
-    "                                     power-up self-tests; print a\n"
-    "                                     pass/fail report (exit 1 on\n"
-    "                                     failure) and ignore other\n"
-    "                                     output options\n"
-    "           -V,  --version            Print version and exit\n"
-    "           -h,  --help               Print this message\n",
+    "  -r, --recursive       Treat arg as a directory; one row per file\n"
+    "  --sort-by=COL[:dir]   Sort -r output (dir = asc|desc). COL: path"
+                                                           " samples\n"
+    "                        entropy chisq mean pi scc min-entropy"
+                                                       " collision ic\n"
+    "                        poker variance redundancy distinct bitbias"
+                                                       " cond-entropy\n"
+    "                        mutual-info lz-deviation lz-cr lz-match-cov\n"
+    "  --fips-140-2          FIPS 140-2 RNG power-up self-tests"
+                                                  " (exit 1 on fail)\n"
+    "  -V, --version         Print version and exit\n"
+    "  -h, --help            Print this message\n",
     stdout);
 }
 
@@ -133,17 +128,22 @@ static int parse_sort_by_(const char * arg, fastent_options * o) {
   else if (!strcmp(buf, "bitbias"))     col = FASTENT_SORT_BIT_BIAS;
   else if (!strcmp(buf, "cond-entropy")) col = FASTENT_SORT_COND_ENTROPY;
   else if (!strcmp(buf, "mutual-info"))  col = FASTENT_SORT_MUTUAL_INFO;
+  else if (!strcmp(buf, "lz-deviation")) col = FASTENT_SORT_LZ_DEVIATION;
+  else if (!strcmp(buf, "lz-cr"))        col = FASTENT_SORT_LZ_CR;
+  else if (!strcmp(buf, "lz-match-cov")) col = FASTENT_SORT_LZ_MATCH_COV;
   else {
     fprintf(stderr, "--sort-by column must be one of: path samples entropy "
                     "chisq mean pi scc min-entropy collision ic poker "
                     "variance redundancy distinct bitbias cond-entropy "
-                    "mutual-info\n");
+                    "mutual-info lz-deviation lz-cr lz-match-cov\n");
     return -1;
   }
   o->sort_by = (int) col;
-  /*  Sorting by an extended column implies it is emitted; the bigram
-      columns need the -ee (level 2) analysis.  */
-  if (col >= FASTENT_SORT_COND_ENTROPY) {
+  /*  Sorting by an extended column implies it is emitted: the LZ77F
+      columns need -eee (level 3), the bigram columns -ee (level 2).  */
+  if (col >= FASTENT_SORT_LZ_DEVIATION) {
+    if (o->extended < 3) o->extended = 3;
+  } else if (col >= FASTENT_SORT_COND_ENTROPY) {
     if (o->extended < 2) o->extended = 2;
   } else if (col >= FASTENT_SORT_MIN_ENTROPY) {
     if (o->extended < 1) o->extended = 1;

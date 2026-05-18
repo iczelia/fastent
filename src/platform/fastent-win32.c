@@ -261,9 +261,8 @@ static int fastent_win32_filesize_(HANDLE h, u64 * out) {
 #endif
 }
 
-int fastent_win32_mmap(int fd, void ** out_base,
-                       u64 * out_size,
-                       void ** out_handle) {
+int fastent_win32_mmap(
+    int fd, void ** out_base, u64 * out_size, void ** out_handle) {
   HANDLE h, hm;
   u64 fsz;
   void * p;
@@ -295,8 +294,7 @@ void fastent_win32_munmap(void * base, void * handle) {
   if (handle) CloseHandle((HANDLE) handle);
 }
 
-void * fastent_win32_open_overlapped(const char * utf8_path,
-                                     u64 * out_size) {
+void * fastent_win32_open_overlapped(const char * utf8_path, u64 * out_size) {
   HANDLE h = INVALID_HANDLE_VALUE;
   u64 fsz;
   if (!utf8_path || !out_size) return NULL;
