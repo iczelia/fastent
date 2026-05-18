@@ -97,10 +97,8 @@ FASTENT_FN(fold_vec_inline)(FASTENT_SIMD_VEC c) {
 }
 #endif
 
-/*  Order-0 fan-out: FASTENT_BANKS u32 working banks in locals, HIST_N
-    scatters 8 bytes across 8 banks to break store-to-load-forward.
-    Landing bank is irrelevant (finalize sums all banks per value);
-    only every byte counted once matters.  */
+/*  HIST_N's landing bank per byte is irrelevant for correctness:
+    finalize sums all FASTENT_BANKS banks per value.  */
 #if FASTENT_BANKS == 8
 #define FASTENT_HIST_DECL                                              \
   u32 * FASTENT_RESTRICT b0 = st->bank[0];                             \
@@ -112,10 +110,13 @@ FASTENT_FN(fold_vec_inline)(FASTENT_SIMD_VEC c) {
   u32 * FASTENT_RESTRICT b6 = st->bank[6];                             \
   u32 * FASTENT_RESTRICT b7 = st->bank[7]
 #define HIST_N(p, o)                                                   \
-  b0[(p)[(o) + 0]]++; b1[(p)[(o) + 1]]++;                              \
-  b2[(p)[(o) + 2]]++; b3[(p)[(o) + 3]]++;                              \
-  b4[(p)[(o) + 4]]++; b5[(p)[(o) + 5]]++;                              \
-  b6[(p)[(o) + 6]]++; b7[(p)[(o) + 7]]++
+  do {                                                                 \
+    u64 w_ = fastent_ld64_((const u8 *)(p) + (o));                     \
+    b0[ w_        & 0xffu]++; b1[(w_ >>  8) & 0xffu]++;                 \
+    b2[(w_ >> 16) & 0xffu]++; b3[(w_ >> 24) & 0xffu]++;                 \
+    b4[(w_ >> 32) & 0xffu]++; b5[(w_ >> 40) & 0xffu]++;                 \
+    b6[(w_ >> 48) & 0xffu]++; b7[ w_ >> 56        ]++;                  \
+  } while (0)
 #else
 #define FASTENT_HIST_DECL                                              \
   u32 * FASTENT_RESTRICT b0 = st->bank[0];                             \
@@ -123,10 +124,13 @@ FASTENT_FN(fold_vec_inline)(FASTENT_SIMD_VEC c) {
   u32 * FASTENT_RESTRICT b2 = st->bank[2];                             \
   u32 * FASTENT_RESTRICT b3 = st->bank[3 & (FASTENT_BANKS - 1)]
 #define HIST_N(p, o)                                                   \
-  b0[(p)[(o) + 0]]++; b1[(p)[(o) + 1]]++;                              \
-  b2[(p)[(o) + 2]]++; b3[(p)[(o) + 3]]++;                              \
-  b0[(p)[(o) + 4]]++; b1[(p)[(o) + 5]]++;                              \
-  b2[(p)[(o) + 6]]++; b3[(p)[(o) + 7]]++
+  do {                                                                 \
+    u64 w_ = fastent_ld64_((const u8 *)(p) + (o));                     \
+    b0[ w_        & 0xffu]++; b1[(w_ >>  8) & 0xffu]++;                 \
+    b2[(w_ >> 16) & 0xffu]++; b3[(w_ >> 24) & 0xffu]++;                 \
+    b0[(w_ >> 32) & 0xffu]++; b1[(w_ >> 40) & 0xffu]++;                 \
+    b2[(w_ >> 48) & 0xffu]++; b3[ w_ >> 56        ]++;                  \
+  } while (0)
 #endif
 
 /*  Scalar single-byte update: histogram + SCC + MC Pi + first/last.

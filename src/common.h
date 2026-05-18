@@ -204,6 +204,21 @@ static inline u64 fastent_rb64_ld_(const u8 * p) {
   return fastent_rb64_(v);
 }
 
+/*  Native-endian 8-byte load. Only the multiset of the extracted
+    bytes matters to the histogram, so counts are endian-invariant.  */
+static inline u64 fastent_ld64_(const u8 * p) {
+  u64 v;
+#if defined(__GNUC__) || defined(__clang__)
+  __builtin_memcpy(&v, p, sizeof v);
+#else
+  v = (u64) p[0]        | ((u64) p[1] <<  8)
+    | ((u64) p[2] << 16) | ((u64) p[3] << 24)
+    | ((u64) p[4] << 32) | ((u64) p[5] << 40)
+    | ((u64) p[6] << 48) | ((u64) p[7] << 56);
+#endif
+  return v;
+}
+
 /*  Tight int-counter for-loop macros, C89-compliant.  */
 #define Fi(n, body)        { int i; for (i = 0; i < (n); i++) { body; } }
 #define Fj(n, body)        { int j; for (j = 0; j < (n); j++) { body; } }
