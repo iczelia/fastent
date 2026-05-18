@@ -1,7 +1,8 @@
 2026-05-16  Kamila Szewczyk  <k@iczelia.net>
 
-	v1.2:  extended statistics, faithfully-rounded log2 family,
-	yarg argument parser, histogram axis fixes, order-1 bigram.
+	v1.2:  extended statistics, FIPS 140-2 RNG self-tests,
+	faithfully-rounded log2 family, yarg argument parser,
+	histogram axis fixes, order-1 bigram.
 
 	Extended statistics (-e / --extended), all derived at
 	finalisation from the histogram and running sums at no
@@ -23,9 +24,25 @@
 	  - conditional entropy H(cur|prev) and adjacent mutual
 	    information I(prev;cur); exposes order-1 structure the
 	    order-0 measures and the linear SCC miss.
+	  - runs (0/1 runs in bit mode, median-class runs in byte
+	    mode), longest identical-symbol run, and the bit-mode
+	    cusum max excursion of the +-1 walk.
 	  - single scalar pass, deterministic, sum-mergeable; padded
 	    256x256 u64 shadow planes per thread (byte mode, ~1 MiB),
-	    2x2 in bit mode.
+	    2x2 in bit mode.  Split across the -j workers, the bigram
+	    pair / runs / longest run / cusum stitched at the slice
+	    boundary; stream / io_uring feed an SPMC pipeline.
+	  - surfaced in default / terse / JSON / recursive output;
+	    new --sort-by=cond-entropy / mutual-info columns.
+
+	FIPS 140-2 RNG power-up self-tests (--fips-140-2):
+	  - the 4.9.1 monobit, poker, runs and long-run tests over
+	    each independent 20000-bit block, replacing the normal
+	    analysis; pass/fail report, exit status 1 on any failed
+	    block, 0 otherwise.
+	  - blocks split across the -j workers; the verdict is
+	    bit-identical regardless of thread count.  Not supported
+	    with -r.
 
 	Numerics:
 	  - chi-square upper tail generalised to any odd df
