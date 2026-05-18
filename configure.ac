@@ -1,5 +1,5 @@
 m4_define([fastent_version_major], [1])
-m4_define([fastent_version_minor], [2])
+m4_define([fastent_version_minor], [3])
 m4_define([fastent_version], [fastent_version_major.fastent_version_minor])
 
 AC_PREREQ([2.69])
