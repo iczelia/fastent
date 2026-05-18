@@ -132,7 +132,8 @@ dist_man_MANS = fastent.1
 
 EXTRA_DIST = README.md NEWS ChangeLog AUTHORS COPYING bootstrap .clangd \
              scripts/gen_log2_tables.py scripts/gen_compile_commands.py \
-             build/msvc/Makefile.nmake build/ci/package.sh \
+             build/msvc/Makefile.nmake \
+             build/ci/stage-binary.sh build/ci/bundle-release.sh \
              tests/run-tests.sh tests/bench.sh tests/bench-gen.c \
              doc/bench.png doc/bench.tsv doc/bench.gnuplot \
              contrib/dos/dosbox-x.conf contrib/gplv3.png
