@@ -133,7 +133,7 @@ EXTRA_DIST = README.md NEWS ChangeLog AUTHORS COPYING bootstrap .clangd \
              scripts/gen_log2_tables.py scripts/gen_compile_commands.py \
              build/msvc/Makefile.nmake build/ci/package.sh \
              tests/run-tests.sh tests/bench.sh tests/bench-gen.c \
-             doc/bench.png doc/bench.tsv \
+             doc/bench.png doc/bench.tsv doc/bench.gnuplot \
              contrib/dos/dosbox-x.conf contrib/gplv3.png
 
 check-local:
@@ -144,7 +144,10 @@ clean-local:
 	-rm -rf "$(builddir)/tests/fixtures"
 	-rm -f "$(builddir)/fastent-dos-stub-stamp" "$(builddir)/fastent"
 
-.PHONY: bench bench-quick bench-clean
+.PHONY: bench bench-quick bench-clean bench-plot
+bench-plot:
+	gnuplot -e "data='$(srcdir)/doc/bench.tsv'; out='$(srcdir)/doc/bench.png'" \
+	  "$(srcdir)/doc/bench.gnuplot"
 bench: fastent
 	@BUILDDIR="$(builddir)" SRCDIR="$(srcdir)" CC="$(CC)" \
 	  $(SHELL) "$(srcdir)/tests/bench.sh"

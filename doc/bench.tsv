@@ -1,210 +1,645 @@
-random	byte	0	107.2
-random	byte	1	2721.4
-random	byte	2	4550.2
-random	byte	4	7912.6
-random	byte	8	11761.2
-random	byte	16	13658.8
-random	byte	32	16156.3
-random	bit	0	52.1
-random	bit	1	4669.7
-random	bit	2	7427.6
-random	bit	4	11911.6
-random	bit	8	16439.0
-random	bit	16	17531.8
-random	bit	32	16965.3
-random	byte-fold	0	67.5
-random	byte-fold	1	2156.4
-random	byte-fold	2	3657.6
-random	byte-fold	4	6134.1
-random	byte-fold	8	9813.8
-random	byte-fold	16	12029.7
-random	byte-fold	32	14693.2
-zeros	byte	0	116.0
-zeros	byte	1	1977.5
-zeros	byte	2	3558.1
-zeros	byte	4	6154.1
-zeros	byte	8	10209.0
-zeros	byte	16	12685.6
-zeros	byte	32	14943.5
-zeros	bit	0	56.8
-zeros	bit	1	4698.0
-zeros	bit	2	7351.5
-zeros	bit	4	12304.3
-zeros	bit	8	17240.1
-zeros	bit	16	16978.6
-zeros	bit	32	16891.7
-zeros	byte-fold	0	110.5
-zeros	byte-fold	1	1660.0
-zeros	byte-fold	2	3033.8
-zeros	byte-fold	4	5347.8
-zeros	byte-fold	8	8625.6
-zeros	byte-fold	16	10575.7
-zeros	byte-fold	32	13584.6
-counter	byte	0	111.5
-counter	byte	1	2733.9
-counter	byte	2	4704.4
-counter	byte	4	7589.6
-counter	byte	8	10802.1
-counter	byte	16	13758.9
-counter	byte	32	15902.0
-counter	bit	0	52.4
-counter	bit	1	4772.3
-counter	bit	2	7577.8
-counter	bit	4	12756.1
-counter	bit	8	16807.5
-counter	bit	16	17267.8
-counter	bit	32	17068.6
-counter	byte-fold	0	106.2
-counter	byte-fold	1	2131.3
-counter	byte-fold	2	3685.7
-counter	byte-fold	4	6788.5
-counter	byte-fold	8	9264.9
-counter	byte-fold	16	12257.5
-counter	byte-fold	32	14525.4
-dna	byte	0	115.7
-dna	byte	1	2323.6
-dna	byte	2	4052.0
-dna	byte	4	6922.1
-dna	byte	8	11467.4
-dna	byte	16	12915.7
-dna	byte	32	15799.7
-dna	bit	0	52.8
-dna	bit	1	4783.6
-dna	bit	2	7221.3
-dna	bit	4	12550.9
-dna	bit	8	15733.2
-dna	bit	16	17347.7
-dna	bit	32	16992.8
-dna	byte-fold	0	90.9
-dna	byte-fold	1	1929.6
-dna	byte-fold	2	3383.4
-dna	byte-fold	4	5898.4
-dna	byte-fold	8	9321.0
-dna	byte-fold	16	11461.8
-dna	byte-fold	32	14461.6
-ascii	byte	0	114.6
-ascii	byte	1	2672.6
-ascii	byte	2	4514.5
-ascii	byte	4	7590.0
-ascii	byte	8	12221.6
-ascii	byte	16	14020.2
-ascii	byte	32	15937.3
-ascii	bit	0	56.0
-ascii	bit	1	4689.7
-ascii	bit	2	7373.9
-ascii	bit	4	11983.9
-ascii	bit	8	16554.8
-ascii	bit	16	17489.3
-ascii	bit	32	17128.9
-ascii	byte-fold	0	67.8
-ascii	byte-fold	1	2079.5
-ascii	byte-fold	2	3769.1
-ascii	byte-fold	4	5992.6
-ascii	byte-fold	8	10286.2
-ascii	byte-fold	16	12423.1
-ascii	byte-fold	32	14554.8
-biased	byte	0	112.2
-biased	byte	1	2417.1
-biased	byte	2	4104.1
-biased	byte	4	7340.0
-biased	byte	8	11047.1
-biased	byte	16	12436.3
-biased	byte	32	16004.7
-biased	bit	0	50.1
-biased	bit	1	4712.8
-biased	bit	2	7776.1
-biased	bit	4	10736.8
-biased	bit	8	16126.1
-biased	bit	16	17046.8
-biased	bit	32	17008.2
-biased	byte-fold	0	84.3
-biased	byte-fold	1	1930.2
-biased	byte-fold	2	3382.2
-biased	byte-fold	4	5908.4
-biased	byte-fold	8	9352.8
-biased	byte-fold	16	11547.2
-biased	byte-fold	32	14408.3
-sparse-bits	byte	0	114.9
-sparse-bits	byte	1	2115.9
-sparse-bits	byte	2	3725.6
-sparse-bits	byte	4	6225.4
-sparse-bits	byte	8	9686.5
-sparse-bits	byte	16	12662.2
-sparse-bits	byte	32	15613.8
-sparse-bits	bit	0	49.7
-sparse-bits	bit	1	4657.6
-sparse-bits	bit	2	7716.9
-sparse-bits	bit	4	12378.9
-sparse-bits	bit	8	16715.7
-sparse-bits	bit	16	17158.1
-sparse-bits	bit	32	17214.9
-sparse-bits	byte-fold	0	113.1
-sparse-bits	byte-fold	1	1772.1
-sparse-bits	byte-fold	2	3116.1
-sparse-bits	byte-fold	4	5331.3
-sparse-bits	byte-fold	8	8751.2
-sparse-bits	byte-fold	16	11182.1
-sparse-bits	byte-fold	32	14141.8
-lcg	byte	0	107.5
-lcg	byte	1	2639.4
-lcg	byte	2	4557.8
-lcg	byte	4	8221.7
-lcg	byte	8	10741.2
-lcg	byte	16	13437.6
-lcg	byte	32	15455.7
-lcg	bit	0	53.5
-lcg	bit	1	4776.9
-lcg	bit	2	7179.6
-lcg	bit	4	11821.6
-lcg	bit	8	16767.6
-lcg	bit	16	17508.1
-lcg	bit	32	17195.9
-lcg	byte-fold	0	67.3
-lcg	byte-fold	1	2120.9
-lcg	byte-fold	2	3387.4
-lcg	byte-fold	4	5940.5
-lcg	byte-fold	8	8962.2
-lcg	byte-fold	16	12259.2
-lcg	byte-fold	32	14621.3
-walk	byte	0	112.4
-walk	byte	1	2534.8
-walk	byte	2	4223.9
-walk	byte	4	7084.3
-walk	byte	8	9852.8
-walk	byte	16	13422.7
-walk	byte	32	15198.0
-walk	bit	0	52.1
-walk	bit	1	4728.4
-walk	bit	2	7200.5
-walk	bit	4	12750.5
-walk	bit	8	16270.8
-walk	bit	16	17046.6
-walk	bit	32	17071.2
-walk	byte-fold	0	103.0
-walk	byte-fold	1	1955.6
-walk	byte-fold	2	3352.5
-walk	byte-fold	4	6060.0
-walk	byte-fold	8	9726.6
-walk	byte-fold	16	12161.9
-walk	byte-fold	32	14488.9
-stripes	byte	0	104.9
-stripes	byte	1	2544.9
-stripes	byte	2	4244.4
-stripes	byte	4	6924.4
-stripes	byte	8	10599.3
-stripes	byte	16	13064.6
-stripes	byte	32	15597.5
-stripes	bit	0	52.0
-stripes	bit	1	4748.5
-stripes	bit	2	7432.8
-stripes	bit	4	12683.9
-stripes	bit	8	16112.9
-stripes	bit	16	17803.7
-stripes	bit	32	17158.8
-stripes	byte-fold	0	97.8
-stripes	byte-fold	1	1916.4
-stripes	byte-fold	2	3431.5
-stripes	byte-fold	4	5609.6
-stripes	byte-fold	8	9517.5
-stripes	byte-fold	16	11621.4
-stripes	byte-fold	32	14309.0
+== fastent benchmark ==
+  binary    : ./fastent
+  ent       : /usr/bin/ent (compared at jobs=ent, single-threaded)
+  size/run  : 1024 MiB
+  runs/cell : 5 (after 1 warmup)
+  jobs      : 1 2 4 8 16 32
+  modes     : byte bit byte-fold
+  levels    : plain e ee
+  fips      : on
+  datasets  : random zeros counter dna ascii biased sparse-bits lcg walk stripes
+  cache     : /tmp/fastent-bench
+
+
+  dataset      mode      level jobs        mean      stddev         min         max       MiB/s
+  ------------ --------- ----- ----   ---------   ---------   ---------   ---------   ---------
+  random       byte      plain  ent     9.3811s     0.1155s     9.2142s     9.5090s       109.2
+  random       byte      plain    1     0.4105s     0.0012s     0.4093s     0.4126s      2494.7
+  random       byte      plain    2     0.2439s     0.0015s     0.2417s     0.2454s      4198.9
+  random       byte      plain    4     0.1442s     0.0061s     0.1373s     0.1502s      7101.0
+  random       byte      plain    8     0.0957s     0.0048s     0.0908s     0.1030s     10700.5
+  random       byte      plain   16     0.0881s     0.0067s     0.0807s     0.0943s     11619.2
+  random       byte      plain   32     0.0692s     0.0030s     0.0661s     0.0743s     14792.8
+  random       byte      e        1     0.4132s     0.0005s     0.4126s     0.4139s      2478.3
+  random       byte      e        2     0.2405s     0.0070s     0.2326s     0.2465s      4258.6
+  random       byte      e        4     0.1435s     0.0076s     0.1341s     0.1501s      7133.8
+  random       byte      e        8     0.0941s     0.0052s     0.0893s     0.1010s     10880.6
+  random       byte      e       16     0.0848s     0.0034s     0.0829s     0.0909s     12074.9
+  random       byte      e       32     0.0668s     0.0017s     0.0646s     0.0693s     15320.4
+  random       byte      ee       1     1.6905s     0.0321s     1.6340s     1.7121s       605.8
+  random       byte      ee       2     0.9616s     0.0140s     0.9412s     0.9794s      1064.8
+  random       byte      ee       4     0.5128s     0.0049s     0.5066s     0.5179s      1997.0
+  random       byte      ee       8     0.2895s     0.0074s     0.2804s     0.3004s      3537.7
+  random       byte      ee      16     0.2445s     0.0237s     0.2031s     0.2591s      4188.6
+  random       byte      ee      32     0.2155s     0.0099s     0.2092s     0.2326s      4751.0
+  random       bit       plain  ent    19.7095s     0.0296s    19.6763s    19.7452s        52.0
+  random       bit       plain    1     0.2158s     0.0037s     0.2124s     0.2220s      4745.7
+  random       bit       plain    2     0.1441s     0.0012s     0.1422s     0.1452s      7104.6
+  random       bit       plain    4     0.0948s     0.0044s     0.0872s     0.0986s     10802.1
+  random       bit       plain    8     0.0676s     0.0012s     0.0667s     0.0697s     15142.7
+  random       bit       plain   16     0.0680s     0.0012s     0.0669s     0.0697s     15067.1
+  random       bit       plain   32     0.0651s     0.0008s     0.0644s     0.0663s     15718.8
+  random       bit       e        1     0.2186s     0.0037s     0.2122s     0.2214s      4684.7
+  random       bit       e        2     0.1406s     0.0070s     0.1326s     0.1465s      7283.3
+  random       bit       e        4     0.0932s     0.0060s     0.0861s     0.0978s     10985.1
+  random       bit       e        8     0.0685s     0.0045s     0.0657s     0.0763s     14941.8
+  random       bit       e       16     0.0658s     0.0025s     0.0628s     0.0688s     15566.3
+  random       bit       e       32     0.0650s     0.0014s     0.0637s     0.0674s     15763.5
+  random       bit       ee       1     3.8413s     0.0366s     3.8029s     3.8784s       266.6
+  random       bit       ee       2     1.9727s     0.0146s     1.9543s     1.9914s       519.1
+  random       bit       ee       4     1.0305s     0.0070s     1.0247s     1.0389s       993.7
+  random       bit       ee       8     0.5418s     0.0057s     0.5377s     0.5515s      1889.9
+  random       bit       ee      16     0.4078s     0.0390s     0.3434s     0.4488s      2510.8
+  random       bit       ee      32     0.2707s     0.0066s     0.2646s     0.2801s      3782.4
+  random       byte-fold plain  ent    15.1875s     0.0108s    15.1743s    15.1983s        67.4
+  random       byte-fold plain    1     0.5092s     0.0059s     0.4994s     0.5142s      2010.9
+  random       byte-fold plain    2     0.2962s     0.0064s     0.2863s     0.3044s      3456.6
+  random       byte-fold plain    4     0.1805s     0.0090s     0.1721s     0.1906s      5673.1
+  random       byte-fold plain    8     0.1137s     0.0072s     0.1020s     0.1207s      9007.0
+  random       byte-fold plain   16     0.0882s     0.0015s     0.0867s     0.0902s     11609.1
+  random       byte-fold plain   32     0.0750s     0.0026s     0.0723s     0.0781s     13652.1
+  random       byte-fold e        1     0.5141s     0.0063s     0.5096s     0.5253s      1991.9
+  random       byte-fold e        2     0.2907s     0.0075s     0.2819s     0.2984s      3521.9
+  random       byte-fold e        4     0.1727s     0.0044s     0.1654s     0.1770s      5927.9
+  random       byte-fold e        8     0.1173s     0.0197s     0.1022s     0.1392s      8729.6
+  random       byte-fold e       16     0.0893s     0.0052s     0.0854s     0.0982s     11471.8
+  random       byte-fold e       32     0.0745s     0.0023s     0.0715s     0.0770s     13752.6
+  random       byte-fold ee       1     1.7849s     0.0476s     1.7418s     1.8658s       573.7
+  random       byte-fold ee       2     0.9199s     0.0197s     0.8988s     0.9400s      1113.1
+  random       byte-fold ee       4     0.5252s     0.0100s     0.5165s     0.5373s      1949.7
+  random       byte-fold ee       8     0.3057s     0.0096s     0.2957s     0.3210s      3350.0
+  random       byte-fold ee      16     0.2457s     0.0142s     0.2223s     0.2608s      4167.5
+  random       byte-fold ee      32     0.2232s     0.0146s     0.2113s     0.2468s      4588.8
+  random       fips      -        1     3.7492s     0.0184s     3.7340s     3.7809s       273.1
+  random       fips      -        2     1.7436s     0.0164s     1.7277s     1.7615s       587.3
+  random       fips      -        4     0.9050s     0.0046s     0.9013s     0.9129s      1131.5
+  random       fips      -        8     0.4891s     0.0082s     0.4800s     0.4962s      2093.6
+  random       fips      -       16     0.4088s     0.0307s     0.3730s     0.4576s      2504.8
+  random       fips      -       32     0.2916s     0.0084s     0.2799s     0.3030s      3511.7
+  zeros        byte      plain  ent     9.0199s     0.0479s     8.9879s     9.0988s       113.5
+  zeros        byte      plain    1     0.4375s     0.0025s     0.4345s     0.4402s      2340.8
+  zeros        byte      plain    2     0.2520s     0.0059s     0.2414s     0.2557s      4064.2
+  zeros        byte      plain    4     0.1578s     0.0070s     0.1521s     0.1699s      6489.0
+  zeros        byte      plain    8     0.1129s     0.0077s     0.1032s     0.1240s      9067.3
+  zeros        byte      plain   16     0.0899s     0.0046s     0.0847s     0.0946s     11393.3
+  zeros        byte      plain   32     0.0677s     0.0030s     0.0634s     0.0704s     15120.6
+  zeros        byte      e        1     0.4468s     0.0501s     0.4213s     0.5362s      2291.6
+  zeros        byte      e        2     0.2594s     0.0205s     0.2422s     0.2888s      3948.3
+  zeros        byte      e        4     0.1461s     0.0123s     0.1398s     0.1681s      7010.2
+  zeros        byte      e        8     0.1039s     0.0090s     0.0922s     0.1144s      9856.6
+  zeros        byte      e       16     0.0861s     0.0037s     0.0831s     0.0916s     11889.5
+  zeros        byte      e       32     0.0710s     0.0037s     0.0665s     0.0749s     14429.5
+  zeros        byte      ee       1     1.1953s     0.0147s     1.1851s     1.2213s       856.7
+  zeros        byte      ee       2     0.6462s     0.0123s     0.6342s     0.6663s      1584.7
+  zeros        byte      ee       4     0.4326s     0.0683s     0.3399s     0.4889s      2367.2
+  zeros        byte      ee       8     0.2241s     0.0219s     0.2080s     0.2611s      4569.0
+  zeros        byte      ee      16     0.1907s     0.0201s     0.1684s     0.2092s      5370.4
+  zeros        byte      ee      32     0.1506s     0.0110s     0.1351s     0.1649s      6799.2
+  zeros        bit       plain  ent    18.2338s     0.0975s    18.0900s    18.3295s        56.2
+  zeros        bit       plain    1     0.2153s     0.0050s     0.2084s     0.2214s      4755.1
+  zeros        bit       plain    2     0.1381s     0.0077s     0.1299s     0.1474s      7413.5
+  zeros        bit       plain    4     0.0922s     0.0052s     0.0845s     0.0981s     11105.1
+  zeros        bit       plain    8     0.0641s     0.0015s     0.0632s     0.0667s     15973.9
+  zeros        bit       plain   16     0.0647s     0.0013s     0.0634s     0.0661s     15834.5
+  zeros        bit       plain   32     0.0649s     0.0014s     0.0632s     0.0667s     15768.0
+  zeros        bit       e        1     0.2083s     0.0020s     0.2068s     0.2117s      4915.9
+  zeros        bit       e        2     0.1366s     0.0073s     0.1263s     0.1431s      7494.0
+  zeros        bit       e        4     0.0934s     0.0055s     0.0837s     0.0975s     10959.7
+  zeros        bit       e        8     0.0666s     0.0052s     0.0624s     0.0753s     15370.4
+  zeros        bit       e       16     0.0661s     0.0002s     0.0659s     0.0664s     15498.2
+  zeros        bit       e       32     0.0628s     0.0006s     0.0621s     0.0633s     16313.3
+  zeros        bit       ee       1     2.6124s     0.0357s     2.5869s     2.6672s       392.0
+  zeros        bit       ee       2     1.3869s     0.0053s     1.3782s     1.3924s       738.4
+  zeros        bit       ee       4     0.7288s     0.0029s     0.7258s     0.7331s      1405.1
+  zeros        bit       ee       8     0.3981s     0.0110s     0.3872s     0.4164s      2572.1
+  zeros        bit       ee      16     0.3370s     0.0265s     0.3145s     0.3691s      3038.6
+  zeros        bit       ee      32     0.2254s     0.0094s     0.2132s     0.2334s      4543.8
+  zeros        byte-fold plain  ent     9.2613s     0.0131s     9.2524s     9.2843s       110.6
+  zeros        byte-fold plain    1     0.5197s     0.0328s     0.5040s     0.5785s      1970.2
+  zeros        byte-fold plain    2     0.2971s     0.0073s     0.2888s     0.3036s      3446.9
+  zeros        byte-fold plain    4     0.1835s     0.0185s     0.1636s     0.2038s      5581.8
+  zeros        byte-fold plain    8     0.1236s     0.0062s     0.1149s     0.1304s      8286.2
+  zeros        byte-fold plain   16     0.0924s     0.0025s     0.0899s     0.0964s     11080.9
+  zeros        byte-fold plain   32     0.0725s     0.0020s     0.0701s     0.0748s     14122.3
+  zeros        byte-fold e        1     0.5368s     0.0465s     0.5074s     0.6194s      1907.7
+  zeros        byte-fold e        2     0.3283s     0.0738s     0.2853s     0.4598s      3119.5
+  zeros        byte-fold e        4     0.1831s     0.0142s     0.1755s     0.2085s      5593.1
+  zeros        byte-fold e        8     0.1173s     0.0094s     0.1067s     0.1276s      8730.2
+  zeros        byte-fold e       16     0.0989s     0.0045s     0.0916s     0.1040s     10353.8
+  zeros        byte-fold e       32     0.0717s     0.0041s     0.0676s     0.0774s     14282.0
+  zeros        byte-fold ee       1     1.2286s     0.0181s     1.2070s     1.2533s       833.5
+  zeros        byte-fold ee       2     0.6896s     0.0346s     0.6532s     0.7294s      1484.9
+  zeros        byte-fold ee       4     0.4173s     0.0652s     0.3649s     0.4951s      2453.9
+  zeros        byte-fold ee       8     0.2398s     0.0297s     0.2080s     0.2769s      4270.5
+  zeros        byte-fold ee      16     0.1764s     0.0049s     0.1726s     0.1849s      5805.0
+  zeros        byte-fold ee      32     0.1572s     0.0062s     0.1482s     0.1634s      6513.6
+  zeros        fips      -        1     3.7041s     0.0619s     3.6308s     3.7925s       276.4
+  zeros        fips      -        2     1.7624s     0.0074s     1.7492s     1.7666s       581.0
+  zeros        fips      -        4     0.9116s     0.0048s     0.9054s     0.9174s      1123.3
+  zeros        fips      -        8     0.4884s     0.0214s     0.4732s     0.5255s      2096.5
+  zeros        fips      -       16     0.3719s     0.0403s     0.3064s     0.4068s      2753.5
+  zeros        fips      -       32     0.2887s     0.0120s     0.2788s     0.3032s      3546.5
+  counter      byte      plain  ent     9.1543s     0.0716s     9.0371s     9.2092s       111.9
+  counter      byte      plain    1     0.4090s     0.0073s     0.3965s     0.4146s      2503.9
+  counter      byte      plain    2     0.2406s     0.0064s     0.2294s     0.2449s      4256.1
+  counter      byte      plain    4     0.1425s     0.0056s     0.1353s     0.1494s      7184.0
+  counter      byte      plain    8     0.0929s     0.0055s     0.0856s     0.0996s     11022.0
+  counter      byte      plain   16     0.0821s     0.0014s     0.0811s     0.0846s     12476.8
+  counter      byte      plain   32     0.0662s     0.0031s     0.0628s     0.0712s     15464.7
+  counter      byte      e        1     0.3973s     0.0061s     0.3938s     0.4081s      2577.4
+  counter      byte      e        2     0.2403s     0.0050s     0.2327s     0.2440s      4260.6
+  counter      byte      e        4     0.1404s     0.0057s     0.1349s     0.1484s      7291.3
+  counter      byte      e        8     0.0909s     0.0059s     0.0862s     0.1007s     11262.7
+  counter      byte      e       16     0.0812s     0.0011s     0.0793s     0.0819s     12606.6
+  counter      byte      e       32     0.0663s     0.0018s     0.0638s     0.0681s     15441.0
+  counter      byte      ee       1     1.0140s     0.0067s     1.0059s     1.0229s      1009.9
+  counter      byte      ee       2     0.5734s     0.0453s     0.5485s     0.6538s      1785.9
+  counter      byte      ee       4     0.3172s     0.0163s     0.3089s     0.3462s      3228.0
+  counter      byte      ee       8     0.1952s     0.0185s     0.1752s     0.2198s      5244.7
+  counter      byte      ee      16     0.1838s     0.0092s     0.1745s     0.1958s      5570.4
+  counter      byte      ee      32     0.1419s     0.0039s     0.1381s     0.1482s      7216.6
+  counter      bit       plain  ent    19.1846s     0.1472s    19.0742s    19.4241s        53.4
+  counter      bit       plain    1     0.2146s     0.0015s     0.2132s     0.2168s      4772.0
+  counter      bit       plain    2     0.1349s     0.0062s     0.1303s     0.1433s      7589.3
+  counter      bit       plain    4     0.0882s     0.0067s     0.0831s     0.0961s     11607.5
+  counter      bit       plain    8     0.0651s     0.0013s     0.0634s     0.0665s     15741.7
+  counter      bit       plain   16     0.0667s     0.0012s     0.0656s     0.0683s     15353.4
+  counter      bit       plain   32     0.0626s     0.0009s     0.0620s     0.0642s     16360.8
+  counter      bit       e        1     0.2118s     0.0028s     0.2094s     0.2166s      4835.2
+  counter      bit       e        2     0.1369s     0.0063s     0.1294s     0.1421s      7477.3
+  counter      bit       e        4     0.0877s     0.0047s     0.0837s     0.0933s     11671.5
+  counter      bit       e        8     0.0706s     0.0102s     0.0619s     0.0852s     14507.0
+  counter      bit       e       16     0.0643s     0.0018s     0.0618s     0.0659s     15927.4
+  counter      bit       e       32     0.0623s     0.0005s     0.0619s     0.0630s     16432.3
+  counter      bit       ee       1     2.8785s     0.0332s     2.8627s     2.9379s       355.7
+  counter      bit       ee       2     1.5542s     0.0061s     1.5437s     1.5596s       658.9
+  counter      bit       ee       4     0.8038s     0.0079s     0.7933s     0.8126s      1273.9
+  counter      bit       ee       8     0.4324s     0.0071s     0.4249s     0.4405s      2367.9
+  counter      bit       ee      16     0.3172s     0.0356s     0.2713s     0.3528s      3227.9
+  counter      bit       ee      32     0.2451s     0.0043s     0.2394s     0.2493s      4178.6
+  counter      byte-fold plain  ent     9.8794s     0.2503s     9.6515s    10.3081s       103.7
+  counter      byte-fold plain    1     0.5101s     0.0048s     0.5052s     0.5165s      2007.5
+  counter      byte-fold plain    2     0.2914s     0.0060s     0.2832s     0.2964s      3514.7
+  counter      byte-fold plain    4     0.1723s     0.0012s     0.1712s     0.1742s      5941.9
+  counter      byte-fold plain    8     0.1096s     0.0062s     0.1031s     0.1190s      9345.6
+  counter      byte-fold plain   16     0.0917s     0.0060s     0.0841s     0.0970s     11161.6
+  counter      byte-fold plain   32     0.0719s     0.0031s     0.0695s     0.0773s     14233.5
+  counter      byte-fold e        1     0.5122s     0.0088s     0.4966s     0.5175s      1999.4
+  counter      byte-fold e        2     0.2924s     0.0077s     0.2834s     0.2984s      3502.5
+  counter      byte-fold e        4     0.1700s     0.0061s     0.1624s     0.1768s      6023.3
+  counter      byte-fold e        8     0.1174s     0.0082s     0.1099s     0.1283s      8720.7
+  counter      byte-fold e       16     0.0905s     0.0044s     0.0874s     0.0979s     11318.1
+  counter      byte-fold e       32     0.0715s     0.0027s     0.0682s     0.0755s     14323.7
+  counter      byte-fold ee       1     1.0654s     0.0077s     1.0575s     1.0757s       961.2
+  counter      byte-fold ee       2     0.5764s     0.0060s     0.5721s     0.5867s      1776.4
+  counter      byte-fold ee       4     0.3618s     0.0165s     0.3441s     0.3888s      2830.4
+  counter      byte-fold ee       8     0.1920s     0.0107s     0.1799s     0.2026s      5333.5
+  counter      byte-fold ee      16     0.1767s     0.0099s     0.1633s     0.1869s      5796.2
+  counter      byte-fold ee      32     0.1441s     0.0054s     0.1405s     0.1534s      7106.0
+  counter      fips      -        1     3.8179s     0.0042s     3.8130s     3.8228s       268.2
+  counter      fips      -        2     1.7594s     0.0052s     1.7525s     1.7666s       582.0
+  counter      fips      -        4     0.9107s     0.0011s     0.9095s     0.9124s      1124.5
+  counter      fips      -        8     0.4947s     0.0132s     0.4819s     0.5170s      2069.8
+  counter      fips      -       16     0.4002s     0.0674s     0.2965s     0.4777s      2558.4
+  counter      fips      -       32     0.2845s     0.0078s     0.2783s     0.2973s      3598.9
+  dna          byte      plain  ent     9.0154s     0.0985s     8.8573s     9.1299s       113.6
+  dna          byte      plain    1     0.3988s     0.0031s     0.3956s     0.4027s      2567.7
+  dna          byte      plain    2     0.2472s     0.0101s     0.2309s     0.2580s      4142.3
+  dna          byte      plain    4     0.1436s     0.0094s     0.1325s     0.1529s      7133.3
+  dna          byte      plain    8     0.0998s     0.0024s     0.0963s     0.1031s     10265.5
+  dna          byte      plain   16     0.0781s     0.0005s     0.0774s     0.0787s     13110.1
+  dna          byte      plain   32     0.0657s     0.0011s     0.0647s     0.0672s     15575.0
+  dna          byte      e        1     0.4061s     0.0050s     0.3989s     0.4125s      2521.7
+  dna          byte      e        2     0.2474s     0.0034s     0.2451s     0.2530s      4139.3
+  dna          byte      e        4     0.1437s     0.0061s     0.1353s     0.1524s      7124.1
+  dna          byte      e        8     0.0923s     0.0073s     0.0849s     0.1034s     11100.0
+  dna          byte      e       16     0.0801s     0.0051s     0.0772s     0.0891s     12787.2
+  dna          byte      e       32     0.0672s     0.0007s     0.0660s     0.0678s     15244.3
+  dna          byte      ee       1     2.1629s     0.1329s     2.0593s     2.3954s       473.4
+  dna          byte      ee       2     1.1104s     0.0116s     1.0975s     1.1279s       922.2
+  dna          byte      ee       4     0.5859s     0.0090s     0.5719s     0.5944s      1747.6
+  dna          byte      ee       8     0.3267s     0.0091s     0.3144s     0.3383s      3134.2
+  dna          byte      ee      16     0.2620s     0.0110s     0.2424s     0.2682s      3907.8
+  dna          byte      ee      32     0.2078s     0.0099s     0.1968s     0.2217s      4927.7
+  dna          bit       plain  ent    19.3637s     0.0903s    19.2496s    19.4745s        52.9
+  dna          bit       plain    1     0.2017s     0.0003s     0.2013s     0.2021s      5076.3
+  dna          bit       plain    2     0.1375s     0.0006s     0.1369s     0.1381s      7445.4
+  dna          bit       plain    4     0.0889s     0.0045s     0.0814s     0.0934s     11520.1
+  dna          bit       plain    8     0.0614s     0.0022s     0.0595s     0.0638s     16673.1
+  dna          bit       plain   16     0.0615s     0.0003s     0.0612s     0.0619s     16646.0
+  dna          bit       plain   32     0.0625s     0.0003s     0.0621s     0.0628s     16375.8
+  dna          bit       e        1     0.2038s     0.0053s     0.1983s     0.2114s      5023.6
+  dna          bit       e        2     0.1353s     0.0067s     0.1235s     0.1388s      7566.4
+  dna          bit       e        4     0.0884s     0.0046s     0.0803s     0.0916s     11588.4
+  dna          bit       e        8     0.0625s     0.0056s     0.0593s     0.0724s     16372.9
+  dna          bit       e       16     0.0618s     0.0009s     0.0603s     0.0626s     16559.8
+  dna          bit       e       32     0.0620s     0.0015s     0.0602s     0.0639s     16522.1
+  dna          bit       ee       1     3.0331s     0.0533s     2.9934s     3.0924s       337.6
+  dna          bit       ee       2     1.5744s     0.0057s     1.5689s     1.5812s       650.4
+  dna          bit       ee       4     0.8236s     0.0028s     0.8204s     0.8274s      1243.3
+  dna          bit       ee       8     0.4456s     0.0166s     0.4304s     0.4737s      2298.0
+  dna          bit       ee      16     0.3262s     0.0542s     0.2691s     0.3952s      3139.1
+  dna          bit       ee      32     0.2446s     0.0089s     0.2364s     0.2571s      4185.6
+  dna          byte-fold plain  ent    11.3841s     0.1900s    11.1573s    11.6378s        89.9
+  dna          byte-fold plain    1     0.4976s     0.0081s     0.4873s     0.5101s      2057.8
+  dna          byte-fold plain    2     0.2928s     0.0111s     0.2775s     0.3085s      3496.9
+  dna          byte-fold plain    4     0.1685s     0.0073s     0.1563s     0.1746s      6077.7
+  dna          byte-fold plain    8     0.1057s     0.0064s     0.0987s     0.1124s      9685.3
+  dna          byte-fold plain   16     0.0868s     0.0049s     0.0827s     0.0948s     11798.9
+  dna          byte-fold plain   32     0.0711s     0.0021s     0.0680s     0.0732s     14407.4
+  dna          byte-fold e        1     0.5101s     0.0037s     0.5072s     0.5147s      2007.4
+  dna          byte-fold e        2     0.2878s     0.0091s     0.2769s     0.2958s      3558.0
+  dna          byte-fold e        4     0.1848s     0.0386s     0.1595s     0.2532s      5541.6
+  dna          byte-fold e        8     0.1041s     0.0067s     0.0997s     0.1160s      9835.3
+  dna          byte-fold e       16     0.0933s     0.0051s     0.0844s     0.0970s     10978.0
+  dna          byte-fold e       32     0.0701s     0.0032s     0.0659s     0.0747s     14613.1
+  dna          byte-fold ee       1     2.1432s     0.0559s     2.0952s     2.2332s       477.8
+  dna          byte-fold ee       2     1.0628s     0.0123s     1.0537s     1.0818s       963.5
+  dna          byte-fold ee       4     0.5898s     0.0097s     0.5804s     0.6007s      1736.1
+  dna          byte-fold ee       8     0.3306s     0.0114s     0.3197s     0.3474s      3097.4
+  dna          byte-fold ee      16     0.2547s     0.0199s     0.2212s     0.2731s      4021.1
+  dna          byte-fold ee      32     0.2073s     0.0114s     0.1958s     0.2225s      4939.2
+  dna          fips      -        1     3.8030s     0.0024s     3.8002s     3.8055s       269.3
+  dna          fips      -        2     1.7443s     0.0132s     1.7264s     1.7578s       587.1
+  dna          fips      -        4     0.9106s     0.0085s     0.9008s     0.9235s      1124.6
+  dna          fips      -        8     0.4854s     0.0124s     0.4765s     0.5060s      2109.7
+  dna          fips      -       16     0.4105s     0.0360s     0.3713s     0.4600s      2494.3
+  dna          fips      -       32     0.2798s     0.0025s     0.2764s     0.2826s      3659.9
+  ascii        byte      plain  ent     9.0478s     0.0462s     8.9704s     9.0855s       113.2
+  ascii        byte      plain    1     0.4029s     0.0046s     0.3956s     0.4063s      2541.4
+  ascii        byte      plain    2     0.2394s     0.0067s     0.2280s     0.2454s      4276.8
+  ascii        byte      plain    4     0.1332s     0.0056s     0.1297s     0.1428s      7685.7
+  ascii        byte      plain    8     0.0975s     0.0062s     0.0928s     0.1078s     10502.8
+  ascii        byte      plain   16     0.0869s     0.0039s     0.0799s     0.0892s     11782.2
+  ascii        byte      plain   32     0.0648s     0.0009s     0.0634s     0.0657s     15803.4
+  ascii        byte      e        1     0.3940s     0.0064s     0.3875s     0.4030s      2599.2
+  ascii        byte      e        2     0.2352s     0.0079s     0.2264s     0.2425s      4353.0
+  ascii        byte      e        4     0.1434s     0.0005s     0.1425s     0.1440s      7142.2
+  ascii        byte      e        8     0.0937s     0.0142s     0.0821s     0.1180s     10931.0
+  ascii        byte      e       16     0.0785s     0.0025s     0.0770s     0.0830s     13042.9
+  ascii        byte      e       32     0.0653s     0.0007s     0.0645s     0.0664s     15692.2
+  ascii        byte      ee       1     1.8833s     0.0333s     1.8521s     1.9281s       543.7
+  ascii        byte      ee       2     1.0129s     0.0070s     1.0076s     1.0248s      1011.0
+  ascii        byte      ee       4     0.5349s     0.0062s     0.5267s     0.5403s      1914.4
+  ascii        byte      ee       8     0.3033s     0.0119s     0.2865s     0.3170s      3375.8
+  ascii        byte      ee      16     0.2447s     0.0086s     0.2326s     0.2526s      4185.4
+  ascii        byte      ee      32     0.1922s     0.0053s     0.1872s     0.2010s      5328.7
+  ascii        bit       plain  ent    18.2612s     0.1793s    18.1570s    18.5781s        56.1
+  ascii        bit       plain    1     0.2066s     0.0034s     0.2040s     0.2125s      4956.2
+  ascii        bit       plain    2     0.1350s     0.0064s     0.1236s     0.1389s      7587.9
+  ascii        bit       plain    4     0.0906s     0.0047s     0.0829s     0.0945s     11308.5
+  ascii        bit       plain    8     0.0644s     0.0056s     0.0603s     0.0742s     15892.1
+  ascii        bit       plain   16     0.0626s     0.0010s     0.0616s     0.0639s     16362.8
+  ascii        bit       plain   32     0.0615s     0.0010s     0.0603s     0.0627s     16646.8
+  ascii        bit       e        1     0.2041s     0.0026s     0.2019s     0.2083s      5017.3
+  ascii        bit       e        2     0.1361s     0.0059s     0.1263s     0.1422s      7524.9
+  ascii        bit       e        4     0.0908s     0.0048s     0.0830s     0.0948s     11279.9
+  ascii        bit       e        8     0.0620s     0.0022s     0.0603s     0.0657s     16506.0
+  ascii        bit       e       16     0.0626s     0.0008s     0.0618s     0.0637s     16361.6
+  ascii        bit       e       32     0.0616s     0.0013s     0.0603s     0.0638s     16623.5
+  ascii        bit       ee       1     3.6393s     0.0240s     3.6083s     3.6721s       281.4
+  ascii        bit       ee       2     1.8683s     0.0030s     1.8646s     1.8718s       548.1
+  ascii        bit       ee       4     0.9666s     0.0045s     0.9604s     0.9725s      1059.4
+  ascii        bit       ee       8     0.5106s     0.0090s     0.5004s     0.5210s      2005.3
+  ascii        bit       ee      16     0.3564s     0.0358s     0.3083s     0.4064s      2872.9
+  ascii        bit       ee      32     0.2648s     0.0061s     0.2563s     0.2725s      3866.6
+  ascii        byte-fold plain  ent    15.3445s     0.0979s    15.2661s    15.4981s        66.7
+  ascii        byte-fold plain    1     0.5138s     0.0028s     0.5090s     0.5162s      1992.8
+  ascii        byte-fold plain    2     0.2864s     0.0071s     0.2782s     0.2944s      3576.0
+  ascii        byte-fold plain    4     0.1673s     0.0067s     0.1558s     0.1731s      6121.6
+  ascii        byte-fold plain    8     0.1074s     0.0043s     0.1010s     0.1114s      9537.8
+  ascii        byte-fold plain   16     0.0832s     0.0003s     0.0827s     0.0837s     12301.7
+  ascii        byte-fold plain   32     0.0701s     0.0012s     0.0683s     0.0716s     14610.0
+  ascii        byte-fold e        1     0.5113s     0.0024s     0.5081s     0.5145s      2002.7
+  ascii        byte-fold e        2     0.2891s     0.0061s     0.2787s     0.2936s      3542.1
+  ascii        byte-fold e        4     0.1652s     0.0065s     0.1569s     0.1707s      6199.3
+  ascii        byte-fold e        8     0.1041s     0.0061s     0.0949s     0.1112s      9833.3
+  ascii        byte-fold e       16     0.0865s     0.0047s     0.0826s     0.0944s     11836.9
+  ascii        byte-fold e       32     0.0711s     0.0017s     0.0700s     0.0742s     14395.6
+  ascii        byte-fold ee       1     2.1143s     0.0486s     2.0428s     2.1710s       484.3
+  ascii        byte-fold ee       2     1.0733s     0.0037s     1.0694s     1.0777s       954.0
+  ascii        byte-fold ee       4     0.5984s     0.0074s     0.5855s     0.6038s      1711.2
+  ascii        byte-fold ee       8     0.3252s     0.0075s     0.3190s     0.3343s      3149.3
+  ascii        byte-fold ee      16     0.2631s     0.0074s     0.2543s     0.2732s      3892.4
+  ascii        byte-fold ee      32     0.2101s     0.0070s     0.2008s     0.2169s      4873.4
+  ascii        fips      -        1     3.7946s     0.0192s     3.7727s     3.8188s       269.9
+  ascii        fips      -        2     1.7475s     0.0064s     1.7387s     1.7560s       586.0
+  ascii        fips      -        4     0.9025s     0.0086s     0.8933s     0.9125s      1134.6
+  ascii        fips      -        8     0.4799s     0.0071s     0.4731s     0.4877s      2133.7
+  ascii        fips      -       16     0.3874s     0.0426s     0.3201s     0.4387s      2643.3
+  ascii        fips      -       32     0.2924s     0.0058s     0.2821s     0.2959s      3502.2
+  biased       byte      plain  ent     9.0673s     0.0341s     9.0076s     9.0896s       112.9
+  biased       byte      plain    1     0.4249s     0.0162s     0.4068s     0.4427s      2410.1
+  biased       byte      plain    2     0.2479s     0.0175s     0.2257s     0.2659s      4130.1
+  biased       byte      plain    4     0.1444s     0.0073s     0.1359s     0.1559s      7093.6
+  biased       byte      plain    8     0.0922s     0.0071s     0.0843s     0.0998s     11109.0
+  biased       byte      plain   16     0.0781s     0.0007s     0.0774s     0.0791s     13104.5
+  biased       byte      plain   32     0.0639s     0.0012s     0.0621s     0.0654s     16018.9
+  biased       byte      e        1     0.3959s     0.0075s     0.3915s     0.4093s      2586.5
+  biased       byte      e        2     0.2461s     0.0064s     0.2411s     0.2544s      4160.3
+  biased       byte      e        4     0.1501s     0.0035s     0.1468s     0.1549s      6820.8
+  biased       byte      e        8     0.0918s     0.0046s     0.0874s     0.0995s     11155.0
+  biased       byte      e       16     0.0783s     0.0011s     0.0770s     0.0793s     13070.3
+  biased       byte      e       32     0.0657s     0.0023s     0.0635s     0.0692s     15597.5
+  biased       byte      ee       1     2.2303s     0.0303s     2.1930s     2.2721s       459.1
+  biased       byte      ee       2     1.4959s     0.0191s     1.4652s     1.5108s       684.5
+  biased       byte      ee       4     0.7849s     0.0106s     0.7720s     0.7968s      1304.7
+  biased       byte      ee       8     0.4102s     0.0083s     0.4019s     0.4220s      2496.2
+  biased       byte      ee      16     0.2935s     0.0101s     0.2798s     0.3030s      3488.9
+  biased       byte      ee      32     0.2229s     0.0048s     0.2176s     0.2279s      4594.7
+  biased       bit       plain  ent    20.5818s     0.1422s    20.4093s    20.6987s        49.8
+  biased       bit       plain    1     0.1956s     0.0033s     0.1935s     0.2015s      5234.1
+  biased       bit       plain    2     0.1293s     0.0070s     0.1239s     0.1374s      7922.3
+  biased       bit       plain    4     0.0831s     0.0056s     0.0774s     0.0894s     12318.0
+  biased       bit       plain    8     0.0608s     0.0012s     0.0595s     0.0625s     16851.3
+  biased       bit       plain   16     0.0614s     0.0005s     0.0609s     0.0622s     16675.1
+  biased       bit       plain   32     0.0610s     0.0007s     0.0598s     0.0616s     16774.6
+  biased       bit       e        1     0.1981s     0.0006s     0.1977s     0.1991s      5169.0
+  biased       bit       e        2     0.1344s     0.0055s     0.1246s     0.1374s      7618.2
+  biased       bit       e        4     0.0777s     0.0005s     0.0774s     0.0786s     13174.9
+  biased       bit       e        8     0.0619s     0.0011s     0.0603s     0.0631s     16530.6
+  biased       bit       e       16     0.0611s     0.0005s     0.0604s     0.0616s     16761.8
+  biased       bit       e       32     0.0626s     0.0003s     0.0623s     0.0629s     16360.3
+  biased       bit       ee       1     4.4401s     0.0375s     4.3747s     4.4686s       230.6
+  biased       bit       ee       2     2.2716s     0.0145s     2.2484s     2.2887s       450.8
+  biased       bit       ee       4     1.1736s     0.0076s     1.1629s     1.1832s       872.5
+  biased       bit       ee       8     0.6208s     0.0073s     0.6105s     0.6294s      1649.6
+  biased       bit       ee      16     0.4002s     0.0583s     0.3547s     0.4737s      2558.6
+  biased       bit       ee      32     0.2874s     0.0100s     0.2780s     0.3025s      3562.5
+  biased       byte-fold plain  ent    11.9290s     0.1787s    11.7226s    12.1880s        85.8
+  biased       byte-fold plain    1     0.5079s     0.0039s     0.5050s     0.5148s      2016.0
+  biased       byte-fold plain    2     0.2986s     0.0102s     0.2842s     0.3119s      3428.9
+  biased       byte-fold plain    4     0.1693s     0.0085s     0.1598s     0.1797s      6047.4
+  biased       byte-fold plain    8     0.1062s     0.0066s     0.0984s     0.1118s      9642.8
+  biased       byte-fold plain   16     0.0834s     0.0007s     0.0828s     0.0842s     12271.4
+  biased       byte-fold plain   32     0.0698s     0.0014s     0.0682s     0.0715s     14662.5
+  biased       byte-fold e        1     0.4998s     0.0127s     0.4866s     0.5210s      2048.7
+  biased       byte-fold e        2     0.2937s     0.0122s     0.2768s     0.3106s      3486.4
+  biased       byte-fold e        4     0.1858s     0.0322s     0.1633s     0.2423s      5510.5
+  biased       byte-fold e        8     0.1090s     0.0018s     0.1065s     0.1112s      9396.9
+  biased       byte-fold e       16     0.0868s     0.0027s     0.0836s     0.0907s     11798.7
+  biased       byte-fold e       32     0.0682s     0.0015s     0.0665s     0.0698s     15004.4
+  biased       byte-fold ee       1     2.2205s     0.0457s     2.1525s     2.2787s       461.2
+  biased       byte-fold ee       2     1.1668s     0.0684s     1.1188s     1.2871s       877.6
+  biased       byte-fold ee       4     0.7600s     0.0151s     0.7360s     0.7769s      1347.5
+  biased       byte-fold ee       8     0.4135s     0.0160s     0.4008s     0.4409s      2476.6
+  biased       byte-fold ee      16     0.2722s     0.0301s     0.2414s     0.3080s      3762.2
+  biased       byte-fold ee      32     0.2255s     0.0088s     0.2192s     0.2391s      4541.2
+  biased       fips      -        1     3.7676s     0.0248s     3.7528s     3.8114s       271.8
+  biased       fips      -        2     1.7295s     0.0070s     1.7236s     1.7394s       592.1
+  biased       fips      -        4     0.8983s     0.0070s     0.8900s     0.9069s      1140.0
+  biased       fips      -        8     0.4884s     0.0167s     0.4712s     0.5164s      2096.4
+  biased       fips      -       16     0.4096s     0.0634s     0.3009s     0.4550s      2499.8
+  biased       fips      -       32     0.2799s     0.0022s     0.2780s     0.2831s      3658.7
+  sparse-bits  byte      plain  ent     9.0574s     0.0413s     9.0213s     9.1047s       113.1
+  sparse-bits  byte      plain    1     0.4439s     0.0497s     0.4008s     0.5155s      2307.1
+  sparse-bits  byte      plain    2     0.2547s     0.0133s     0.2451s     0.2751s      4020.5
+  sparse-bits  byte      plain    4     0.1511s     0.0100s     0.1391s     0.1636s      6776.2
+  sparse-bits  byte      plain    8     0.1002s     0.0116s     0.0815s     0.1099s     10217.7
+  sparse-bits  byte      plain   16     0.0812s     0.0052s     0.0773s     0.0901s     12611.1
+  sparse-bits  byte      plain   32     0.0636s     0.0024s     0.0610s     0.0669s     16098.7
+  sparse-bits  byte      e        1     0.4214s     0.0477s     0.3983s     0.5068s      2429.9
+  sparse-bits  byte      e        2     0.2560s     0.0233s     0.2437s     0.2975s      3999.9
+  sparse-bits  byte      e        4     0.1459s     0.0137s     0.1330s     0.1661s      7016.2
+  sparse-bits  byte      e        8     0.1029s     0.0060s     0.0945s     0.1085s      9952.7
+  sparse-bits  byte      e       16     0.0757s     0.0064s     0.0646s     0.0808s     13521.6
+  sparse-bits  byte      e       32     0.0658s     0.0012s     0.0645s     0.0671s     15561.3
+  sparse-bits  byte      ee       1     1.4867s     0.0465s     1.4401s     1.5425s       688.8
+  sparse-bits  byte      ee       2     0.8239s     0.0248s     0.7969s     0.8474s      1242.8
+  sparse-bits  byte      ee       4     0.5430s     0.0589s     0.4714s     0.6198s      1885.8
+  sparse-bits  byte      ee       8     0.3122s     0.0308s     0.2843s     0.3569s      3280.3
+  sparse-bits  byte      ee      16     0.2090s     0.0070s     0.2023s     0.2204s      4898.6
+  sparse-bits  byte      ee      32     0.1731s     0.0109s     0.1583s     0.1865s      5916.5
+  sparse-bits  bit       plain  ent    21.1547s     0.0925s    21.0392s    21.2869s        48.4
+  sparse-bits  bit       plain    1     0.1992s     0.0021s     0.1962s     0.2020s      5140.3
+  sparse-bits  bit       plain    2     0.1302s     0.0072s     0.1220s     0.1359s      7862.5
+  sparse-bits  bit       plain    4     0.0863s     0.0071s     0.0776s     0.0933s     11864.0
+  sparse-bits  bit       plain    8     0.0603s     0.0021s     0.0575s     0.0629s     16995.6
+  sparse-bits  bit       plain   16     0.0619s     0.0004s     0.0614s     0.0622s     16540.4
+  sparse-bits  bit       plain   32     0.0604s     0.0007s     0.0597s     0.0611s     16961.0
+  sparse-bits  bit       e        1     0.1956s     0.0008s     0.1948s     0.1967s      5236.4
+  sparse-bits  bit       e        2     0.1283s     0.0076s     0.1216s     0.1368s      7982.8
+  sparse-bits  bit       e        4     0.0818s     0.0069s     0.0765s     0.0901s     12525.4
+  sparse-bits  bit       e        8     0.0597s     0.0018s     0.0574s     0.0617s     17163.9
+  sparse-bits  bit       e       16     0.0624s     0.0005s     0.0617s     0.0629s     16417.4
+  sparse-bits  bit       e       32     0.0603s     0.0004s     0.0599s     0.0608s     16992.5
+  sparse-bits  bit       ee       1     3.5947s     0.0013s     3.5934s     3.5960s       284.9
+  sparse-bits  bit       ee       2     1.9007s     0.0067s     1.8933s     1.9063s       538.7
+  sparse-bits  bit       ee       4     0.9995s     0.0045s     0.9950s     1.0069s      1024.6
+  sparse-bits  bit       ee       8     0.5279s     0.0086s     0.5153s     0.5359s      1939.7
+  sparse-bits  bit       ee      16     0.4112s     0.0186s     0.3982s     0.4433s      2490.1
+  sparse-bits  bit       ee      32     0.2619s     0.0124s     0.2502s     0.2771s      3909.4
+  sparse-bits  byte-fold plain  ent     9.0888s     0.0031s     9.0840s     9.0925s       112.7
+  sparse-bits  byte-fold plain    1     0.5494s     0.0649s     0.4999s     0.6315s      1863.8
+  sparse-bits  byte-fold plain    2     0.2921s     0.0140s     0.2754s     0.3142s      3506.2
+  sparse-bits  byte-fold plain    4     0.1714s     0.0055s     0.1679s     0.1807s      5974.6
+  sparse-bits  byte-fold plain    8     0.1168s     0.0066s     0.1090s     0.1222s      8770.4
+  sparse-bits  byte-fold plain   16     0.0909s     0.0056s     0.0850s     0.0963s     11265.4
+  sparse-bits  byte-fold plain   32     0.0694s     0.0021s     0.0663s     0.0721s     14752.8
+  sparse-bits  byte-fold e        1     0.5058s     0.0030s     0.5027s     0.5096s      2024.3
+  sparse-bits  byte-fold e        2     0.2883s     0.0062s     0.2774s     0.2918s      3551.3
+  sparse-bits  byte-fold e        4     0.1799s     0.0090s     0.1707s     0.1936s      5691.0
+  sparse-bits  byte-fold e        8     0.1168s     0.0208s     0.1056s     0.1539s      8764.8
+  sparse-bits  byte-fold e       16     0.0850s     0.0014s     0.0837s     0.0873s     12043.9
+  sparse-bits  byte-fold e       32     0.0672s     0.0015s     0.0655s     0.0687s     15229.5
+  sparse-bits  byte-fold ee       1     1.5278s     0.0483s     1.4761s     1.5828s       670.2
+  sparse-bits  byte-fold ee       2     0.8388s     0.0809s     0.7959s     0.9832s      1220.8
+  sparse-bits  byte-fold ee       4     0.4651s     0.0370s     0.4347s     0.5285s      2201.8
+  sparse-bits  byte-fold ee       8     0.3007s     0.0275s     0.2796s     0.3489s      3405.7
+  sparse-bits  byte-fold ee      16     0.2158s     0.0077s     0.2042s     0.2225s      4744.9
+  sparse-bits  byte-fold ee      32     0.1693s     0.0025s     0.1653s     0.1715s      6048.7
+  sparse-bits  fips      -        1     3.7316s     0.0199s     3.6962s     3.7435s       274.4
+  sparse-bits  fips      -        2     1.7371s     0.0130s     1.7180s     1.7513s       589.5
+  sparse-bits  fips      -        4     0.8971s     0.0063s     0.8897s     0.9049s      1141.4
+  sparse-bits  fips      -        8     0.4843s     0.0085s     0.4696s     0.4911s      2114.5
+  sparse-bits  fips      -       16     0.3892s     0.0372s     0.3276s     0.4282s      2630.8
+  sparse-bits  fips      -       32     0.2889s     0.0079s     0.2763s     0.2956s      3544.6
+  lcg          byte      plain  ent     9.4888s     0.0900s     9.3337s     9.5536s       107.9
+  lcg          byte      plain    1     0.3979s     0.0021s     0.3945s     0.4001s      2573.7
+  lcg          byte      plain    2     0.2325s     0.0079s     0.2231s     0.2385s      4404.9
+  lcg          byte      plain    4     0.1340s     0.0067s     0.1286s     0.1421s      7642.5
+  lcg          byte      plain    8     0.0930s     0.0124s     0.0805s     0.1114s     11005.5
+  lcg          byte      plain   16     0.0791s     0.0051s     0.0766s     0.0882s     12946.8
+  lcg          byte      plain   32     0.0639s     0.0020s     0.0619s     0.0668s     16026.2
+  lcg          byte      e        1     0.3907s     0.0040s     0.3853s     0.3949s      2620.8
+  lcg          byte      e        2     0.2328s     0.0073s     0.2236s     0.2393s      4398.1
+  lcg          byte      e        4     0.1423s     0.0052s     0.1331s     0.1452s      7197.6
+  lcg          byte      e        8     0.0836s     0.0048s     0.0805s     0.0921s     12253.3
+  lcg          byte      e       16     0.0791s     0.0025s     0.0769s     0.0824s     12941.9
+  lcg          byte      e       32     0.0635s     0.0013s     0.0623s     0.0656s     16131.0
+  lcg          byte      ee       1     1.6813s     0.0335s     1.6422s     1.7173s       609.1
+  lcg          byte      ee       2     0.9525s     0.0077s     0.9402s     0.9595s      1075.1
+  lcg          byte      ee       4     0.5121s     0.0080s     0.5000s     0.5196s      1999.4
+  lcg          byte      ee       8     0.2842s     0.0056s     0.2772s     0.2917s      3603.5
+  lcg          byte      ee      16     0.2418s     0.0178s     0.2112s     0.2540s      4234.4
+  lcg          byte      ee      32     0.2141s     0.0045s     0.2080s     0.2189s      4783.9
+  lcg          bit       plain  ent    19.2973s     0.2024s    18.9662s    19.5189s        53.1
+  lcg          bit       plain    1     0.2015s     0.0011s     0.1998s     0.2024s      5081.8
+  lcg          bit       plain    2     0.1336s     0.0056s     0.1237s     0.1374s      7667.4
+  lcg          bit       plain    4     0.0870s     0.0053s     0.0777s     0.0906s     11773.3
+  lcg          bit       plain    8     0.0612s     0.0011s     0.0604s     0.0630s     16744.1
+  lcg          bit       plain   16     0.0616s     0.0014s     0.0598s     0.0634s     16631.9
+  lcg          bit       plain   32     0.0606s     0.0007s     0.0596s     0.0615s     16902.0
+  lcg          bit       e        1     0.1926s     0.0011s     0.1915s     0.1941s      5317.7
+  lcg          bit       e        2     0.1330s     0.0054s     0.1233s     0.1361s      7698.0
+  lcg          bit       e        4     0.0893s     0.0094s     0.0801s     0.1032s     11469.7
+  lcg          bit       e        8     0.0609s     0.0009s     0.0593s     0.0615s     16806.8
+  lcg          bit       e       16     0.0621s     0.0004s     0.0617s     0.0625s     16500.2
+  lcg          bit       e       32     0.0610s     0.0005s     0.0602s     0.0615s     16799.4
+  lcg          bit       ee       1     3.8626s     0.0127s     3.8497s     3.8839s       265.1
+  lcg          bit       ee       2     1.9721s     0.0078s     1.9585s     1.9773s       519.2
+  lcg          bit       ee       4     1.0204s     0.0077s     1.0085s     1.0262s      1003.5
+  lcg          bit       ee       8     0.5368s     0.0054s     0.5323s     0.5453s      1907.7
+  lcg          bit       ee      16     0.3933s     0.0242s     0.3747s     0.4268s      2603.3
+  lcg          bit       ee      32     0.2688s     0.0122s     0.2597s     0.2826s      3810.2
+  lcg          byte-fold plain  ent    15.3343s     0.1251s    15.1576s    15.4643s        66.8
+  lcg          byte-fold plain    1     0.5038s     0.0056s     0.4946s     0.5090s      2032.4
+  lcg          byte-fold plain    2     0.2912s     0.0075s     0.2794s     0.2989s      3515.9
+  lcg          byte-fold plain    4     0.1698s     0.0095s     0.1545s     0.1801s      6029.8
+  lcg          byte-fold plain    8     0.1051s     0.0082s     0.0975s     0.1169s      9743.6
+  lcg          byte-fold plain   16     0.0844s     0.0059s     0.0811s     0.0949s     12133.3
+  lcg          byte-fold plain   32     0.0677s     0.0023s     0.0642s     0.0703s     15116.4
+  lcg          byte-fold e        1     0.4977s     0.0030s     0.4950s     0.5025s      2057.4
+  lcg          byte-fold e        2     0.2827s     0.0053s     0.2766s     0.2874s      3622.7
+  lcg          byte-fold e        4     0.1695s     0.0075s     0.1579s     0.1779s      6041.6
+  lcg          byte-fold e        8     0.1060s     0.0077s     0.0966s     0.1125s      9658.3
+  lcg          byte-fold e       16     0.0866s     0.0052s     0.0829s     0.0939s     11818.9
+  lcg          byte-fold e       32     0.0702s     0.0028s     0.0662s     0.0741s     14596.9
+  lcg          byte-fold ee       1     1.7340s     0.0192s     1.7198s     1.7677s       590.5
+  lcg          byte-fold ee       2     0.9189s     0.0124s     0.9036s     0.9333s      1114.3
+  lcg          byte-fold ee       4     0.5206s     0.0126s     0.5023s     0.5327s      1966.9
+  lcg          byte-fold ee       8     0.2931s     0.0037s     0.2889s     0.2983s      3493.2
+  lcg          byte-fold ee      16     0.2466s     0.0117s     0.2314s     0.2601s      4152.3
+  lcg          byte-fold ee      32     0.2111s     0.0063s     0.2068s     0.2221s      4850.1
+  lcg          fips      -        1     3.7411s     0.0600s     3.6719s     3.8046s       273.7
+  lcg          fips      -        2     1.7603s     0.0241s     1.7447s     1.8031s       581.7
+  lcg          fips      -        4     0.9131s     0.0074s     0.9072s     0.9260s      1121.5
+  lcg          fips      -        8     0.5009s     0.0153s     0.4805s     0.5192s      2044.4
+  lcg          fips      -       16     0.4198s     0.0268s     0.3907s     0.4571s      2439.5
+  lcg          fips      -       32     0.3267s     0.0241s     0.2914s     0.3494s      3134.8
+  walk         byte      plain  ent     9.0711s     0.2188s     8.8007s     9.4077s       112.9
+  walk         byte      plain    1     0.3963s     0.0168s     0.3823s     0.4221s      2584.1
+  walk         byte      plain    2     0.2290s     0.0077s     0.2224s     0.2379s      4472.5
+  walk         byte      plain    4     0.1390s     0.0067s     0.1276s     0.1455s      7364.4
+  walk         byte      plain    8     0.0919s     0.0116s     0.0816s     0.1110s     11138.0
+  walk         byte      plain   16     0.0746s     0.0007s     0.0735s     0.0751s     13724.6
+  walk         byte      plain   32     0.0632s     0.0021s     0.0607s     0.0664s     16194.2
+  walk         byte      e        1     0.3987s     0.0146s     0.3839s     0.4210s      2568.6
+  walk         byte      e        2     0.2292s     0.0083s     0.2223s     0.2384s      4467.3
+  walk         byte      e        4     0.1399s     0.0065s     0.1287s     0.1450s      7318.0
+  walk         byte      e        8     0.0892s     0.0066s     0.0808s     0.0963s     11477.4
+  walk         byte      e       16     0.0794s     0.0070s     0.0733s     0.0874s     12894.7
+  walk         byte      e       32     0.0638s     0.0017s     0.0622s     0.0665s     16053.2
+  walk         byte      ee       1     2.3202s     0.0591s     2.2327s     2.3993s       441.3
+  walk         byte      ee       2     1.2894s     0.0119s     1.2741s     1.3075s       794.1
+  walk         byte      ee       4     0.6686s     0.0066s     0.6614s     0.6777s      1531.6
+  walk         byte      ee       8     0.3727s     0.0122s     0.3603s     0.3920s      2747.2
+  walk         byte      ee      16     0.2802s     0.0207s     0.2443s     0.2965s      3654.2
+  walk         byte      ee      32     0.2098s     0.0108s     0.1990s     0.2215s      4881.4
+  walk         bit       plain  ent    19.3256s     0.0248s    19.2975s    19.3497s        53.0
+  walk         bit       plain    1     0.1938s     0.0007s     0.1931s     0.1949s      5283.2
+  walk         bit       plain    2     0.1241s     0.0064s     0.1204s     0.1355s      8249.4
+  walk         bit       plain    4     0.0898s     0.0019s     0.0874s     0.0923s     11397.9
+  walk         bit       plain    8     0.0586s     0.0017s     0.0566s     0.0604s     17483.0
+  walk         bit       plain   16     0.0613s     0.0041s     0.0592s     0.0687s     16694.2
+  walk         bit       plain   32     0.0589s     0.0007s     0.0582s     0.0599s     17394.7
+  walk         bit       e        1     0.1973s     0.0010s     0.1957s     0.1981s      5190.9
+  walk         bit       e        2     0.1328s     0.0066s     0.1210s     0.1362s      7709.0
+  walk         bit       e        4     0.0836s     0.0065s     0.0759s     0.0888s     12250.9
+  walk         bit       e        8     0.0615s     0.0063s     0.0576s     0.0723s     16642.0
+  walk         bit       e       16     0.0628s     0.0048s     0.0582s     0.0692s     16299.1
+  walk         bit       e       32     0.0589s     0.0008s     0.0581s     0.0597s     17372.8
+  walk         bit       ee       1     3.6076s     0.0512s     3.5704s     3.6786s       283.8
+  walk         bit       ee       2     1.9156s     0.0013s     1.9140s     1.9172s       534.6
+  walk         bit       ee       4     0.9854s     0.0089s     0.9741s     0.9950s      1039.2
+  walk         bit       ee       8     0.5222s     0.0118s     0.5081s     0.5386s      1960.8
+  walk         bit       ee      16     0.3888s     0.0450s     0.3361s     0.4325s      2633.9
+  walk         bit       ee      32     0.2578s     0.0061s     0.2527s     0.2678s      3972.3
+  walk         byte-fold plain  ent     9.9682s     0.0322s     9.9301s    10.0021s       102.7
+  walk         byte-fold plain    1     0.4909s     0.0089s     0.4834s     0.5056s      2086.0
+  walk         byte-fold plain    2     0.2922s     0.0088s     0.2804s     0.3029s      3504.3
+  walk         byte-fold plain    4     0.1690s     0.0054s     0.1608s     0.1738s      6059.2
+  walk         byte-fold plain    8     0.1056s     0.0042s     0.1007s     0.1105s      9696.5
+  walk         byte-fold plain   16     0.0902s     0.0088s     0.0806s     0.1014s     11346.5
+  walk         byte-fold plain   32     0.0665s     0.0009s     0.0649s     0.0674s     15395.9
+  walk         byte-fold e        1     0.4906s     0.0019s     0.4884s     0.4933s      2087.0
+  walk         byte-fold e        2     0.3005s     0.0318s     0.2817s     0.3572s      3407.7
+  walk         byte-fold e        4     0.1674s     0.0053s     0.1585s     0.1715s      6115.3
+  walk         byte-fold e        8     0.1149s     0.0090s     0.1059s     0.1281s      8908.5
+  walk         byte-fold e       16     0.0846s     0.0068s     0.0807s     0.0966s     12109.7
+  walk         byte-fold e       32     0.0668s     0.0019s     0.0640s     0.0686s     15319.2
+  walk         byte-fold ee       1     2.3903s     0.0283s     2.3626s     2.4252s       428.4
+  walk         byte-fold ee       2     1.1869s     0.0075s     1.1803s     1.1963s       862.8
+  walk         byte-fold ee       4     0.6832s     0.0019s     0.6820s     0.6865s      1498.9
+  walk         byte-fold ee       8     0.3665s     0.0072s     0.3582s     0.3744s      2794.3
+  walk         byte-fold ee      16     0.2777s     0.0247s     0.2369s     0.3041s      3688.0
+  walk         byte-fold ee      32     0.2147s     0.0042s     0.2083s     0.2188s      4770.0
+  walk         fips      -        1     3.7821s     0.0569s     3.7191s     3.8348s       270.7
+  walk         fips      -        2     1.7390s     0.0077s     1.7310s     1.7468s       588.9
+  walk         fips      -        4     0.9056s     0.0080s     0.8943s     0.9165s      1130.8
+  walk         fips      -        8     0.4778s     0.0093s     0.4674s     0.4863s      2143.4
+  walk         fips      -       16     0.3921s     0.0590s     0.2985s     0.4527s      2611.8
+  walk         fips      -       32     0.2815s     0.0068s     0.2744s     0.2915s      3638.2
+  stripes      byte      plain  ent     9.7530s     0.0265s     9.7115s     9.7815s       105.0
+  stripes      byte      plain    1     0.4160s     0.0456s     0.3933s     0.4974s      2461.4
+  stripes      byte      plain    2     0.2525s     0.0231s     0.2212s     0.2696s      4055.8
+  stripes      byte      plain    4     0.1287s     0.0050s     0.1255s     0.1375s      7955.1
+  stripes      byte      plain    8     0.0861s     0.0065s     0.0794s     0.0933s     11888.8
+  stripes      byte      plain   16     0.0751s     0.0013s     0.0737s     0.0766s     13631.3
+  stripes      byte      plain   32     0.0639s     0.0011s     0.0626s     0.0652s     16037.5
+  stripes      byte      e        1     0.4044s     0.0241s     0.3916s     0.4472s      2532.1
+  stripes      byte      e        2     0.2309s     0.0157s     0.2227s     0.2590s      4434.7
+  stripes      byte      e        4     0.1264s     0.0010s     0.1255s     0.1279s      8101.0
+  stripes      byte      e        8     0.0893s     0.0147s     0.0787s     0.1136s     11467.0
+  stripes      byte      e       16     0.0752s     0.0009s     0.0741s     0.0763s     13625.7
+  stripes      byte      e       32     0.0641s     0.0015s     0.0631s     0.0667s     15969.9
+  stripes      byte      ee       1     1.2658s     0.0093s     1.2573s     1.2765s       809.0
+  stripes      byte      ee       2     0.7327s     0.0074s     0.7245s     0.7433s      1397.6
+  stripes      byte      ee       4     0.3966s     0.0076s     0.3868s     0.4046s      2582.1
+  stripes      byte      ee       8     0.2227s     0.0087s     0.2083s     0.2308s      4598.7
+  stripes      byte      ee      16     0.1927s     0.0062s     0.1875s     0.2019s      5314.7
+  stripes      byte      ee      32     0.1473s     0.0078s     0.1406s     0.1566s      6951.4
+  stripes      bit       plain  ent    19.7237s     0.3586s    19.1510s    20.0428s        51.9
+  stripes      bit       plain    1     0.1957s     0.0008s     0.1947s     0.1968s      5233.5
+  stripes      bit       plain    2     0.1342s     0.0008s     0.1330s     0.1351s      7631.7
+  stripes      bit       plain    4     0.0881s     0.0017s     0.0866s     0.0910s     11624.2
+  stripes      bit       plain    8     0.0588s     0.0058s     0.0548s     0.0688s     17418.5
+  stripes      bit       plain   16     0.0608s     0.0044s     0.0584s     0.0685s     16847.5
+  stripes      bit       plain   32     0.0578s     0.0003s     0.0573s     0.0581s     17726.3
+  stripes      bit       e        1     0.1910s     0.0012s     0.1899s     0.1931s      5360.3
+  stripes      bit       e        2     0.1344s     0.0010s     0.1329s     0.1353s      7619.6
+  stripes      bit       e        4     0.0833s     0.0064s     0.0741s     0.0891s     12293.5
+  stripes      bit       e        8     0.0583s     0.0011s     0.0566s     0.0592s     17573.4
+  stripes      bit       e       16     0.0580s     0.0005s     0.0572s     0.0587s     17642.9
+  stripes      bit       e       32     0.0583s     0.0005s     0.0577s     0.0590s     17552.3
+  stripes      bit       ee       1     3.6494s     0.0295s     3.6020s     3.6744s       280.6
+  stripes      bit       ee       2     1.8753s     0.0097s     1.8636s     1.8894s       546.0
+  stripes      bit       ee       4     0.9734s     0.0073s     0.9605s     0.9777s      1052.0
+  stripes      bit       ee       8     0.5134s     0.0059s     0.5028s     0.5167s      1994.6
+  stripes      bit       ee      16     0.3624s     0.0436s     0.3020s     0.4175s      2825.5
+  stripes      bit       ee      32     0.2659s     0.0153s     0.2488s     0.2890s      3850.4
+  stripes      byte-fold plain  ent    10.5598s     0.0598s    10.4798s    10.6262s        97.0
+  stripes      byte-fold plain    1     0.5005s     0.0211s     0.4887s     0.5382s      2045.9
+  stripes      byte-fold plain    2     0.2892s     0.0122s     0.2710s     0.3052s      3541.1
+  stripes      byte-fold plain    4     0.1592s     0.0079s     0.1520s     0.1687s      6430.6
+  stripes      byte-fold plain    8     0.1103s     0.0170s     0.0951s     0.1387s      9287.4
+  stripes      byte-fold plain   16     0.0847s     0.0079s     0.0787s     0.0944s     12089.6
+  stripes      byte-fold plain   32     0.0649s     0.0008s     0.0638s     0.0657s     15785.0
+  stripes      byte-fold e        1     0.4933s     0.0076s     0.4837s     0.5015s      2075.9
+  stripes      byte-fold e        2     0.3046s     0.0348s     0.2755s     0.3642s      3361.3
+  stripes      byte-fold e        4     0.1634s     0.0097s     0.1527s     0.1749s      6265.2
+  stripes      byte-fold e        8     0.1112s     0.0064s     0.1011s     0.1190s      9205.4
+  stripes      byte-fold e       16     0.0851s     0.0071s     0.0792s     0.0940s     12038.4
+  stripes      byte-fold e       32     0.0671s     0.0013s     0.0652s     0.0689s     15259.8
+  stripes      byte-fold ee       1     1.3263s     0.0249s     1.2973s     1.3597s       772.1
+  stripes      byte-fold ee       2     0.7236s     0.0250s     0.7003s     0.7558s      1415.1
+  stripes      byte-fold ee       4     0.4066s     0.0095s     0.3979s     0.4217s      2518.7
+  stripes      byte-fold ee       8     0.2267s     0.0123s     0.2118s     0.2398s      4516.5
+  stripes      byte-fold ee      16     0.1900s     0.0026s     0.1872s     0.1936s      5390.5
+  stripes      byte-fold ee      32     0.1676s     0.0088s     0.1578s     0.1771s      6108.1
+  stripes      fips      -        1     3.8084s     0.0066s     3.7980s     3.8137s       268.9
+  stripes      fips      -        2     1.7365s     0.0089s     1.7288s     1.7511s       589.7
+  stripes      fips      -        4     0.8986s     0.0068s     0.8878s     0.9052s      1139.5
+  stripes      fips      -        8     0.4802s     0.0051s     0.4713s     0.4834s      2132.3
+  stripes      fips      -       16     0.3444s     0.0728s     0.2804s     0.4408s      2973.6
+  stripes      fips      -       32     0.2839s     0.0092s     0.2733s     0.2947s      3606.9
