@@ -68,6 +68,9 @@
 	  - all non --full-precision output kept within 80 columns;
 	    histogram X-axis labels aligned under their ticks and a
 	    Y-axis scale added.
+	  - terse CSV gains a P-Exceed column (chi-square upper-tail
+	    probability) after Chi-square, emitted with or without -e;
+	    the default and JSON classic output stay byte-identical.
 
 2026-05-15  Kamila Szewczyk  <k@iczelia.net>
 

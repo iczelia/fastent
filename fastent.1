@@ -165,7 +165,9 @@ Render a vertical block-plot of the byte (or bit) distribution
 before the textual results.  Uses Unicode 1/8-th block glyphs
 (U+2581..U+2588) on terminals that support UTF-8, single-byte CP 437
 glyphs on DOS / Win9x consoles, and ASCII '#' on stdout when
-redirected.  The histogram and other output formats compose: the
+redirected.  A Y-axis scale labelled with the largest bin count and
+an X-axis tick row aligned under the bars frame the plot.  The
+histogram and other output formats compose: the
 histogram is rendered before the human-readable text but is also
 included alongside
 .BR \-t " and " \-\-json

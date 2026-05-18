@@ -55,7 +55,8 @@ with `-H`.
   byte table, 2x2 in bit mode)
 - recursive mode (`-r DIR`): one CSV / JSON row per file, sortable via
   `--sort-by` (path, entropy, chisq, the extended columns, ...)
-- terminal histogram (`-H`) with Unicode block glyphs, optional log Y
+- terminal histogram (`-H`) with Unicode block glyphs, a Y-axis
+  max-value scale and an aligned X-axis tick row, optional log Y
   axis (`--log`), platform-native colouring
 - optional worker pool (pthread / Win32): mmap slabs or an SPMC
   stream/io_uring pipeline, both 6-aligned; output byte-identical

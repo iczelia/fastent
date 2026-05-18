@@ -39,9 +39,11 @@ v1.2 (May 2026)
   common symbol, and the per-bit-position bias (P(bit k = 1),
   byte mode).  Appended to the default, terse CSV, JSON, and
   recursive output; --sort-by accepts the new columns.  Without -e
-  the output is byte-for-byte the classic format.  Derived at
-  finalisation, so no per-byte cost and bit-identical across hosts
-  and thread counts.
+  the default and JSON output are byte-for-byte the classic format;
+  the terse CSV gains one column, P-Exceed (the chi-square
+  upper-tail probability), inserted after Chi-square regardless of
+  -e.  Derived at finalisation, so no per-byte cost and bit-identical
+  across hosts and thread counts.
 
   Annotated report (--annotate)
   -----------------------------
@@ -74,7 +76,9 @@ v1.2 (May 2026)
   gone.  --no-mmap is removed; use --io=stream (or -i stream).
   -j / --threads are present only in builds with a thread backend
   and are rejected as unknown otherwise.  All textual (non
-  --full-precision) output is kept within 80 columns.
+  --full-precision) output is kept within 80 columns.  The -H
+  histogram now prints a Y-axis max-value scale and an X-axis tick
+  row aligned under the bars.
 
   Internal
   --------
