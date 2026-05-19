@@ -1,8 +1,12 @@
-/*  fastent: the -eee windowed GF(2) Berlekamp-Massey linear-complexity
-    estimator.  Count-only; each 512-bit window's L is scored on the
-    shared 4 MiB grid (64 divides the grid so windows never straddle:
-    exact integer sum-merge, zero drift).  Catches LFSR-class / low-bit
-    linear recurrences, not truncated-high-byte LCGs.  GPLv3, COPYING.  */
+/*  fastent: the -eee windowed linear-complexity estimator.
+
+    A count-only GF(2) Berlekamp-Massey scorer: each 512-bit window's
+    linear complexity L is scored on the shared 4 MiB absolute grid
+    (64 divides the grid so windows never straddle: exact integer
+    sum-merge, zero drift).  Catches LFSR-class and low-bit linear
+    recurrences, not truncated-high-byte LCGs.
+
+    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
 
 #include "bm.h"
 #include "analyze.h"
