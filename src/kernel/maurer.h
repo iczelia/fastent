@@ -33,7 +33,9 @@ typedef struct {
     concatenates the records; finalize reduces them in absolute block
     order so the f64 sum is bit-identical for any -j / driver / host.
     The 2^L T table and 4 MiB blk are heap (lazy malloc); the inline
-    state is a few scalars plus the small log2-distance histogram.  */
+    state is a few scalars plus the 512-byte log2-distance histogram
+    (sizeof ~592 bytes), so a stack-local acc is safe yet every path
+    still heap-allocates it for the wasm / DOS small-stack guarantee. */
 typedef struct {
   fastent_maurer_part * parts;  /*  one per scored grid block  */
   sz   nparts, cap;
