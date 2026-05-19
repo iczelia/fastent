@@ -118,14 +118,10 @@ int main(int argc, char ** argv) {
                           o.threads, &rep);
     } else {
       /*  Stream/pipe/uring: a bounded read loop feeds the streaming
-          FIPS driver, O(stage) memory.  Verdicts and leftover are
+          FIPS driver, O(1) memory.  Verdicts and leftover are
           byte-identical to the mmap/slurp path.  */
       fastent_fips_stream fs;
       fastent_fips140_stream_init(&fs, &rep);
-      if (fs.oom) {
-        fprintf(stderr, "out of memory\n");
-        fastent_src_close(&src);  free((void *) o.path);  return 2;
-      }
       for (;;) {
         sz n = fastent_src_read(&src);
         if (n == (sz) -1) {
@@ -135,10 +131,7 @@ int main(int argc, char ** argv) {
         if (n == 0) break;
         fastent_fips140_stream_push(&fs, src.stream_buf, n);
       }
-      if (fastent_fips140_stream_finish(&fs)) {
-        fprintf(stderr, "out of memory\n");
-        fastent_src_close(&src);  free((void *) o.path);  return 2;
-      }
+      fastent_fips140_stream_finish(&fs);
     }
     int ok = fastent_fips140_print(&rep, stdout);
     fastent_src_close(&src);

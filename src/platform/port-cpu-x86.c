@@ -88,7 +88,7 @@ static fastent_cpu_features probe_(void) {
 
   f.ssse3 = f.sse41 = f.sse42 = 0;
   f.avx = f.avx2 = 0;
-  f.avx512f = f.avx512bw = f.avx512bitalg = 0;
+  f.avx512f = f.avx512bw = f.avx512bitalg = f.avx512vnni = 0;
   f.avx512vpopcntdq = 0;
   f.neon = f.sve2 = f.wasm128 = 0;
 
@@ -120,6 +120,8 @@ static fastent_cpu_features probe_(void) {
   if (avx512_os_ok) {
     if (b & (1u << 16)) f.avx512f      = 1;
     if (b & (1u << 30)) f.avx512bw     = 1;
+    /*  CPUID leaf 7,0 ECX[11]: AVX-512 VNNI (VPDPBUSD).  */
+    if (c & (1u << 11)) f.avx512vnni   = 1;
     if (c & (1u << 12)) f.avx512bitalg = 1;
     /*  CPUID leaf 7,0 ECX[14]: VPOPCNTDQ (wide VPOPCNTQ).  */
     if (c & (1u << 14)) f.avx512vpopcntdq = 1;

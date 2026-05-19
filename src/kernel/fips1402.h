@@ -37,15 +37,17 @@ void fastent_fips140_run(
 typedef void (* fastent_fips_run_fn)(const u8 * buf, u64 nblocks,
                                      fastent_fips_report * r);
 
+#define FASTENT_FIPS_BLOCK_BYTES 2500u
+
 /*  Bounded streaming FIPS driver: init binds *out, push folds whole
-    blocks via the per-ISA runner, finish drains the residue and frees
-    (non-zero on prior OOM).  Byte-identical to fastent_fips140_run.  */
+    blocks via the per-ISA runner, finish reports the residue.  Only a
+    sub-block carry is buffered; full blocks are tested directly from
+    caller-provided chunks.  Byte-identical to fastent_fips140_run.  */
 typedef struct {
   fastent_fips_report * out;
   fastent_fips_run_fn   run;
-  u8 *                  stage;   /*  FIPS_BATCH_BLOCKS * 2500 bytes  */
-  sz                    fill;    /*  bytes currently staged          */
-  int                   oom;     /*  stage allocation failed         */
+  u8                    carry[FASTENT_FIPS_BLOCK_BYTES];
+  sz                    fill;    /*  bytes currently in carry        */
 } fastent_fips_stream;
 
 void fastent_fips140_stream_init(

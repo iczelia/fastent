@@ -28,7 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define FIPS_BLOCK_BYTES 2500u
+#define FIPS_BLOCK_BYTES FASTENT_FIPS_BLOCK_BYTES
 
 /*  Variant table.  Order matters: dispatcher picks the LAST entry
     whose `available` is true, so narrower (preferred) variants follow
@@ -192,53 +192,53 @@ void fastent_fips140_run(
   run(buf, nblocks, out);
 }
 
-/*  Streaming FIPS driver, bounded memory (one batch stage + sub-2500
-    carry).  Same per-ISA batched runner as fastent_fips140_run, so
-    verdicts/leftover are byte-identical to slurp.  Serial on -j.  */
-
-#define FIPS_BATCH_BLOCKS 4096u    /*  ~10 MiB stage, O(1) in filesize  */
+/*  Streaming FIPS driver, bounded memory (sub-2500 carry only).  Same
+    per-ISA batched runner as fastent_fips140_run, so verdicts/leftover
+    are byte-identical to slurp.  Serial on -j.  */
 
 void fastent_fips140_stream_init(
     fastent_fips_stream * s, fastent_fips_report * out) {
   memset(out, 0, sizeof *out);
   s->out = out;
   s->run = fastent_pick_fips_variant(NULL);
-  s->stage = (u8 *) malloc((sz) FIPS_BATCH_BLOCKS * FIPS_BLOCK_BYTES);
   s->fill = 0;
-  s->oom = s->stage ? 0 : 1;
 }
 
-/*  Feed an any-size chunk: stage it, dispatch every full batch; the
-    residue (< FIPS_BATCH_BLOCKS * 2500) stays buffered across calls. */
+/*  Feed an any-size chunk: complete any carried partial block, dispatch
+    full blocks directly from the caller buffer, then retain only the
+    final sub-block residue.  */
 void fastent_fips140_stream_push(
     fastent_fips_stream * s, const u8 * buf, sz len) {
-  if (s->oom) return;
-  const sz cap = (sz) FIPS_BATCH_BLOCKS * FIPS_BLOCK_BYTES;
-  while (len > 0) {
-    sz room = cap - s->fill;
-    sz take = len < room ? len : room;
-    memcpy(s->stage + s->fill, buf, take);
-    s->fill += take;  buf += take;  len -= take;
-    if (s->fill == cap) {
-      s->run(s->stage, FIPS_BATCH_BLOCKS, s->out);
+  if (s->fill) {
+    sz need = FIPS_BLOCK_BYTES - s->fill;
+    if (need > len) need = len;
+    memcpy(s->carry + s->fill, buf, need);
+    s->fill += need;  buf += need;  len -= need;
+    if (s->fill == FIPS_BLOCK_BYTES) {
+      s->run(s->carry, 1u, s->out);
       s->fill = 0;
     }
   }
+
+  if (len >= FIPS_BLOCK_BYTES) {
+    u64 nb = (u64) len / FIPS_BLOCK_BYTES;
+    sz done = (sz) nb * FIPS_BLOCK_BYTES;
+    s->run(buf, nb, s->out);
+    buf += done;  len -= done;
+  }
+
+  if (len) {
+    memcpy(s->carry, buf, len);
+    s->fill = len;
+  }
 }
 
-/*  Drain the residue: whole 2500-byte blocks tested, the sub-block
-    tail becomes the final leftover, so the report matches
-    fastent_fips140_run even for a length not a multiple of 2500.  */
+/*  The stream pusher dispatches every full 2500-byte block as soon as
+    it is complete.  The remaining carry is the final leftover.  */
 int fastent_fips140_stream_finish(fastent_fips_stream * s) {
-  int oom = s->oom;
-  if (!oom) {
-    u64 nb = (u64) s->fill / FIPS_BLOCK_BYTES;
-    s->out->leftover = (u64) s->fill - nb * FIPS_BLOCK_BYTES;
-    if (nb) s->run(s->stage, nb, s->out);
-  }
-  free(s->stage);
-  s->stage = NULL;
-  return oom;
+  s->out->leftover = (u64) s->fill;
+  s->fill = 0;
+  return 0;
 }
 
 int fastent_fips140_print(const fastent_fips_report * r, FILE * fp) {

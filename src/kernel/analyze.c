@@ -390,7 +390,8 @@ static int avail_avx512_(void) {
 #endif
 #ifdef HAVE_AVX512_BITALG
 static int avail_avx512b_(void) {
-  return CPU_HAS(avx512f) && CPU_HAS(avx512bw) && CPU_HAS(avx512bitalg);
+  return CPU_HAS(avx512f) && CPU_HAS(avx512bw)
+      && CPU_HAS(avx512bitalg) && CPU_HAS(avx512vnni);
 }
 #endif
 #ifdef HAVE_NEON

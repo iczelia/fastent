@@ -287,7 +287,7 @@ FASTENT_FN(simd_body_impl)(
 
     /*  Histogram: 64 inc-mem across FASTENT_BANKS banks, from buf or
         (fold mode) the laundered L1 stage. See launder note above.  */
-    FASTENT_ALIGN(32) u8 stage[64];
+    FASTENT_ALIGN(32) u8 stage[64 + 16];
     FASTENT_STAGE_PTR p;
     if (fold) {
       _mm256_store_si256((__m256i *) (stage +  0), va0);
@@ -542,7 +542,7 @@ FASTENT_FN(simd_body_impl)(
 
     /*  Histogram + MC stage: laundered L1 stage in fold mode, else
         direct buf reads (see launder note above).  */
-    FASTENT_ALIGN(64) u8 stage[128];
+    FASTENT_ALIGN(64) u8 stage[128 + 16];
     FASTENT_STAGE_PTR p;
     if (fold) {
       _mm512_store_si512((void *) (stage +  0), va0);

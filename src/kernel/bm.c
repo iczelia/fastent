@@ -113,7 +113,21 @@ static u32 fastent_bm_window(const u64 * s, u32 m) {
   return L;
 }
 
+static inline u64 fastent_bm_load_be64_(const u8 * p) {
+  u64 v;
+  memcpy(&v, p, 8);
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+  return v;
+#else
+  return FASTENT_BSWAP64(v);
+#endif
+}
+
 static void fastent_bm_pack(const u8 * src, u32 mb, u64 * s) {
+  if (mb == FASTENT_BM_WB) {
+    Fi(FASTENT_BM_W64, s[i] = fastent_bm_load_be64_(src + (sz) i * 8))
+    return;
+  }
   Fi(FASTENT_BM_W64, s[i] = 0)
   for (u32 i = 0; i < mb; i++) {
     u32 wi = i >> 3;

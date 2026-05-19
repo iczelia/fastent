@@ -290,23 +290,22 @@ FASTENT_FN(fips_monobit)(const u8 * b) {
 static FASTENT_ALWAYS_INLINE void
 FASTENT_FN(fips_poker)(const u8 * b, u32 f[16]) {
   const FASTENT_SIMD_VEC nmask = V_SET1_EPI8(0x0F);
+  const FASTENT_SIMD_VEC zero = V_SETZERO();
   FASTENT_SIMD_VEC acc[16];
+  FASTENT_SIMD_VEC tv[16];
   i32 t, i = 0;
-  Fi(16, acc[i] = V_SETZERO())
+  Fi(16, acc[i] = zero;  tv[i] = V_SET1_EPI8((char) i))
   for (; i + FASTENT_SIMD_VLEN <= (i32) FIPS_BLOCK_BYTES;
          i += FASTENT_SIMD_VLEN) {
     FASTENT_SIMD_VEC v  = V_LOAD(b + i);
     FASTENT_SIMD_VEC lo = V_AND(v, nmask);
     FASTENT_SIMD_VEC hi = V_AND(V_SRLI_EPI16(v, 4), nmask);
     for (t = 0; t < 16; t++) {
-      FASTENT_SIMD_VEC tv = V_SET1_EPI8((char) t);
       /*  cmpeq -> 0xFF where equal; SAD vs zero sums 0xFF=255 per
           match into each 64-bit lane, divided out after the loop.  */
       acc[t] = V_ADD_EPI64(acc[t],
-                 V_ADD_EPI64(V_SAD_EPU8(V_CMPEQ_EPI8(lo, tv),
-                                        V_SETZERO()),
-                             V_SAD_EPU8(V_CMPEQ_EPI8(hi, tv),
-                                        V_SETZERO())));
+                 V_ADD_EPI64(V_SAD_EPU8(V_CMPEQ_EPI8(lo, tv[t]), zero),
+                             V_SAD_EPU8(V_CMPEQ_EPI8(hi, tv[t]), zero)));
     }
   }
   for (t = 0; t < 16; t++)
