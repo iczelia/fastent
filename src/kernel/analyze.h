@@ -183,6 +183,20 @@ typedef struct fastent_result {
   i32 lz_megamatch;         /*  1 = single dominant match (mega note)  */
   struct fastent_lz77f_tables * lz;  /*  3 raw tables; NULL unless -eee */
 
+  /*  Linear-complexity estimator (-eee, alongside LZ77F).  NaN
+      sentinel on bm_deviation unless extended >= 3.  bm_lhist is
+      inline (256 bytes): 2048x smaller than the LZ77F offset table,
+      so it rides every recursive row at no real cost (no heap
+      pointer, unlike struct fastent_lz77f_tables).  */
+  f64 bm_deviation;         /*  headline z = |meanL-mu|/sqrt(VarL/W)  */
+  f64 bm_mean_lc;           /*  mean per-window linear complexity  */
+  f64 bm_mu;                /*  mu(M): random-sequence expectation  */
+  f64 bm_chi;               /*  NIST class chi-square (df=5, advisory)  */
+  f64 bm_chi_p;             /*  its upper-tail p  */
+  u64 bm_windows;           /*  full M-bit windows scored  */
+  i32 bm_degenerate;        /*  1 = meanL<2 (near-constant; note)  */
+  u32 bm_lhist[64];         /*  L_i bucket histogram (bin = L*64/513)  */
+
   u64 hist[256];            /*  -c output; bits: hist[0]/hist[1]  */
 } fastent_result;
 

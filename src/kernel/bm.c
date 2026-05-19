@@ -1,0 +1,257 @@
+/*  fastent: the -eee windowed GF(2) Berlekamp-Massey linear-complexity
+    estimator.  Count-only; each 512-bit window's L is scored on the
+    shared 4 MiB grid (64 divides the grid so windows never straddle:
+    exact integer sum-merge, zero drift).  Catches LFSR-class / low-bit
+    linear recurrences, not truncated-high-byte LCGs.  GPLv3, COPYING.  */
+
+#include "bm.h"
+#include "analyze.h"
+#include "fastent-math.h"
+#include "chisq.h"
+
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+
+/*  IEEE sqrt is correctly rounded, so bit-identical across hosts.  */
+static inline f64 fastent_bm_sqrt(f64 x) { return sqrt(x); }
+
+#if defined(__GNUC__) && !defined(__TINYC__)
+  #define FASTENT_PARITY64(x) ((u32) __builtin_parityll((u64)(x)))
+#else
+  #define FASTENT_PARITY64(x) (FASTENT_POPCOUNT64((u64)(x)) & 1u)
+#endif
+
+/*  L of one m-bit window via GF(2) Berlekamp-Massey.  c and the bits
+    share the MSB-first layout; rev is the window read backwards from
+    N so the discrepancy is parity(c & rev).  Returns L in [0, m].  */
+static u32 fastent_bm_window(const u64 * s, u32 m) {
+  u64 c[FASTENT_BM_W64], b[FASTENT_BM_W64], t[FASTENT_BM_W64];
+  u64 rev[FASTENT_BM_W64];
+  const u32 W = FASTENT_BM_W64;
+  Fi((int) W, c[i] = b[i] = rev[i] = 0)
+  c[0] = b[0] = (u64) 1 << 63;
+  u32 L = 0;
+  i64 mm = -1;
+
+  for (u32 N = 0; N < m; N++) {
+    for (u32 w = W; w-- > 1; )
+      rev[w] = (rev[w] >> 1) | (rev[w - 1] << 63);
+    rev[0] >>= 1;
+    rev[0] |= ((s[N >> 6] >> (63u - (N & 63u))) & 1ull) << 63;
+
+    u64 acc = 0;
+    Fi((int) W, acc ^= c[i] & rev[i])
+    u32 d = (u32) FASTENT_PARITY64(acc);
+
+    if (d) {
+      memcpy(t, c, sizeof t);
+      u32 shift = (u32)((i64) N - mm);
+      u32 ws = shift >> 6, bs = shift & 63u;
+      if (bs == 0) {
+        for (u32 w = W; w-- > ws; ) c[w] ^= b[w - ws];
+      } else {
+        for (u32 w = W; w-- > ws; ) {
+          u64 v = b[w - ws] >> bs;
+          if (w - ws > 0) v |= b[w - ws - 1] << (64u - bs);
+          c[w] ^= v;
+        }
+      }
+      if (2u * L <= N) {
+        L = N + 1u - L;
+        mm = (i64) N;
+        memcpy(b, t, sizeof t);
+      }
+    }
+  }
+  return L;
+}
+
+static void fastent_bm_pack(const u8 * src, u32 mb, u64 * s) {
+  Fi(FASTENT_BM_W64, s[i] = 0)
+  for (u32 i = 0; i < mb; i++) {
+    u32 wi = i >> 3;
+    u32 sh = 56u - 8u * (i & 7u);
+    s[wi] |= (u64) src[i] << sh;
+  }
+}
+
+/*  n/64 whole windows; the remainder is the stream's tail window.  */
+static void fastent_bm_parse_block(fastent_bm_acc * a, const u8 * src, sz n) {
+  sz nw = n / FASTENT_BM_WB;
+  for (sz i = 0; i < nw; i++) {
+    u64 s[FASTENT_BM_W64];
+    fastent_bm_pack(src + i * FASTENT_BM_WB, FASTENT_BM_WB, s);
+    u32 L = fastent_bm_window(s, FASTENT_BM_M);
+    a->windows++;
+    a->meanl_sum += L;
+    u32 bin = (u32)(((u64) L * FASTENT_BM_LBINS) / (FASTENT_BM_M + 1u));
+    if (bin >= FASTENT_BM_LBINS) bin = FASTENT_BM_LBINS - 1u;
+    a->lhist[bin]++;
+    /*  NIST T = (L - mu) + 2/9 (M even); the 7 classes pooled to 6
+        (df = 5, odd) by merging both extreme tails into bin 0.  */
+    f64 T = ((f64) L - 256.27777777777777) + 0.2222222222222222;
+    u32 cls;
+    if      (T <= -2.5) cls = 0;
+    else if (T <= -1.5) cls = 1;
+    else if (T <= -0.5) cls = 2;
+    else if (T <=  0.5) cls = 3;
+    else if (T <=  1.5) cls = 4;
+    else if (T <=  2.5) cls = 5;
+    else                cls = 0;
+    a->tbin[cls]++;
+  }
+  sz rem = n - nw * FASTENT_BM_WB;
+  if (rem) {
+    u64 abs = a->blk_off + (u64) nw * FASTENT_BM_WB;
+    if (!a->have_tail || abs >= a->tail_abs) {
+      u64 s[FASTENT_BM_W64];
+      fastent_bm_pack(src + nw * FASTENT_BM_WB, (u32) rem, s);
+      a->tail_abs  = abs;
+      a->tail_bits = (u32) rem * 8u;
+      a->tail_l    = fastent_bm_window(s, (u32) rem * 8u);
+      a->have_tail = 1;
+    }
+  }
+}
+
+static int fastent_bm_ensure(fastent_bm_acc * a) {
+  if (a->oom) return -1;
+  if (!a->blk) {
+    a->blk = (u8 *) malloc((sz) FASTENT_LZ_GRID);
+    if (!a->blk) { a->oom = 1;  return -1; }
+  }
+  return 0;
+}
+
+void fastent_bm_acc_init(fastent_bm_acc * a, u64 abs_base) {
+  memset(a, 0, sizeof(*a));
+  a->abs_base = abs_base;
+  a->abs_pos  = abs_base;
+  a->blk_off  = abs_base;
+}
+
+int fastent_bm_acc_feed(fastent_bm_acc * a, const u8 * buf, sz len) {
+  if (len == 0) return 0;
+  if (fastent_bm_ensure(a) != 0) return -1;
+  sz pos = 0;
+  while (pos < len) {
+    u64 abs = a->abs_pos;
+    u64 next_grid = (abs / FASTENT_LZ_GRID + 1) * (u64) FASTENT_LZ_GRID;
+    sz  room = (sz)(next_grid - abs);
+    sz  take = len - pos;
+    if (take > room) take = room;
+    memcpy(a->blk + a->blk_len, buf + pos, take);
+    a->blk_len += take;
+    a->abs_pos += take;
+    pos        += take;
+    if (a->abs_pos % FASTENT_LZ_GRID == 0) {
+      fastent_bm_parse_block(a, a->blk, a->blk_len);
+      a->blk_len = 0;
+      a->blk_off = a->abs_pos;
+    }
+  }
+  return 0;
+}
+
+int fastent_bm_acc_flush(fastent_bm_acc * a) {
+  if (a->oom) return -1;
+  if (a->blk_len) {
+    if (fastent_bm_ensure(a) != 0) return -1;
+    fastent_bm_parse_block(a, a->blk, a->blk_len);
+    a->blk_len = 0;
+  }
+  return 0;
+}
+
+void fastent_bm_acc_merge(fastent_bm_acc * dst, const fastent_bm_acc * src) {
+  dst->windows   += src->windows;
+  dst->meanl_sum += src->meanl_sum;
+  if (src->oom) dst->oom = 1;
+  Fi(FASTENT_BM_LBINS, dst->lhist[i] += src->lhist[i])
+  Fi(6, dst->tbin[i] += src->tbin[i])
+  /*  Keep the highest-abs tail window so the merge is order-free.  */
+  if (src->have_tail &&
+      (!dst->have_tail || src->tail_abs >= dst->tail_abs)) {
+    dst->tail_abs  = src->tail_abs;
+    dst->tail_bits = src->tail_bits;
+    dst->tail_l    = src->tail_l;
+    dst->have_tail = 1;
+  }
+}
+
+void fastent_bm_acc_free(fastent_bm_acc * a) {
+  free(a->blk);  a->blk = NULL;
+}
+
+/*  NIST SP800-22 random-sequence L expectation; libm-free (the 2^-m
+    scale is an exact product of halves).  */
+static f64 fastent_bm_mu(u32 m) {
+  f64 alt = (m & 1u) ? 1.0 : -1.0;
+  f64 base = (f64) m / 2.0 + (9.0 + alt) / 36.0;
+  f64 corr = ((f64) m / 3.0 + 2.0 / 9.0);
+  f64 scale = 1.0;
+  for (u32 k = 0; k < m && scale > 0.0; k++) scale *= 0.5;
+  return base - corr * scale;
+}
+
+void fastent_bm_finalize(
+    const fastent_bm_acc * a, u64 n, struct fastent_result * out) {
+  (void) n;
+  out->bm_deviation = 0.0;
+  out->bm_mean_lc   = 0.0;
+  out->bm_mu        = fastent_bm_mu(FASTENT_BM_M);
+  out->bm_chi       = 0.0;
+  out->bm_chi_p     = 1.0;
+  out->bm_windows   = a->windows;
+  out->bm_degenerate = 0;
+  Fi(FASTENT_BM_LBINS, out->bm_lhist[i] = (u32)(a->lhist[i] > 0xffffffffu
+                                                ? 0xffffffffu : a->lhist[i]))
+
+  u64 W = a->windows;
+  if (W == 0) {
+    /*  No full window: score the partial tail vs mu(m') if m' >= 64,
+        else stay at z = 0 (the total-function value, not the NaN
+        level sentinel).  */
+    if (a->have_tail && a->tail_bits >= 64u) {
+      f64 mp = fastent_bm_mu(a->tail_bits);
+      out->bm_mu      = mp;
+      out->bm_mean_lc = (f64) a->tail_l;
+      const f64 vp = 86.0 / 81.0;
+      volatile f64 num = (f64) a->tail_l - mp;
+      f64 an = num < 0.0 ? -num : num;
+      out->bm_deviation = an / fastent_bm_sqrt(vp);
+    }
+    return;
+  }
+
+  /*  Headline z = |meanL - mu| / sqrt(VarL/W); the fuse goes through
+      the volatile barrier so it is bit-identical across hosts.  */
+  f64 meanL = (f64) a->meanl_sum / (f64) W;
+  out->bm_mean_lc = meanL;
+  const f64 mu  = out->bm_mu;
+  const f64 var = 86.0 / 81.0;
+  volatile f64 nv = meanL - mu;
+  f64 num = nv < 0.0 ? -nv : nv;
+  f64 sigma = fastent_bm_sqrt(var / (f64) W);
+  out->bm_deviation = sigma > 0.0 ? num / sigma : 0.0;
+
+  /*  meanL < 2 reads as a near-constant stream (the L -> 0 limit);
+      the z still fails it.  */
+  if (meanL < 2.0) out->bm_degenerate = 1;
+
+  /*  Advisory NIST class chi-square, df = 5; bin 0 pools the two
+      extreme tails.  Each term fused through the volatile barrier.  */
+  static const f64 pi6[6] = {
+    0.03125, 0.03125, 0.125, 0.5, 0.25, 0.0625
+  };
+  f64 chi = 0.0;
+  Fi(6,
+     volatile f64 e = (f64) W * pi6[i];
+     volatile f64 v = (f64) a->tbin[i];
+     volatile f64 d = v - e;
+     volatile f64 term = (d * d) / e;
+     chi += term)
+  out->bm_chi   = chi;
+  out->bm_chi_p = fastent_chisq_tail_df(chi, 5);
+}

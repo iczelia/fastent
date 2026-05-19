@@ -45,7 +45,9 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
   if (o->extended >= 3)
     printf(",LZ-CR-Excess,LZ-Lit-H,LZ-Lit-KL,LZ-Match-Cov,LZ-Off-Conc,"
            "LZ-Mlen-Excess,LZ-Lit-Chi,LZ-Lit-Chi-p,LZ-Deviation,"
-           "LZ-Matches,LZ-Megamatch");
+           "LZ-Matches,LZ-Megamatch,"
+           "BM-Mean-LC,BM-Mu,BM-Chi,BM-Chi-p,BM-Deviation,"
+           "BM-Windows,BM-Degenerate");
   putchar('\n');
 
   const char * f = o->full_precision ? "%.17g" : "%f";
@@ -89,6 +91,12 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
     putchar(','); tnum_(f, r->lz_lit_chi_p);
     putchar(','); tnum_(f, r->lz_deviation);
     printf(",%" PRIu64 ",%d", (u64) r->lz_nmatch, r->lz_megamatch);
+    putchar(','); tnum_(f, r->bm_mean_lc);
+    putchar(','); tnum_(f, r->bm_mu);
+    putchar(','); tnum_(f, r->bm_chi);
+    putchar(','); tnum_(f, r->bm_chi_p);
+    putchar(','); tnum_(f, r->bm_deviation);
+    printf(",%" PRIu64 ",%d", (u64) r->bm_windows, r->bm_degenerate);
   }
   putchar('\n');
   if (o->counts) print_counts_(r, o->binary);

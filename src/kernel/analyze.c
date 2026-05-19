@@ -336,6 +336,14 @@ void fastent_finalize(
   out->lz_nmatch = 0;
   out->lz_megamatch = 0;
   out->lz = NULL;
+
+  /*  Linear-complexity (-eee) sentinels: fastent_bm_finalize
+      overwrites these when extended >= 3, else NaN.  */
+  out->bm_deviation = out->bm_mean_lc = out->bm_mu = NAN;
+  out->bm_chi = out->bm_chi_p = NAN;
+  out->bm_windows = 0;
+  out->bm_degenerate = 0;
+  Fi(64, out->bm_lhist[i] = 0)
 }
 
 /*  Variant table.  Order matters: dispatcher picks the LAST entry

@@ -335,6 +335,40 @@ void fastent_print_annotated(
              "match (concentration at limit)\n", "  Note", "");
   }
 
+  /*  Linear complexity (-eee, alongside LZ77F): bm_deviation is the
+      headline verdict; meanL vs mu(M) is a structure descriptor
+      (B_INFO, no pass/fail); the NIST class chi-square is advisory.  */
+  if (r->bm_deviation != r->bm_deviation) {
+    row_(o, color, &v, 0, "Linear complexity", "pass -eee", B_NA, "");
+  } else {
+    int b = z_badge_(r->bm_deviation);
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "z=%.17g" : "z=%.4g", r->bm_deviation);
+    row_(o, color, &v, 1, "Linear complexity", aux, b,
+         b == B_PASS ? "no linear recurrence"
+       : b == B_WEAK ? "weak linear structure"
+       :               "low linear complexity (LFSR-like)");
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "L=%.17g  mu=%.17g" : "L=%.6g  mu=%.6g",
+             r->bm_mean_lc, r->bm_mu);
+    row_(o, color, &v, 0, "  Mean L / mu", aux, B_INFO,
+         "structure descriptor");
+    {
+      int cb = p_badge_(r->bm_chi_p);
+      snprintf(aux, sizeof aux, o->full_precision
+               ? "%.17g  p=%.17g" : "%.4g  p=%.4f",
+               r->bm_chi, r->bm_chi_p);
+      row_(o, color, &v, 0, "  Class chi", aux, cb,
+           cb == B_PASS ? "classes as expected (advisory)"
+         : cb == B_WEAK ? "suspect class skew (advisory)"
+         : cb == B_NA   ? ""
+         :                "linear-complexity class skew (advisory)");
+    }
+    if (r->bm_degenerate)
+      printf("  %-19s%-25s        near-constant stream "
+             "(mean L below 2)\n", "  Note", "");
+  }
+
   /*  Informational footer (no verdict).  */
   char d1[48], d2[48], d3[48];
   snprintf(d1, sizeof d1, "Distinct %u/%d", r->distinct, bins);

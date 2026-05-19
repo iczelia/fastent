@@ -164,24 +164,29 @@ int main(int argc, char ** argv) {
   /*  Heap, not stack: fastent_lz_acc is ~640 KiB and would overflow
       the small stacks on wasm / DJGPP targets.  */
   fastent_lz_acc * lz = NULL;
+  fastent_bm_acc * bm = NULL;
   int lz_active = (o.extended >= 3);
   if (lz_active) {
     lz = (fastent_lz_acc *) malloc(sizeof *lz);
-    if (!lz) {
+    bm = (fastent_bm_acc *) malloc(sizeof *bm);
+    if (!lz || !bm) {
       fprintf(stderr, "out of memory\n");
+      free(lz);  free(bm);
       fastent_src_close(&src);  fastent_bigram_free(st.bigram);
       fastent_dg_u32_free(st.dg_u32);  free((void *) o.path);
       return 2;
     }
     fastent_lz_acc_init(lz, 0);
+    fastent_bm_acc_init(bm, 0);
   }
 
   if (o.extended >= 3 && src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, &o, fn_byte, fn_bits, fn_byte_fold, fn_bits_fold,
                      (const u8 *) src.map, src.size);
     fastent_run_lz(lz, &o, &src);
+    fastent_run_bm(bm, &o, &src);
   } else if (o.extended >= 3) {
-    fastent_run_stream_lz_tee(&st, lz, &o, fn_byte, fn_bits,
+    fastent_run_stream_lz_tee(&st, lz, bm, &o, fn_byte, fn_bits,
                               fn_byte_fold, fn_bits_fold, &src);
   } else if (src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, &o, fn_byte, fn_bits, fn_byte_fold, fn_bits_fold,
@@ -198,9 +203,10 @@ int main(int argc, char ** argv) {
       NaN below level 3.  */
   if (lz_active) {
     result.lz = fastent_lz77f_tables_alloc();
-    if (lz->oom || !result.lz) {
+    if (lz->oom || bm->oom || !result.lz) {
       fprintf(stderr, "out of memory\n");
       fastent_lz_acc_free(lz);  free(lz);
+      fastent_bm_acc_free(bm);  free(bm);
       fastent_lz77f_tables_free(result.lz);
       fastent_src_close(&src);
       fastent_bigram_free(st.bigram);
@@ -209,7 +215,9 @@ int main(int argc, char ** argv) {
       return 2;
     }
     fastent_lz_finalize(lz, st.total_bytes, &result);
+    fastent_bm_finalize(bm, st.total_bytes, &result);
     fastent_lz_acc_free(lz);  free(lz);
+    fastent_bm_acc_free(bm);  free(bm);
   }
 
   fastent_src_close(&src);

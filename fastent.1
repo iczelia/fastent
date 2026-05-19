@@ -139,6 +139,43 @@ bit-identical for any thread count, for
 and across hosts.  Drift versus a whole-file table-carrying serial
 parse is at most about 0.055 percent and verdict-neutral.  Reported
 in the default, terse, JSON, recursive and annotated output.
+.IP
+.B \-eee
+additionally runs a windowed linear-complexity estimator alongside
+LZ77F.  Each whole 512-bit (64-byte) window of the stream is reduced
+by GF(2) Berlekamp-Massey to its linear complexity
+.IR L ,
+the length of the shortest LFSR that generates it.  It reports the
+mean
+.I L
+.RB ( bm_mean_lc ),
+the random-sequence expectation
+.RB ( bm_mu ),
+a headline
+.B bm_deviation
+z =
+.RB | bm_mean_lc \- bm_mu |
+over
+.RB sqrt( VarL / W )
+badged
+.BR PASS / WEAK / FAIL
+(z < 2 / z < 3 / z >= 3), and an advisory NIST SP800-22
+linear-complexity class chi-square
+.RB ( bm_chi ,
+5 degrees of freedom: the two extreme tail classes are pooled).
+A near-constant stream (mean
+.I L
+below 2) is flagged like the LZ77F single-dominant-match note; the
+verdict still fails via the large z.  Bits are read most-significant
+first per byte, the same convention as
+.BR \-b "."
+64 divides the 4 MiB grid, so a window never straddles a block and
+the result is bit-identical for any thread count, I/O mode and host
+with zero drift.  Scope: GF(2) Berlekamp-Massey catches LFSR-class
+and low-bit linear recurrences (a maximal 16-bit LFSR scores
+.I L
+near 16, far below mu = 256) but not a truncated-high-byte LCG,
+whose output bits carry no short GF(2) recurrence.
 .TP
 .BR \-a ", " \-\-annotate
 Render an interpretive report instead of the plain text: every metric
@@ -216,13 +253,15 @@ when those are set.
 .IP
 Under
 .BR \-eee ,
-three extra plots follow the byte/bit plot, using the same
+four extra plots follow the byte/bit plot, using the same
 Unicode-glyph,
 .BR \-\-log ,
 Y-axis-scale and X-tick rendering: the LZ77F match offsets
-(1..65535) and match lengths (4..255+) in log2 buckets, and the
+(1..65535) and match lengths (4..255+) in log2 buckets, the
 LZ77F literal byte-value histogram (256 bins, its title carrying
-H_lit).  They compose with
+H_lit), and the linear-complexity
+.I L
+histogram (64 bins over 0..512).  They compose with
 .BR \-t " and " \-\-json
 exactly as the byte/bit plot does.
 .TP
@@ -267,7 +306,8 @@ is one of
 .BR min-entropy ", " collision ", " ic ", " poker ", " variance ", "
 .BR redundancy ", " distinct ", " bitbias ", "
 .BR cond-entropy ", " mutual-info ", "
-.BR lz-deviation ", " lz-cr ", " lz-match-cov .
+.BR lz-deviation ", " lz-cr ", " lz-match-cov ", "
+.BR bm-deviation ", " bm-mean-lc .
 Selecting any of the extended columns implies
 .BR \-e ;
 the
@@ -277,7 +317,8 @@ and
 columns imply
 .BR \-ee ;
 the
-.BR lz-deviation ", " lz-cr " and " lz-match-cov
+.BR lz-deviation ", " lz-cr ", " lz-match-cov ", " bm-deviation
+" and " bm-mean-lc
 columns imply
 .BR \-eee .
 .I DIR

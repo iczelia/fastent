@@ -9,6 +9,7 @@
 #include "analyze.h"
 #include "fastent-options.h"
 #include "lzest.h"
+#include "bm.h"
 #include "port-io.h"
 
 void fastent_run_mmap(
@@ -23,11 +24,12 @@ void fastent_run_stream(
     fastent_analyze_fn fn_byte_fold, fastent_analyze_fn fn_bits_fold,
     fastent_source * src);
 
-/*  -eee non-mmap tee: one bounded pass feeding both the order-0/-ee
-    analyzer (st) and the LZ77F acc (acc, init'd).  O(chunk + grid
-    block), serial on -j, bit-identical to -j1/mmap.  */
+/*  -eee non-mmap tee: one bounded pass feeding the order-0/-ee
+    analyzer (st), the LZ77F acc (lz) and the linear-complexity acc
+    (bm); all init'd.  O(chunk + grid block), serial on -j,
+    bit-identical to -j1/mmap.  Either acc pointer may be NULL.  */
 void fastent_run_stream_lz_tee(
-    fastent_chunk_state * st, fastent_lz_acc * acc,
+    fastent_chunk_state * st, fastent_lz_acc * lz, fastent_bm_acc * bm,
     const fastent_options * o, fastent_analyze_fn fn_byte,
     fastent_analyze_fn fn_bits, fastent_analyze_fn fn_byte_fold,
     fastent_analyze_fn fn_bits_fold, fastent_source * src);
@@ -52,6 +54,12 @@ int fastent_run_recursive(
     init'd).  Result is bit-identical for any -j / driver / host.  */
 void fastent_run_lz(
     fastent_lz_acc * acc, const fastent_options * o, fastent_source * src);
+
+/*  Linear-complexity (-eee) driver.  Same absolute 4 MiB-grid scheme
+    as fastent_run_lz; 64 divides the grid so windows never straddle,
+    giving zero-drift bit-identical output for any -j / driver / host. */
+void fastent_run_bm(
+    fastent_bm_acc * acc, const fastent_options * o, fastent_source * src);
 
 void fastent_rows_free(fastent_recursive_row * rows, sz n);
 

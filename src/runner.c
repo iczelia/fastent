@@ -6,6 +6,7 @@
 #include "runner.h"
 
 #include "lzest.h"
+#include "bm.h"
 #include "output.h"
 #include "port-thread.h"
 #include "port-walk.h"
@@ -930,6 +931,178 @@ void fastent_run_lz(
   if (rc != 0) acc->oom = 1;
 }
 
+/*  Linear-complexity driver: same absolute 4 MiB-grid decomposition
+    as LZ77F.  64 divides the grid, so each 4 MiB block holds 65536
+    whole windows and a window never straddles a block: the integer
+    sum-merge is order-independent and bit-identical (zero drift).  */
+
+#ifdef FASTENT_HAVE_THREADS
+typedef struct {
+  const u8 *      data;
+  u64             size;
+  u64             nblk;
+  fastent_bm_acc * accs;
+  i32             nthreads;
+  volatile int    oom;
+} bm_mmap_ctx;
+
+static void bm_mmap_worker_(sz w, void * vctx) {
+  bm_mmap_ctx * c = (bm_mmap_ctx *) vctx;
+  fastent_bm_acc * a = &c->accs[w];
+  /*  Heap, not stack: the acc carries a 4 MiB grid buffer.  One
+      struct reused across this worker's blocks.  */
+  fastent_bm_acc * blk = (fastent_bm_acc *) malloc(sizeof *blk);
+  if (!blk) { c->oom = 1;  return; }
+  for (u64 g = (u64) w; g < c->nblk; g += (u64) c->nthreads) {
+    u64 off = g * FASTENT_LZ_GRID_U64;
+    u64 len = c->size - off;
+    if (len > FASTENT_LZ_GRID_U64) len = FASTENT_LZ_GRID_U64;
+    fastent_bm_acc_init(blk, off);
+    if (fastent_bm_acc_feed(blk, c->data + off, (sz) len) != 0 ||
+        fastent_bm_acc_flush(blk) != 0) {
+      c->oom = 1;  fastent_bm_acc_free(blk);  free(blk);  return;
+    }
+    fastent_bm_acc_merge(a, blk);
+    fastent_bm_acc_free(blk);
+  }
+  free(blk);
+}
+#endif
+
+static int bm_run_resident_(
+    fastent_bm_acc * acc, const fastent_options * o, const u8 * data,
+    u64 size) {
+  if (size == 0) return 0;
+  u64 nblk = (size + FASTENT_LZ_GRID_U64 - 1) / FASTENT_LZ_GRID_U64;
+
+#ifdef FASTENT_HAVE_THREADS
+  if (o->threads > 1 && nblk > 1) {
+    i32 N = o->threads;
+    if ((u64) N > nblk) N = (i32) nblk;
+    fastent_set_num_threads(N);
+    fastent_bm_acc * accs =
+      (fastent_bm_acc *) calloc((sz) N, sizeof(*accs));
+    if (!accs) return -1;
+    Fk(N, fastent_bm_acc_init(&accs[k], 0))
+    bm_mmap_ctx c;
+    c.data = data;  c.size = size;  c.nblk = nblk;
+    c.accs = accs;  c.nthreads = N;  c.oom = 0;
+    fastent_parallel_for((sz) N, bm_mmap_worker_, &c);
+    int rc = c.oom ? -1 : 0;
+    Fk(N, fastent_bm_acc_merge(acc, &accs[k]);
+          fastent_bm_acc_free(&accs[k]))
+    free(accs);
+    if (acc->oom) rc = -1;
+    return rc;
+  }
+#else
+  (void) o;
+#endif
+
+  if (fastent_bm_acc_feed(acc, data, (sz) size) != 0) return -1;
+  if (fastent_bm_acc_flush(acc) != 0) return -1;
+  return 0;
+}
+
+#ifdef FASTENT_HAVE_THREADS
+typedef struct {
+  int               fd;
+  const char *      path;
+  const u64 *       bounds;
+  fastent_bm_acc *  accs;
+  volatile int      failed;
+  volatile int      oom;
+} bm_uring_ctx;
+
+static void bm_uring_worker_(sz k, void * vctx) {
+  bm_uring_ctx * c = (bm_uring_ctx *) vctx;
+  u64 start = c->bounds[k], end = c->bounds[k + 1];
+  fastent_bm_acc * a = &c->accs[k];
+  if (end <= start) return;
+  fastent_uring_slab * r =
+    fastent_uring_slab_open(c->fd, c->path, start, end - start);
+  if (!r) { c->failed = 1;  return; }
+  for (;;) {
+    const u8 * blk = NULL;
+    sz n = fastent_uring_slab_next(r, &blk);
+    if (n == (sz) -1) { c->failed = 1;  fastent_uring_slab_close(r);  return; }
+    if (n == 0) break;
+    if (fastent_bm_acc_feed(a, blk, n) != 0) {
+      c->oom = 1;  fastent_uring_slab_close(r);  return;
+    }
+  }
+  fastent_uring_slab_close(r);
+  if (fastent_bm_acc_flush(a) != 0) c->oom = 1;
+}
+
+static int bm_run_uring_(
+    fastent_bm_acc * acc, const fastent_options * o, fastent_source * src) {
+  u64 size = src->size;
+  if (size == 0) return 0;
+  i32 N = o->threads;
+  if (N < 1) N = 1;
+  u64 nblk = (size + FASTENT_LZ_GRID_U64 - 1) / FASTENT_LZ_GRID_U64;
+  if ((u64) N > nblk) N = (i32) nblk;
+  fastent_set_num_threads(N);
+
+  u64 * bounds = (u64 *) malloc((sz)(N + 1) * sizeof(u64));
+  fastent_bm_acc * accs =
+    (fastent_bm_acc *) calloc((sz) N, sizeof(*accs));
+  if (!bounds || !accs) { free(bounds);  free(accs);  return 0; }
+  bounds[0] = 0;  bounds[N] = size;
+  Fk0(N, 1,
+      u64 blk = (u64)((f64) nblk * (f64) k / (f64) N);
+      u64 b = blk * FASTENT_LZ_GRID_U64;
+      if (b > size) b = size;
+      bounds[k] = b)
+  Fk(N, fastent_bm_acc_init(&accs[k], bounds[k]))
+
+  bm_uring_ctx c;
+  c.fd = src->fd;  c.path = o->path;  c.bounds = bounds;
+  c.accs = accs;  c.failed = 0;  c.oom = 0;
+  fastent_parallel_for((sz) N, bm_uring_worker_, &c);
+
+  int rc;
+  if (c.failed) {
+    rc = -1;
+  } else {
+    Fk(N, fastent_bm_acc_merge(acc, &accs[k]))
+    rc = (c.oom || acc->oom) ? -2 : 0;
+  }
+  Fk(N, fastent_bm_acc_free(&accs[k]))
+  free(accs);  free(bounds);
+  return rc;
+}
+#endif
+
+void fastent_run_bm(
+    fastent_bm_acc * acc, const fastent_options * o, fastent_source * src) {
+  int rc = 0;
+  if (src->kind == FASTENT_SRC_MMAP) {
+    rc = bm_run_resident_(acc, o, (const u8 *) src->map, src->size);
+  } else {
+#ifdef FASTENT_HAVE_THREADS
+    if (src->kind == FASTENT_SRC_URING && src->fd >= 0 && src->size > 0
+        && o->threads != 1) {
+      int u = bm_run_uring_(acc, o, src);
+      if (u == 0)  return;
+      if (u == -2) { acc->oom = 1;  return; }
+      /*  u == -1: uring absent, fall through to the serial feed.  */
+    }
+#endif
+    for (;;) {
+      sz n = fastent_src_read(src);
+      if (n == (sz) -1) { perror("read");  exit(2); }
+      if (n == 0) break;
+      if (fastent_bm_acc_feed(acc, src->stream_buf, n) != 0) {
+        acc->oom = 1;  return;
+      }
+    }
+    if (fastent_bm_acc_flush(acc) != 0) acc->oom = 1;
+  }
+  if (rc != 0) acc->oom = 1;
+}
+
 void fastent_run_mmap(
     fastent_chunk_state * st, const fastent_options * o,
     fastent_analyze_fn fn_byte, fastent_analyze_fn fn_bits,
@@ -988,11 +1161,12 @@ void fastent_run_stream(
   }
 }
 
-/*  -eee non-mmap tee: one bounded pass feeds each chunk to both the
-    order-0/-ee analyzer (analyze_fused_) and the LZ77F acc, O(chunk +
-    grid block).  Serial on -j, bit-identical to -j1/mmap.  */
+/*  -eee non-mmap tee: one bounded pass feeds each chunk to the
+    order-0/-ee analyzer (analyze_fused_), the LZ77F acc and the
+    linear-complexity acc, O(chunk + grid block).  Serial on -j,
+    bit-identical to -j1/mmap.  Either acc may be NULL.  */
 void fastent_run_stream_lz_tee(
-    fastent_chunk_state * st, fastent_lz_acc * acc,
+    fastent_chunk_state * st, fastent_lz_acc * lz, fastent_bm_acc * bm,
     const fastent_options * o, fastent_analyze_fn fn_byte,
     fastent_analyze_fn fn_bits, fastent_analyze_fn fn_byte_fold,
     fastent_analyze_fn fn_bits_fold, fastent_source * src) {
@@ -1007,11 +1181,15 @@ void fastent_run_stream_lz_tee(
     if (n == 0) break;
     analyze_fused_(st, body, body_plain, src->stream_buf, n,
                    o->extended, o->binary, o->fold);
-    if (fastent_lz_acc_feed(acc, src->stream_buf, n) != 0) {
-      acc->oom = 1;  return;
+    if (lz && fastent_lz_acc_feed(lz, src->stream_buf, n) != 0) {
+      lz->oom = 1;  return;
+    }
+    if (bm && fastent_bm_acc_feed(bm, src->stream_buf, n) != 0) {
+      bm->oom = 1;  return;
     }
   }
-  if (fastent_lz_acc_flush(acc) != 0) acc->oom = 1;
+  if (lz && fastent_lz_acc_flush(lz) != 0) lz->oom = 1;
+  if (bm && fastent_bm_acc_flush(bm) != 0) bm->oom = 1;
 }
 
 /*  Recursive mode.  */
@@ -1052,12 +1230,16 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   /*  -H per-file plots: human side output in walk order before the
       sorted rows.  JSON stays pure (no plot), as single-file does.  */
   const int do_plot = do_lz && c->o->histogram && !c->o->json;
-  /*  Heap, not stack: the acc is ~640 KiB.  */
+  /*  Heap, not stack: both accs carry a 4 MiB grid buffer (and the
+      LZ77F hash table); a stack-local one overflows wasm / DOS.  */
   fastent_lz_acc * lz = NULL;
+  fastent_bm_acc * bm = NULL;
   if (do_lz) {
     lz = (fastent_lz_acc *) malloc(sizeof *lz);
-    if (!lz) { fprintf(stderr, "out of memory\n");  exit(2); }
+    bm = (fastent_bm_acc *) malloc(sizeof *bm);
+    if (!lz || !bm) { fprintf(stderr, "out of memory\n");  exit(2); }
     fastent_lz_acc_init(lz, 0);
+    fastent_bm_acc_init(bm, 0);
   }
 
   if (do_lz && src.kind == FASTENT_SRC_MMAP) {
@@ -1065,8 +1247,9 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
                      c->fn_byte_fold, c->fn_bits_fold,
                      (const u8 *) src.map, src.size);
     fastent_run_lz(lz, c->o, &src);
+    fastent_run_bm(bm, c->o, &src);
   } else if (do_lz) {
-    fastent_run_stream_lz_tee(&st, lz, c->o, c->fn_byte, c->fn_bits,
+    fastent_run_stream_lz_tee(&st, lz, bm, c->o, c->fn_byte, c->fn_bits,
                               c->fn_byte_fold, c->fn_bits_fold, &src);
   } else if (src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, c->o, c->fn_byte, c->fn_bits,
@@ -1080,13 +1263,15 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   fastent_finalize(&st, c->o->binary, &r);
 
   if (do_lz) {
-    if (lz->oom) { fprintf(stderr, "out of memory\n"); exit(2); }
+    if (lz->oom || bm->oom) { fprintf(stderr, "out of memory\n"); exit(2); }
     if (do_plot) {
       r.lz = fastent_lz77f_tables_alloc();
       if (!r.lz) { fprintf(stderr, "out of memory\n"); exit(2); }
     }
     fastent_lz_finalize(lz, st.total_bytes, &r);
+    fastent_bm_finalize(bm, st.total_bytes, &r);
     fastent_lz_acc_free(lz);  free(lz);
+    fastent_bm_acc_free(bm);  free(bm);
     if (do_plot) {
       printf("%s\n", path);
       fastent_print_histogram(&r, c->o);
@@ -1173,6 +1358,8 @@ static f64 row_key_(const fastent_recursive_row * r) {
     case FASTENT_SORT_LZ_DEVIATION: return r->result.lz_deviation;
     case FASTENT_SORT_LZ_CR:        return r->result.lz_cr_excess;
     case FASTENT_SORT_LZ_MATCH_COV: return r->result.lz_match_cov;
+    case FASTENT_SORT_BM_DEVIATION: return r->result.bm_deviation;
+    case FASTENT_SORT_BM_MEAN_LC:   return r->result.bm_mean_lc;
     default:                      return 0.0;
   }
 }

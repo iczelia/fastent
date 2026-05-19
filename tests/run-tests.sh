@@ -74,10 +74,40 @@ PY
   fi
 }
 
+gen_lfsr16() {
+  #  Maximal 16-bit LFSR (x^16+x^14+x^13+x^11+1), MSB-first per byte.
+  #  Linear complexity per window collapses to ~16, far below mu=256.
+  if [ ! -f "${FIX}/$1" ]; then
+    src=$(mktemp "${TMPDIR:-/tmp}/lfsrXXXXXX.c")
+    bin=$(mktemp "${TMPDIR:-/tmp}/lfsrXXXXXX")
+    cat > "${src}" <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+int main(int argc, char ** argv) {
+  long n = atol(argv[1]);
+  unsigned s = 0xACE1u;
+  for (long i = 0; i < n; i++) {
+    int v = 0;
+    for (int k = 0; k < 8; k++) {
+      v = (v << 1) | (int)(s & 1u);
+      unsigned nb = (s ^ (s >> 2) ^ (s >> 3) ^ (s >> 5)) & 1u;
+      s = (s >> 1) | (nb << 15);
+    }
+    putchar(v);
+  }
+  return 0;
+}
+EOF
+    "${CC:-cc}" -O2 -o "${bin}" "${src}" && "${bin}" "$2" > "${FIX}/$1"
+    rm -f "${src}" "${bin}"
+  fi
+}
+
 gen_zero    all-zeros.bin    1048576
 gen_byte    all-ones.bin     255 1048576
 gen_uniform uniform.bin      4096          # 1 MiB, each value 4096x
 gen_lcg     lcg.bin          1048576
+gen_lfsr16  lfsr16.bin       1048576
 
 passes=0
 fails=0
@@ -290,6 +320,57 @@ if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
   check "-eee LZ77F determinism mmap == stream" bash -c '
     a=$('"${FASTENT}"' -eee -t --io=mmap   "'"${FIX}"'/lcg.bin" | sed -n 2p)
     b=$('"${FASTENT}"' -eee -t --io=stream "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    [ "$a" = "$b" ]
+  '
+fi
+
+check "no -eee: linear-complexity fields absent" bash -c '
+  out=$('"${FASTENT}"' -ee -t "'"${FIX}"'/lcg.bin")
+  printf "%s\n" "$out" | sed -n 1p | grep -qv "BM-Deviation"
+'
+
+#  Terse row 2 fields: BM-Mean-LC=48, BM-Deviation=52, BM-Degenerate=54.
+check "no -eee: BM columns absent" bash -c '
+  '"${FASTENT}"' -ee -t "'"${FIX}"'/lcg.bin" | sed -n 1p | grep -qv "BM-Deviation"
+'
+
+check "-eee LFSR16: bm_deviation >= 3 FAIL, mean L ~ 16" bash -c '
+  r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/lfsr16.bin" | sed -n 2p)
+  d=$(printf %s "$r" | cut -d, -f52)
+  m=$(printf %s "$r" | cut -d, -f48)
+  awk -v d="$d" -v m="$m" "BEGIN{exit !(d>=3.0 && m>=14 && m<=18)}"
+'
+
+check "-eee uniform: bm_deviation < 2 PASS, mean L ~ 256" bash -c '
+  r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/uniform.bin" | sed -n 2p)
+  d=$(printf %s "$r" | cut -d, -f52)
+  m=$(printf %s "$r" | cut -d, -f48)
+  awk -v d="$d" -v m="$m" "BEGIN{exit !(d<2.0 && m>=254 && m<=258)}"
+'
+
+check "-eee lcg.bin (MSB-byte): bm PASS (documented boundary)" bash -c '
+  r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/lcg.bin" | sed -n 2p)
+  d=$(printf %s "$r" | cut -d, -f52)
+  awk -v d="$d" "BEGIN{exit !(d<2.0)}"
+'
+
+check "-eee zeros: near-constant flagged, FAIL" bash -c '
+  r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/all-zeros.bin" | sed -n 2p)
+  g=$(printf %s "$r" | cut -d, -f54)
+  m=$(printf %s "$r" | cut -d, -f48)
+  d=$(printf %s "$r" | cut -d, -f52)
+  awk -v g="$g" -v m="$m" -v d="$d" "BEGIN{exit !(g==1 && m==0 && d>=3.0)}"
+'
+
+if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
+  check "-eee linear-complexity determinism j1 == j4" bash -c '
+    a=$('"${FASTENT}"' -eee -t -j 1 "'"${FIX}"'/lfsr16.bin" | sed -n 2p)
+    b=$('"${FASTENT}"' -eee -t -j 4 "'"${FIX}"'/lfsr16.bin" | sed -n 2p)
+    [ "$a" = "$b" ]
+  '
+  check "-eee linear-complexity determinism mmap == stream" bash -c '
+    a=$('"${FASTENT}"' -eee -t --io=mmap   "'"${FIX}"'/lfsr16.bin" | sed -n 2p)
+    b=$('"${FASTENT}"' -eee -t --io=stream "'"${FIX}"'/lfsr16.bin" | sed -n 2p)
     [ "$a" = "$b" ]
   '
 fi

@@ -23,11 +23,16 @@ the flag (`-ee`) adds the order-1 bigram conditional entropy
 `H(cur|prev)` and adjacent mutual information `I(prev;cur)`, which expose
 order-1 structure (text, code, many binary formats) that the order-0
 measures and the linear serial correlation miss.  A third level
-(`-eee`) runs the LZ77F estimator: a count-only match finder
+(`-eee`) runs the LZ77F estimator (a count-only match finder
 reporting the compressibility excess, literal byte skew, match
 coverage, offset/length concentration and a headline `lz_deviation`
 z, catching repetition and dictionary structure the entropy and
-bigram measures miss.  Byte mode by default;
+bigram measures miss) together with a windowed linear-complexity
+estimator: per 512-bit window GF(2) Berlekamp-Massey reduces the
+window to its shortest-LFSR length L, whose mean is compared to the
+random-sequence expectation `bm_mu` via a headline `bm_deviation` z,
+catching LFSR-class and low-bit linear recurrences.  Byte mode by
+default;
 bit mode under `-b`.  Output formats: human-readable, CSV (`-t`), JSON
 (`-J`), and an interpretive pass/fail report (`-a`/`--annotate`); add a
 per-value
@@ -63,11 +68,16 @@ with `-H`.
   entropy / KL, match coverage, offset and match-length
   concentration, an advisory literal chi-square, and a headline
   `lz_deviation` z badged PASS / WEAK / FAIL.  Keyed to a fixed
-  4 MiB absolute-offset block grid: bit-identical for any thread
-  count, I/O mode and host (drift versus a whole-file serial parse
-  at most ~0.055%, verdict-neutral).  Sortable via
+  4 MiB absolute-offset block grid.  Sortable via
   `--sort-by=lz-deviation` / `lz-cr` / `lz-match-cov`; `-eee -H`
   adds log2-bucket offset / length plots and a literal byte plot
+- linear-complexity estimator (`-eee`, alongside LZ77F): per
+  512-bit window GF(2) Berlekamp-Massey yields the shortest-LFSR
+  length L; mean L vs the random-sequence expectation `bm_mu` gives
+  a headline `bm_deviation` z badged PASS / WEAK / FAIL, plus an
+  advisory NIST class chi-square. `-eee -H` adds an L
+  histogram.  Catches LFSR-class and low-bit linear recurrences,
+  not a truncated-high-byte LCG.
 - recursive mode (`-r DIR`): one CSV / JSON row per file, sortable via
   `--sort-by` (path, entropy, chisq, the extended columns, ...)
 - terminal histogram (`-H`) with Unicode block glyphs, a Y-axis
@@ -176,31 +186,6 @@ Median throughput on a Ryzen 9 5950X (16C/32T, dual-channel DDR4):
 Numbers in MiB/s.  A single fastent worker is 22 to 90x faster than
 `ent(1)`; saturated multi-threaded `fastent` reaches 140 to 327x
 before DDR4 bandwidth caps it.
-
-### Why the per-core ceiling
-
-The byte-histogram inner loop does 64 indexed read-modify-write
-stores per 64-byte stride into four banked u32 counters.  The
-AVX-512 path (activated when the host advertises AVX-512F + BW + CD +
-VPOPCNTDQ + BITALG) doubles the stride to 128 bytes and runs SCC,
-fold, and Monte Carlo Pi at 64-byte vector width.  The histogram
-itself stays banked-scalar: `VPSCATTERDD` is roughly 16 c reciprocal
-throughput for a 16-element zmm scatter on current x86 (Zen 3 / Zen
-4 alike), losing to the 4-banked scalar inc-mem chain which hits
-~0.5 c/B at the ROB-rate limit.
-
-Past the per-core compute ceiling, headroom comes from
-multi-threading, on every input path: mmap slabs, or an SPMC
-pipeline for stream/io_uring.  Blocks are 6-aligned so the Monte
-Carlo Pi state machine never crosses threads, and adjacent boundary
-products are stitched into the serial-correlation sum at merge time.
-`-j auto` resolves to `sysconf(_SC_NPROCESSORS_ONLN)` (GetSystemInfo
-on Windows).
-
-`make bench-quick` is a sub-minute smoke variant (64 MiB, 3 trials,
-`-j 1` and `-j nproc` only).  Override `SIZE_MB`, `RUNS`, `WARMUP`,
-`JOBS`, `MODES`, `DATASETS`, `ENT` on the make command line; see
-[`tests/bench.sh`](tests/bench.sh).
 
 ## See also
 

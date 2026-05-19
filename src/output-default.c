@@ -205,4 +205,25 @@ void fastent_print_default(
     dnum_(fp ? "%.17g" : "%f", r->lz_deviation);
     printf(" (%" PRIu64 " matches).\n", (u64) r->lz_nmatch);
   }
+
+  if (r->bm_deviation != r->bm_deviation) {
+    printf("Linear complexity: pass -eee to compute it.\n");
+  } else {
+    printf("\nLinear complexity mean L is ");
+    dnum_(fp ? "%.17g" : "%f", r->bm_mean_lc);
+    printf(" (mu ");
+    dnum_(fp ? "%.17g" : "%f", r->bm_mu);
+    printf(", %" PRIu64 " windows).\n", (u64) r->bm_windows);
+    if (r->bm_degenerate)
+      printf("Linear complexity note: near-constant stream "
+             "(mean L below 2).\n");
+    printf("Linear complexity class chi square (df=5) is ");
+    dnum_(fp ? "%.17g" : "%1.2f", r->bm_chi);
+    printf(" (p ");
+    dnum_(fp ? "%.17g" : "%f", r->bm_chi_p);
+    printf(", advisory).\n");
+    printf("Linear complexity deviation z is ");
+    dnum_(fp ? "%.17g" : "%f", r->bm_deviation);
+    printf(".\n");
+  }
 }

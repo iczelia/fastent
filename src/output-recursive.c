@@ -56,7 +56,9 @@ void fastent_print_recursive_csv(
   if (o->extended >= 3)
     fputs(",lz_cr_excess,lz_lit_h,lz_lit_kl,lz_match_cov,lz_off_conc,"
           "lz_mlen_excess,lz_lit_chi,lz_lit_chi_p,lz_deviation,"
-          "lz_matches,lz_megamatch", stdout);
+          "lz_matches,lz_megamatch,"
+          "bm_mean_lc,bm_mu,bm_chi,bm_chi_p,bm_deviation,"
+          "bm_windows,bm_degenerate", stdout);
   putchar('\n');
   for (sz i = 0; i < n; i++) {
     const fastent_recursive_row * r = &rows[i];
@@ -113,6 +115,13 @@ void fastent_print_recursive_csv(
       putchar(','); cnum_(f, r->result.lz_deviation);
       printf(",%" PRIu64 ",%d",
              (u64) r->result.lz_nmatch, r->result.lz_megamatch);
+      putchar(','); cnum_(f, r->result.bm_mean_lc);
+      putchar(','); cnum_(f, r->result.bm_mu);
+      putchar(','); cnum_(f, r->result.bm_chi);
+      putchar(','); cnum_(f, r->result.bm_chi_p);
+      putchar(','); cnum_(f, r->result.bm_deviation);
+      printf(",%" PRIu64 ",%d",
+             (u64) r->result.bm_windows, r->result.bm_degenerate);
     }
     putchar('\n');
   }
@@ -257,6 +266,26 @@ void fastent_print_recursive_json(
         printf(", \"matches\": %" PRIu64, (u64) r->result.lz_nmatch);
         printf(", \"single_dominant_match\": %s",
                r->result.lz_megamatch ? "true" : "false");
+        fputs(" }", stdout);
+      }
+      fputs(", \"linear_complexity\": ", stdout);
+      if (r->result.bm_deviation != r->result.bm_deviation) {
+        fputs("null", stdout);
+      } else {
+        fputs("{ \"mean_lc\": ", stdout);
+        json_num_(f, r->result.bm_mean_lc);
+        fputs(", \"mu\": ", stdout);
+        json_num_(f, r->result.bm_mu);
+        fputs(", \"class_chi_square\": { \"statistic\": ", stdout);
+        json_num_(f, r->result.bm_chi);
+        fputs(", \"df\": 5, \"p_exceed\": ", stdout);
+        json_num_(f, r->result.bm_chi_p);
+        fputs(" }", stdout);
+        fputs(", \"deviation\": ", stdout);
+        json_num_(f, r->result.bm_deviation);
+        printf(", \"windows\": %" PRIu64, (u64) r->result.bm_windows);
+        printf(", \"near_constant\": %s",
+               r->result.bm_degenerate ? "true" : "false");
         fputs(" }", stdout);
       }
     }

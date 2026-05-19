@@ -126,6 +126,23 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
              r->lz_megamatch ? "true" : "false");
       printf("\n  }");
     }
+    printf(",\n  \"linear_complexity\": ");
+    if (r->bm_deviation != r->bm_deviation) {
+      fputs("null", stdout);
+    } else {
+      printf("{\n    \"mean_lc\": ");          jnum_(fmt_fp, r->bm_mean_lc);
+      printf(",\n    \"mu\": ");               jnum_(fmt_fp, r->bm_mu);
+      printf(",\n    \"class_chi_square\": { \"statistic\": ");
+      jnum_(fmt_fp, r->bm_chi);
+      printf(", \"df\": 5, \"p_exceed\": ");
+      jnum_(fmt_fp, r->bm_chi_p);
+      printf(" }");
+      printf(",\n    \"deviation\": ");        jnum_(fmt_fp, r->bm_deviation);
+      printf(",\n    \"windows\": %" PRIu64, (u64) r->bm_windows);
+      printf(",\n    \"near_constant\": %s",
+             r->bm_degenerate ? "true" : "false");
+      printf("\n  }");
+    }
   }
   if (o->counts) {
     printf(",\n  \"occurrences\": [\n");

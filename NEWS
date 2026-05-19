@@ -7,8 +7,38 @@ complete source-level history, see the ChangeLog.
 -------------------------------------------------------------------------------
 v1.3 (May 2026)
 
-  LZ77F estimator (-eee)
-  ----------------------
+  Linear-complexity estimator
+  ---------------------------
+
+  -eee now computes a windowed linear-complexity estimator together
+  with order-0, order-1 bigram and LZ77F.  Each whole 512-bit
+  (64-byte) window of the stream is reduced by GF(2) Berlekamp-Massey
+  to its linear complexity L, the length of the shortest LFSR that
+  generates it.  It reports the mean L (bm_mean_lc), the
+  random-sequence expectation mu (bm_mu), a headline bm_deviation z =
+  |bm_mean_lc - bm_mu| / sqrt(VarL/W) badged PASS / WEAK / FAIL, and
+  an advisory NIST SP800-22 linear-complexity class chi-square
+  (bm_chi, 5 degrees of freedom, the two extreme tail classes
+  pooled).  A near-constant stream (mean L below 2) is flagged.
+
+  Bits are read most-significant first per byte (the -b convention).
+  64 divides the 4 MiB absolute-offset block grid, so a window never
+  straddles a block: the result is bit-identical for any thread
+  count, I/O mode and host with zero drift (stronger than LZ77F's
+  fresh-per-block hash table).
+
+  It is reported in the default, terse CSV, JSON, recursive and
+  annotated output, sortable via --sort-by=bm-deviation or
+  bm-mean-lc (which imply -eee), and with -eee -H an L histogram
+  follows the LZ77F plots.
+
+  Scope: GF(2) Berlekamp-Massey catches LFSR-class and low-bit
+  linear recurrences (a maximal 16-bit LFSR scores L near 16, far
+  below mu = 256) but not a truncated-high-byte LCG, whose output
+  bits carry no short GF(2) recurrence.
+
+  LZ77F estimator
+  ---------------
 
   -e / --extended takes a third level.  Passing it three times
   (-eee, or --extended thrice) runs the LZ77F estimator: a

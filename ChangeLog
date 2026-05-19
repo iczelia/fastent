@@ -1,6 +1,31 @@
-2026-05-18  Kamila Szewczyk  <k@iczelia.net>
+2026-05-19  Kamila Szewczyk  <k@iczelia.net>
 
-	v1.3:  LZ77F estimator (-eee, extended level 3).
+	v1.3:  windowed linear-complexity estimator (-eee, alongside
+	LZ77F).
+
+	A windowed GF(2) Berlekamp-Massey scorer (src/kernel/bm.c)
+	reduces each whole 512-bit window to its linear complexity L;
+	the finalizer derives:
+	  - bm_mean_lc: mean per-window L; bm_mu: the NIST SP800-22
+	    random-sequence expectation (libm-free).
+	  - bm_deviation: headline z = |bm_mean_lc - bm_mu| /
+	    sqrt(VarL/W), badged PASS / WEAK / FAIL.
+	  - bm_chi / bm_chi_p: advisory NIST linear-complexity class
+	    chi-square (6 bins, df 5), kept separate from the headline.
+	  - bm_degenerate: near-constant stream (mean L below 2),
+	    flagged like the LZ77F single-dominant-match note.
+	Windows are 64 bytes and 64 divides the 4 MiB block grid, so a
+	window never straddles a block: the integer sum-merge is
+	bit-identical for any thread count, I/O mode and host with zero
+	drift.  Pure integer GF(2) recurrence; FP only at finalize.
+
+	Surfaced in the default, terse CSV, JSON, recursive and
+	annotated output and the -H histogram; sortable via
+	--sort-by=bm-deviation / bm-mean-lc (which imply -eee).
+
+	Scope: GF(2) Berlekamp-Massey catches LFSR-class and low-bit
+	linear recurrences (a maximal 16-bit LFSR scores L near 16) but
+	not a truncated-high-byte LCG.
 
 	A count-only LZ77F (acceleration 1, HLOG 13) match finder: it
 	never emits a byte and keeps no output buffer.  It produces the

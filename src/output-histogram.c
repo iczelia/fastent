@@ -322,6 +322,39 @@ static void hist_lit256_(
   printf(")\n\n");
 }
 
+/*  Linear-complexity L_i histogram: 64 bins over [0, M], one column
+    per bin (<= 79 cols).  Same 8-row glyph grid as the byte plot; no
+    downsample needed (64 fits any sane terminal).  */
+static void hist_lc_(const fastent_result * r, const fastent_options * o) {
+  printf("Linear complexity L per %d-bit window (mean L=%.6g, mu=%.6g)\n",
+         512, r->bm_mean_lc, r->bm_mu);
+  u64 g[64];
+  Fi(64, g[i] = r->bm_lhist[i])
+  u64 max = 0;
+  Fi(64, if (g[i] > max) max = g[i])
+  if (max == 0) { printf("(no full windows)\n\n");  return; }
+  const int use_color = color_active_(o->color);
+  i32 gw = hist_bars_(g, 64, max, o->histogram_log, use_color, NULL, NULL);
+  i32 tick_every = 64 / 8;
+  Fi(gw + 1, putchar(' '))
+  putchar('+');
+  Fi(64, putchar((i % tick_every == 0) ? '|' : '-'))
+  putchar('\n');
+  Fi(gw + 2, putchar(' '))
+  for (i32 c = 0; c < 64; c += tick_every) {
+    char buf[8];
+    i32 v = (i32)((u64) c * (512u + 1u) / 64u);
+    i32 ln = snprintf(buf, sizeof(buf), "%d", v);
+    if (ln > tick_every) ln = tick_every;
+    if (c + tick_every >= 64) printf("%.*s", ln, buf);
+    else                      printf("%-*.*s", tick_every, ln, buf);
+  }
+  putchar('\n');
+  printf("(L bucket");
+  if (o->histogram_log) printf(", log y");
+  printf(")\n\n");
+}
+
 void fastent_print_histogram(
     const fastent_result * r, const fastent_options * o) {
   hist_byte_(r, o);
@@ -339,4 +372,6 @@ void fastent_print_histogram(
              "LZ77F literal byte values (H_lit=%.4g bits)", r->lz_lit_h);
     hist_lit256_(t, r->lz->lit_byte, o);
   }
+  if (o->extended >= 3 && r->bm_deviation == r->bm_deviation)
+    hist_lc_(r, o);
 }
