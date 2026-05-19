@@ -67,7 +67,8 @@ endif
 if HAVE_SSE41
 noinst_LIBRARIES           += libfastent_sse41.a
 libfastent_sse41_a_SOURCES  = src/kernel/analyze-sse41.c \
-                              src/kernel/fips1402-sse41.c
+                              src/kernel/fips1402-sse41.c \
+                              src/kernel/bm-sse.c
 libfastent_sse41_a_CFLAGS   = $(AM_CFLAGS) $(SSE41_CFLAGS)
 fastent_LDADD              += libfastent_sse41.a
 endif
@@ -84,7 +85,8 @@ endif
 if HAVE_AVX512
 noinst_LIBRARIES            += libfastent_avx512.a
 libfastent_avx512_a_SOURCES  = src/kernel/analyze-avx512.c \
-                               src/kernel/fips1402-avx512.c
+                               src/kernel/fips1402-avx512.c \
+                               src/kernel/bm-avx512.c
 libfastent_avx512_a_CFLAGS   = $(AM_CFLAGS) $(AVX512_CFLAGS)
 fastent_LDADD               += libfastent_avx512.a
 endif
@@ -109,7 +111,8 @@ endif
 if HAVE_NEON
 noinst_LIBRARIES           += libfastent_neon.a
 libfastent_neon_a_SOURCES   = src/kernel/analyze-neon.c \
-                              src/kernel/fips1402-neon.c
+                              src/kernel/fips1402-neon.c \
+                              src/kernel/bm-neon.c
 libfastent_neon_a_CFLAGS    = $(AM_CFLAGS) $(NEON_CFLAGS)
 fastent_LDADD              += libfastent_neon.a
 endif
@@ -117,7 +120,8 @@ endif
 if HAVE_SVE2
 noinst_LIBRARIES           += libfastent_sve2.a
 libfastent_sve2_a_SOURCES   = src/kernel/analyze-sve2.c \
-                              src/kernel/fips1402-sve2.c
+                              src/kernel/fips1402-sve2.c \
+                              src/kernel/bm-sve.c
 libfastent_sve2_a_CFLAGS    = $(AM_CFLAGS) $(SVE2_CFLAGS)
 fastent_LDADD              += libfastent_sve2.a
 endif

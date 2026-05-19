@@ -31,7 +31,7 @@ CORE = \
   src\kernel\analyze.c src\kernel\analyze-scalar.c \
   src\kernel\analyze-ssse3.c src\kernel\analyze-sse41.c \
   src\kernel\digram.c src\kernel\chisq.c src\kernel\lzest.c \
-  src\kernel\bm.c src\kernel\maurer.c \
+  src\kernel\bm.c src\kernel\bm-sse.c src\kernel\maurer.c \
   src\kernel\fips1402.c \
   src\kernel\fips1402-scalar.c src\kernel\fips1402-ssse3.c \
   src\kernel\fips1402-sse41.c \
@@ -58,11 +58,12 @@ fastent.exe: $(CORE)
 	      src\kernel\fips1402-avx2.c src\kernel\bm-avx2.c
 	$(CC) $(CFLAGS) /arch:AVX512 /c src\kernel\analyze-avx512.c \
 	      src\kernel\analyze-avx512-bitalg.c \
-	      src\kernel\fips1402-avx512.c src\kernel\fips1402-avx512-bitalg.c
+	      src\kernel\fips1402-avx512.c src\kernel\fips1402-avx512-bitalg.c \
+	      src\kernel\bm-avx512.c
 	$(CC) $(CFLAGS) /Fe:fastent.exe $(CORE) \
 	      analyze-avx2.obj fips1402-avx2.obj bm-avx2.obj \
 	      analyze-avx512.obj analyze-avx512-bitalg.obj \
-	      fips1402-avx512.obj fips1402-avx512-bitalg.obj \
+	      fips1402-avx512.obj fips1402-avx512-bitalg.obj bm-avx512.obj \
 	      $(LDFLAGS)
 
 clean:

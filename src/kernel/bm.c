@@ -12,7 +12,9 @@
 #include "analyze.h"
 #include "fastent-math.h"
 #include "chisq.h"
-#ifdef HAVE_AVX2
+#if defined(HAVE_SSE41) || defined(HAVE_AVX2) || defined(HAVE_AVX512) \
+ || defined(HAVE_NEON) || defined(HAVE_SVE2)
+#define FASTENT_BM_HAVE_VEC 1
 #include "port-cpu.h"
 #endif
 
@@ -141,24 +143,53 @@ static inline void fastent_bm_account(fastent_bm_acc * a, u32 L) {
   a->tbin[cls]++;
 }
 
+typedef sz (*fastent_bm_scorer)(const u8 *, sz, u32 *);
+
+/*  Pick the widest batched scorer this host can run, widest first,
+    scalar (NULL) last.  Mirrors the analyse/fips dispatch order; the
+    per-window L is bit-identical by construction so any path is the
+    scalar reference's answer.  Picked once per parse_block.  */
+static fastent_bm_scorer fastent_bm_pick(void) {
+#ifdef FASTENT_BM_HAVE_VEC
+  const fastent_cpu_features * c = fastent_cpu_get();
+#ifdef HAVE_AVX512
+  if (c->avx512f && c->avx512bw) return fastent_bm_windows_avx512;
+#endif
+#ifdef HAVE_AVX2
+  if (c->avx2) return fastent_bm_windows_avx2;
+#endif
+#ifdef HAVE_SSE41
+  if (c->sse42) return fastent_bm_windows_sse;
+#endif
+#ifdef HAVE_SVE2
+  if (c->sve2) return fastent_bm_windows_sve;
+#endif
+#ifdef HAVE_NEON
+  if (c->neon) return fastent_bm_windows_neon;
+#endif
+#endif
+  return NULL;
+}
+
 /*  n/64 whole windows; the remainder is the stream's tail window.
-    AVX2 scores 4 windows at a time (same per-window L); the 0..3
-    tail and non-AVX2 hosts use the scalar reference.  */
+    The batched scorer takes a lane group at a time (same per-window
+    L); its sub-lane-width tail and non-vector hosts use the scalar
+    reference.  */
 static void fastent_bm_parse_block(fastent_bm_acc * a, const u8 * src, sz n) {
   sz nw = n / FASTENT_BM_WB;
   sz i = 0;
-#ifdef HAVE_AVX2
-  if (nw >= 4 && fastent_cpu_get()->avx2) {
+  fastent_bm_scorer score = fastent_bm_pick();
+  if (score && nw >= 2) {
     u32 Lb[FASTENT_BM_BATCH];
-    while (i + 4 <= nw) {
+    while (nw - i >= 2) {
       sz want = nw - i;
       if (want > FASTENT_BM_BATCH) want = FASTENT_BM_BATCH;
-      sz did = fastent_bm_windows_avx2(src + i * FASTENT_BM_WB, want, Lb);
+      sz did = score(src + i * FASTENT_BM_WB, want, Lb);
+      if (did == 0) break;
       for (sz k = 0; k < did; k++) fastent_bm_account(a, Lb[k]);
       i += did;
     }
   }
-#endif
   for (; i < nw; i++) {
     u64 s[FASTENT_BM_W64];
     fastent_bm_pack(src + i * FASTENT_BM_WB, FASTENT_BM_WB, s);

@@ -20,7 +20,8 @@ typedef char fastent_bm_grid_assert_[
 /*  L histogram: 64 bins over [0, M], inline in fastent_result.  */
 #define FASTENT_BM_LBINS 64
 
-/*  Window batch slab for the AVX2 scorer (multiple of 4).  */
+/*  Window batch slab for the vector scorers (multiple of 8 so it is a
+    whole multiple of every lane count: 2/4/8 and any SVE VL/64).  */
 #define FASTENT_BM_BATCH 4096
 
 /*  Per-thread accumulator: buffers one absolute grid block, scores
@@ -54,10 +55,24 @@ void fastent_bm_acc_merge(fastent_bm_acc * dst, const fastent_bm_acc * src);
 void fastent_bm_acc_free(fastent_bm_acc * a);
 void fastent_bm_acc_reset(fastent_bm_acc * a, u64 abs_base);
 
+/*  Batched scorers: each scores its lane count of windows per pass
+    with the same per-window L as the scalar reference, and returns
+    the count scored (the largest whole multiple of its lane width
+    <= nfull).  The caller scores the < lane-width tail scalar.  */
+#ifdef HAVE_SSE41
+sz fastent_bm_windows_sse(const u8 * src, sz nfull, u32 * Lout);
+#endif
 #ifdef HAVE_AVX2
-/*  AVX2 batched scorer: 4 windows per pass, same per-window L as the
-    scalar reference.  Returns the count scored (multiple of 4).  */
 sz fastent_bm_windows_avx2(const u8 * src, sz nfull, u32 * Lout);
+#endif
+#ifdef HAVE_AVX512
+sz fastent_bm_windows_avx512(const u8 * src, sz nfull, u32 * Lout);
+#endif
+#ifdef HAVE_NEON
+sz fastent_bm_windows_neon(const u8 * src, sz nfull, u32 * Lout);
+#endif
+#ifdef HAVE_SVE2
+sz fastent_bm_windows_sve(const u8 * src, sz nfull, u32 * Lout);
 #endif
 
 struct fastent_result;  /*  fwd: analyze.h includes this header  */
