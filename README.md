@@ -31,8 +31,11 @@ bigram measures miss) together with a windowed linear-complexity
 estimator: per 512-bit window GF(2) Berlekamp-Massey reduces the
 window to its shortest-LFSR length L, whose mean is compared to the
 random-sequence expectation `bm_mu` via a headline `bm_deviation` z,
-catching LFSR-class and low-bit linear recurrences.  Byte mode by
-default;
+catching LFSR-class and low-bit linear recurrences.  The same level
+also runs a windowed Maurer universal statistical test (fixed
+`L = 8`), a global compressibility statistic whose headline
+`maurer_deviation` z catches repetitive or compressible sources
+the other screens miss.  Byte mode by default;
 bit mode under `-b`.  Output formats: human-readable, CSV (`-t`), JSON
 (`-J`), and an interpretive pass/fail report (`-a`/`--annotate`); add a
 per-value
@@ -78,6 +81,17 @@ with `-H`.
   advisory NIST class chi-square. `-eee -H` adds an L
   histogram.  Catches LFSR-class and low-bit linear recurrences,
   not a truncated-high-byte LCG.
+- Maurer universal test (`-eee`, alongside LZ77F and linear
+  complexity): a count-only Maurer scorer on the MSB-first bit
+  stream with fixed `L = 8`; the mean log2 recurrence distance
+  `maurer_fn` versus the NIST SP800-22 `maurer_expected` gives a
+  headline `maurer_deviation` z badged PASS / WEAK / FAIL.  Fresh
+  recency table per 4 MiB grid block, partials combined in absolute
+  block order (bit-identical for any `-j` / I/O / host; drift versus
+  whole-stream Maurer at most about 0.001%).  Sortable via
+  `--sort-by=maurer-deviation`; `-eee -H` adds a log2-distance
+  plot.  Catches repetitive / compressible sources the other
+  screens miss; a global compressibility statistic, not a locator.
 - recursive mode (`-r DIR`): one CSV / JSON row per file, sortable via
   `--sort-by` (path, entropy, chisq, the extended columns, ...)
 - terminal histogram (`-H`) with Unicode block glyphs, a Y-axis
