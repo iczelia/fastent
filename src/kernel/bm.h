@@ -49,6 +49,7 @@ int  fastent_bm_acc_feed(fastent_bm_acc * a, const u8 * buf, sz len);
 int  fastent_bm_acc_flush(fastent_bm_acc * a);
 void fastent_bm_acc_merge(fastent_bm_acc * dst, const fastent_bm_acc * src);
 void fastent_bm_acc_free(fastent_bm_acc * a);
+void fastent_bm_acc_reset(fastent_bm_acc * a, u64 abs_base);
 
 struct fastent_result;  /*  fwd: analyze.h includes this header  */
 

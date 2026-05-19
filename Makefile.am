@@ -18,7 +18,7 @@ noinst_HEADERS = src/kernel/analyze.h src/kernel/analyze-impl.h \
                  src/kernel/fastent-math.h src/kernel/log2_tables.h \
                  src/kernel/fips1402.h src/kernel/fips1402-impl.h \
                  src/common.h src/fastent-options.h src/output.h \
-                 src/cli.h src/runner.h src/yarg.h \
+                 src/cli.h src/runner.h src/runner-grid.h src/yarg.h \
                  src/platform/fastent-win32.h \
                  src/platform/port-cpu.h src/platform/port-io.h \
                  src/platform/port-term.h src/platform/port-os.h \

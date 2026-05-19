@@ -60,6 +60,7 @@ int  fastent_lz_acc_feed(fastent_lz_acc * a, const u8 * buf, sz len);
 int  fastent_lz_acc_flush(fastent_lz_acc * a);
 void fastent_lz_acc_merge(fastent_lz_acc * dst, const fastent_lz_acc * src);
 void fastent_lz_acc_free(fastent_lz_acc * a);
+void fastent_lz_acc_reset(fastent_lz_acc * a, u64 abs_base);
 
 struct fastent_result;  /*  fwd: analyze.h includes this header  */
 

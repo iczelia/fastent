@@ -57,19 +57,26 @@ static void fastent_maurer_block(
   memset(T, 0, (sz) FASTENT_MA_TSZ * sizeof(u32));
   volatile f64 sum = 0.0;
 
+  const f64 * lt = a->logt;
   for (u64 i = 1; i <= nblk; i++) {
+    u32 pat;
+#if FASTENT_MA_L == 8
+    /*  L = 8: the block is exactly one byte, no bit assembly.  */
+    pat = src[i - 1u];
+#else
     u64 bp = (i - 1u) * FASTENT_MA_L;
-    u32 pat = 0;
+    pat = 0;
     for (u32 b = 0; b < FASTENT_MA_L; b++) {
       u64 q = bp + b;
       pat = (pat << 1) | ((src[q >> 3] >> (7u - (q & 7u))) & 1u);
     }
+#endif
     if (i <= (u64) FASTENT_MA_Q) {
       T[pat] = (u32) i;
     } else {
       u64 d = i - (u64) T[pat];
       T[pat] = (u32) i;
-      f64 l2 = fastent_log2_ratio(d, 1);
+      f64 l2 = d < FASTENT_MA_LOGT ? lt[d] : fastent_log2_ratio(d, 1);
       sum = sum + l2;
       u32 bin = (u32) l2;
       if (bin >= FASTENT_MA_LBINS) bin = FASTENT_MA_LBINS - 1u;
@@ -100,6 +107,11 @@ static int fastent_maurer_ensure(fastent_maurer_acc * a) {
     a->blk = (u8 *) malloc((sz) FASTENT_LZ_GRID);
     if (!a->blk) { a->oom = 1;  return -1; }
   }
+  if (!a->logt) {
+    a->logt = (f64 *) malloc((sz) FASTENT_MA_LOGT * sizeof(f64));
+    if (!a->logt) { a->oom = 1;  return -1; }
+    Fi0(FASTENT_MA_LOGT, 1, a->logt[i] = fastent_log2_ratio((u64) i, 1))
+  }
   return 0;
 }
 
@@ -108,6 +120,20 @@ void fastent_maurer_acc_init(fastent_maurer_acc * a, u64 abs_base) {
   a->abs_base = abs_base;
   a->abs_pos  = abs_base;
   a->blk_off  = abs_base;
+}
+
+/*  Rebase for the next absolute grid block while keeping the heap
+    scratch (T table, log2 memo, block buffer) so a worker that scores
+    many blocks fills the memo once.  Clears only per-block state; the
+    result is identical to free + init.  */
+void fastent_maurer_acc_reset(fastent_maurer_acc * a, u64 abs_base) {
+  a->nparts  = 0;
+  a->blk_len = 0;
+  a->oom     = 0;
+  a->abs_base = abs_base;
+  a->abs_pos  = abs_base;
+  a->blk_off  = abs_base;
+  Fi(FASTENT_MA_LBINS, a->lhist[i] = 0)
 }
 
 int fastent_maurer_acc_feed(fastent_maurer_acc * a, const u8 * buf, sz len) {
@@ -166,6 +192,7 @@ void fastent_maurer_acc_merge(
 
 void fastent_maurer_acc_free(fastent_maurer_acc * a) {
   free(a->tbl);    a->tbl   = NULL;
+  free(a->logt);   a->logt  = NULL;
   free(a->blk);    a->blk   = NULL;
   free(a->parts);  a->parts = NULL;
   a->nparts = a->cap = 0;
@@ -182,7 +209,7 @@ static int fastent_maurer_part_cmp(const void * x, const void * y) {
 #define FASTENT_MA_VARIANCE 3.238
 
 void fastent_maurer_finalize(
-    const fastent_maurer_acc * a, u64 n, struct fastent_result * out) {
+    fastent_maurer_acc * a, u64 n, struct fastent_result * out) {
   (void) n;
   out->maurer_fn       = 0.0;
   out->maurer_expected = FASTENT_MA_EXPECTED;
@@ -194,16 +221,13 @@ void fastent_maurer_finalize(
 
   if (a->nparts == 0) return;
 
-  fastent_maurer_part * ps = (fastent_maurer_part *)
-    malloc(a->nparts * sizeof(*ps));
-  if (!ps) return;
-  memcpy(ps, a->parts, a->nparts * sizeof(*ps));
-  qsort(ps, a->nparts, sizeof(*ps), fastent_maurer_part_cmp);
+  /*  Sort the per-block partials in place by absolute block index;
+      no copy, so there is no allocation that could false-PASS.  */
+  qsort(a->parts, a->nparts, sizeof(*a->parts), fastent_maurer_part_cmp);
 
   volatile f64 tsum = 0.0;
   u64 tk = 0;
-  Fi((int) a->nparts, tsum = tsum + ps[i].sum;  tk += ps[i].k)
-  free(ps);
+  Fi((int) a->nparts, tsum = tsum + a->parts[i].sum;  tk += a->parts[i].k)
 
   out->maurer_k = tk;
   if (tk == 0) return;

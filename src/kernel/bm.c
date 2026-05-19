@@ -172,6 +172,13 @@ void fastent_bm_acc_init(fastent_bm_acc * a, u64 abs_base) {
   a->blk_off  = abs_base;
 }
 
+/*  Re-init for the next grid block, keeping the lazily-grown buffer. */
+void fastent_bm_acc_reset(fastent_bm_acc * a, u64 abs_base) {
+  u8 * blk = a->blk;
+  fastent_bm_acc_init(a, abs_base);
+  a->blk = blk;
+}
+
 int fastent_bm_acc_feed(fastent_bm_acc * a, const u8 * buf, sz len) {
   if (len == 0) return 0;
   if (fastent_bm_ensure(a) != 0) return -1;

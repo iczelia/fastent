@@ -154,6 +154,14 @@ void fastent_lz_acc_init(fastent_lz_acc * a, u64 abs_base) {
   a->blk_off  = abs_base;
 }
 
+/*  Re-init for the next grid block, retaining the lazily-grown
+    buffer and hash table so the worker does not re-malloc them.  */
+void fastent_lz_acc_reset(fastent_lz_acc * a, u64 abs_base) {
+  u8 * blk = a->blk;  u32 * tbl = a->tbl;
+  fastent_lz_acc_init(a, abs_base);
+  a->blk = blk;  a->tbl = tbl;
+}
+
 /*  Buffer len bytes (from absolute a->abs_pos) into the current grid
     block, parsing and resetting at each absolute 4 MiB grid line.  */
 int fastent_lz_acc_feed(fastent_lz_acc * a, const u8 * buf, sz len) {
