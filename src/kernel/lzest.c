@@ -332,10 +332,6 @@ void fastent_lz_finalize(
     out->lz_deviation = dev / sg;
   }
 
-  /*  Every step above is a single rounded op (no fused a*b+-c, libm-
-      free), so the result is bit-identical across hosts without a
-      volatile product barrier.  */
-
   if (out->lz) {
     memcpy(out->lz->off_par,   a->off_par,   sizeof(out->lz->off_par));
     memcpy(out->lz->mlen_full, a->mlen_full, sizeof(out->lz->mlen_full));

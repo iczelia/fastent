@@ -167,42 +167,114 @@ static i32 log2_bucket_(u64 x) {
   return b;
 }
 
-/*  One -eee log2 plot: collapse src[lo..hi] into floor(log2(index))
-    buckets, render via the shared grid, [2^k,2^(k+1)) axis.  */
-static void hist_log2_(
-    const char * title, const u64 * src, i32 lo, i32 hi,
-    const fastent_options * o) {
+/*  Collapse src[lo..hi] into floor(log2(index)) buckets; fills bkt[]
+    and *tot, returns the bucket count.  */
+static i32 log2_collect_(
+    const u64 * src, i32 lo, i32 hi, u64 * bkt, u64 * tot) {
   i32 nb = log2_bucket_((u64) hi) + 1;
   if (nb < 1) nb = 1;
   if (nb > 24) nb = 24;
-  u64 bkt[24];
   Fi(nb, bkt[i] = 0)
-  u64 tot = 0;
+  u64 t = 0;
   Fi0(hi + 1, lo,
       const u64 c = src[i];
       if (!c) continue;
       i32 b = log2_bucket_((u64) i);
       if (b >= nb) b = nb - 1;
-      bkt[b] += c;  tot += c)
+      bkt[b] += c;  t += c)
+  *tot = t;
+  return nb;
+}
 
-  printf("%s\n", title);
-  if (tot == 0) { printf("(no samples)\n\n");  return; }
+/*  Print one 8-row glyph plot's row `rr` (0 = top), gutter width gw,
+    no trailing newline, no colour.  Same bar math as hist_bars_.  */
+static void log2_row_(
+    const u64 * bkt, i32 nb, u64 max, int hlog,
+    const char * const * blk, i32 sub, i32 gw, i32 rr) {
+  const i32 height = 8, levels = height * sub;
+  const f64 ld = hlog ? log((f64) max + 1.0) : 0.0;
+  const i32 row_bot = (height - 1 - rr) * sub, row_top = row_bot + sub;
+  const f64 yf = (f64)(height - rr) / (f64) height;
+  const u64 yv = hlog ? (u64)(exp(yf * ld) - 1.0 + 0.5)
+                      : (u64)(yf * (f64) max + 0.5);
+  printf("%*" PRIu64 " |", gw, yv);
+  Fi(nb,
+     f64 frac = hlog ? (bkt[i] == 0 ? 0.0
+                        : log((f64) bkt[i] + 1.0) / ld)
+                     : (f64) bkt[i] / (f64) max;
+     i32 hh = (i32)(frac * (f64) levels + 0.5);
+     if (hh > levels) hh = levels;
+     fputs(hh >= row_top ? blk[sub]
+         : hh <= row_bot ? blk[0] : blk[hh - row_bot], stdout))
+}
 
-  u64 max = 0;
-  Fi(nb, if (bkt[i] > max) max = bkt[i])
-  const int use_color = color_active_(o->color);
-  i32 gw = hist_bars_(bkt, nb, max, o->histogram_log, use_color, NULL, NULL);
+/*  The two -eee log2 plots SIDE BY SIDE: offsets left, match lengths
+    right.  X-axis labels run vertically (one digit per row, MSD on
+    top) so each 2^k label is a single column under its tick.  */
+static void hist_log2_pair_(
+    const char * tA, const u64 * sA, i32 loA, i32 hiA,
+    const char * tB, const u64 * sB, i32 loB, i32 hiB,
+    const fastent_options * o) {
+  u64 bA[24], bB[24], totA, totB;
+  i32 nbA = log2_collect_(sA, loA, hiA, bA, &totA);
+  i32 nbB = log2_collect_(sB, loB, hiB, bB, &totB);
+  u64 mA = 1, mB = 1;
+  Fi(nbA, if (bA[i] > mA) mA = bA[i])
+  Fi(nbB, if (bB[i] > mB) mB = bB[i])
+  char g[24];
+  i32 gwA = snprintf(g, sizeof g, "%" PRIu64, mA);  if (gwA < 1) gwA = 1;
+  i32 gwB = snprintf(g, sizeof g, "%" PRIu64, mB);  if (gwB < 1) gwB = 1;
+  i32 sub;
+  const char * const * blk = hist_glyphs_(&sub);
+  const int hlog = o->histogram_log;
+  const i32 wA = gwA + 2 + nbA;            /*  width of one A piece  */
+  i32 tAlen = 0;  while (tA[tAlen]) tAlen++;
+  const i32 bw = wA > tAlen ? wA : tAlen;  /*  A column block width  */
+  const i32 padA = bw - wA;
+  const char * SEP = "   ";
+  char fb[48];
+  snprintf(fb, sizeof fb, "(log2 buckets [2^k, 2^k+1)%s)",
+           hlog ? ", log y" : "");
 
-  Fi(gw + 1, putchar(' '))
-  putchar('+');
-  Fi(nb, putchar('|'))
+  printf("%s", tA);  Fi(bw - tAlen, putchar(' '));
+  fputs(SEP, stdout);  printf("%s\n", tB);
+  Fi(8,
+     log2_row_(bA, nbA, mA, hlog, blk, sub, gwA, i);
+     Fj(padA, putchar(' '));  fputs(SEP, stdout);
+     log2_row_(bB, nbB, mB, hlog, blk, sub, gwB, i);
+     putchar('\n'))
+
+  Fi(gwA + 1, putchar(' '))  putchar('+');  Fi(nbA, putchar('|'))
+  Fj(padA, putchar(' '));  fputs(SEP, stdout);
+  Fi(gwB + 1, putchar(' '))  putchar('+');  Fi(nbB, putchar('|'))
   putchar('\n');
-  Fi(gw + 2, putchar(' '))
-  Fi(nb, printf("%d ", 1 << i))
+
+  /*  Vertical x-labels under each tick: digit of 2^k, MSD on top,
+      bottom-justified within each plot's own width.  The footer
+      rides the last (units) row of the offsets block.  */
+  i32 mlA = (i32) snprintf(g, sizeof g, "%d", 1 << (nbA - 1));
+  i32 mlB = (i32) snprintf(g, sizeof g, "%d", 1 << (nbB - 1));
+  i32 rows = mlA > mlB ? mlA : mlB;
+  Fi(rows,
+     i32 r = i;
+     Fj(gwA + 2, putchar(' '))
+     Fj(nbA,
+        char lb[16];
+        i32 ln = snprintf(lb, sizeof lb, "%d", 1 << j);
+        i32 pos = r - (mlA - ln);
+        putchar(r < mlA && pos >= 0 && pos < ln ? lb[pos] : ' '))
+     if (r < mlB) {
+       Fj(padA, putchar(' '));  fputs(SEP, stdout);
+       Fj(gwB + 2, putchar(' '))
+       Fj(nbB,
+          char lb[16];
+          i32 ln = snprintf(lb, sizeof lb, "%d", 1 << j);
+          i32 pos = r - (mlB - ln);
+          putchar(pos >= 0 && pos < ln ? lb[pos] : ' '))
+     }
+     if (r == rows - 1) printf(" %s", fb);
+     putchar('\n'))
   putchar('\n');
-  printf("(log2 buckets [2^k, 2^k+1)");
-  if (o->histogram_log) printf(", log y");
-  printf(")\n\n");
 }
 
 /*  256-bin literal byte-value plot: same downsample / colour / tick
@@ -254,15 +326,15 @@ void fastent_print_histogram(
     const fastent_result * r, const fastent_options * o) {
   hist_byte_(r, o);
 
-  /*  -eee + -H: three extra plots after the byte/bit plot (offset and
-      length log2 buckets, plus a 256-bin literal histogram titled
-      with H_lit).  Composed with -t/--json like the byte plot.  */
+  /*  -eee + -H: the offset and length log2 plots side by side, then
+      a 256-bin literal histogram titled with H_lit.  Composed with
+      -t/--json like the byte plot.  */
   if (o->extended >= 3 && r->lz) {
     char t[96];
-    hist_log2_("LZ77F match offsets (1..65535)",
-               r->lz->off_par, 1, 65535, o);
-    hist_log2_("LZ77F match lengths (4..255+)",
-               r->lz->mlen_full, 4, 255, o);
+    hist_log2_pair_("LZ77F match offsets (1..65535)",
+                    r->lz->off_par, 1, 65535,
+                    "LZ77F match lengths (4..255+)",
+                    r->lz->mlen_full, 4, 255, o);
     snprintf(t, sizeof t,
              "LZ77F literal byte values (H_lit=%.4g bits)", r->lz_lit_h);
     hist_lit256_(t, r->lz->lit_byte, o);

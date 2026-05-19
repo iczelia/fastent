@@ -15,13 +15,14 @@
   #define M_PI 3.14159265358979323846
 #endif
 
-enum { B_PASS = 0, B_WEAK = 1, B_FAIL = 2, B_NA = 3 };
+enum { B_PASS = 0, B_WEAK = 1, B_FAIL = 2, B_NA = 3, B_INFO = 4 };
 
 static const char * badge_txt_(int b) {
   switch (b) {
     case B_PASS: return "[PASS]";
     case B_WEAK: return "[WEAK]";
     case B_FAIL: return "[FAIL]";
+    case B_INFO: return "[info]";
     default:     return "[ N/A]";
   }
 }
@@ -31,6 +32,7 @@ static const char * badge_name_(int b) {
     case B_PASS: return "PASS";
     case B_WEAK: return "WEAK";
     case B_FAIL: return "FAIL";
+    case B_INFO: return "INFO";
     default:     return "N/A";
   }
 }
@@ -76,7 +78,7 @@ static void row_(
     const fastent_options * o, int color, verdict_acc * v, int core,
     const char * label, const char * aux, int badge, const char * expl) {
   printf("  %-19s%-25s ", label, aux);
-  if (color) fastent_term_set_sev(badge);
+  if (color) fastent_term_set_sev(badge == B_INFO ? B_NA : badge);
   fastent_term_write(badge_txt_(badge));
   if (color) fastent_term_set_sev(-1);
   if (expl && *expl) printf("  %s", expl);
@@ -278,12 +280,24 @@ void fastent_print_annotated(
        :               "prev highly informative");
   }
 
-  /*  LZ77F (-eee): lz_deviation is the verdict signal (z_badge_, as
-      Mean/Serial); sub-signals informational, literal chi advisory. */
+  /*  LZ77F (-eee): lz_deviation is the headline verdict; the two
+      z-component rows (S1/S3 and S2) carry their own per-component
+      badge so the headline is exactly their worst.  Off/len conc. is
+      a structure descriptor (no pass/fail), literal chi advisory.  */
   if (r->lz_deviation != r->lz_deviation) {
     row_(o, color, &v, 0, "LZ77F", "pass -eee", B_NA, "");
   } else {
     int b = z_badge_(r->lz_deviation);
+    /*  z_i = component / sigma0 ; sigma0 = cmax / lz_deviation, so
+        z_i = comp * dev / cmax (no n needed; reproduces the fuse).  */
+    f64 s1 = r->lz_cr_excess, s2 = r->lz_lit_kl / 8.0;
+    f64 s3 = r->lz_match_cov;
+    f64 cmax = s1 > s2 ? s1 : s2;  if (s3 > cmax) cmax = s3;
+    f64 dev = r->lz_deviation;
+    int ok = (dev > 0.0 && cmax > 0.0);
+    f64 s13 = s1 > s3 ? s1 : s3;
+    int bcov = ok ? z_badge_(s13 * dev / cmax) : B_PASS;
+    int blit = ok ? z_badge_(s2  * dev / cmax) : B_PASS;
     snprintf(aux, sizeof aux, o->full_precision
              ? "z=%.17g" : "z=%.4g", r->lz_deviation);
     row_(o, color, &v, 1, "LZ77F deviation", aux, b,
@@ -293,15 +307,18 @@ void fastent_print_annotated(
     snprintf(aux, sizeof aux, o->full_precision
              ? "%.17g  cov %.17g" : "%.4g  cov %.4g",
              r->lz_cr_excess, r->lz_match_cov);
-    row_(o, color, &v, 0, "  CR excess / cov", aux, B_NA, "");
+    row_(o, color, &v, 0, "  CR excess / cov", aux, bcov,
+         bcov == B_PASS ? "incompressible" : "compressible");
     snprintf(aux, sizeof aux, o->full_precision
              ? "H_lit=%.17g  KL=%.17g" : "H_lit=%.4g  KL=%.4g",
              r->lz_lit_h, r->lz_lit_kl);
-    row_(o, color, &v, 0, "  Literal skew", aux, B_NA, "");
+    row_(o, color, &v, 0, "  Literal skew", aux, blit,
+         blit == B_PASS ? "literals unbiased" : "literal byte skew");
     snprintf(aux, sizeof aux, o->full_precision
              ? "conc=%.17g  mlen+%.17g" : "conc=%.4g  mlen+%.4g",
              r->lz_off_conc, r->lz_mlen_excess);
-    row_(o, color, &v, 0, "  Off/len conc.", aux, B_NA, "");
+    row_(o, color, &v, 0, "  Off/len conc.", aux, B_INFO,
+         "structure descriptor");
     {
       int cb = p_badge_(r->lz_lit_chi_p);
       snprintf(aux, sizeof aux, o->full_precision
