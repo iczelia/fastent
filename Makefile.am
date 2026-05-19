@@ -75,7 +75,8 @@ endif
 if HAVE_AVX2
 noinst_LIBRARIES           += libfastent_avx2.a
 libfastent_avx2_a_SOURCES   = src/kernel/analyze-avx2.c \
-                              src/kernel/fips1402-avx2.c
+                              src/kernel/fips1402-avx2.c \
+                              src/kernel/bm-avx2.c
 libfastent_avx2_a_CFLAGS    = $(AM_CFLAGS) $(AVX2_CFLAGS)
 fastent_LDADD              += libfastent_avx2.a
 endif

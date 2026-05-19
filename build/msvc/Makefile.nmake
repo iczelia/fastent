@@ -55,12 +55,12 @@ all: fastent.exe
 # codegen licence for those TUs, then folded into the final link.
 fastent.exe: $(CORE)
 	$(CC) $(CFLAGS) /arch:AVX2 /c src\kernel\analyze-avx2.c \
-	      src\kernel\fips1402-avx2.c
+	      src\kernel\fips1402-avx2.c src\kernel\bm-avx2.c
 	$(CC) $(CFLAGS) /arch:AVX512 /c src\kernel\analyze-avx512.c \
 	      src\kernel\analyze-avx512-bitalg.c \
 	      src\kernel\fips1402-avx512.c src\kernel\fips1402-avx512-bitalg.c
 	$(CC) $(CFLAGS) /Fe:fastent.exe $(CORE) \
-	      analyze-avx2.obj fips1402-avx2.obj \
+	      analyze-avx2.obj fips1402-avx2.obj bm-avx2.obj \
 	      analyze-avx512.obj analyze-avx512-bitalg.obj \
 	      fips1402-avx512.obj fips1402-avx512-bitalg.obj \
 	      $(LDFLAGS)

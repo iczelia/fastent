@@ -20,6 +20,9 @@ typedef char fastent_bm_grid_assert_[
 /*  L histogram: 64 bins over [0, M], inline in fastent_result.  */
 #define FASTENT_BM_LBINS 64
 
+/*  Window batch slab for the AVX2 scorer (multiple of 4).  */
+#define FASTENT_BM_BATCH 4096
+
 /*  Per-thread accumulator: buffers one absolute grid block, scores
     each whole window with a fresh GF(2) pass, sum-merges integers.  */
 typedef struct {
@@ -50,6 +53,12 @@ int  fastent_bm_acc_flush(fastent_bm_acc * a);
 void fastent_bm_acc_merge(fastent_bm_acc * dst, const fastent_bm_acc * src);
 void fastent_bm_acc_free(fastent_bm_acc * a);
 void fastent_bm_acc_reset(fastent_bm_acc * a, u64 abs_base);
+
+#ifdef HAVE_AVX2
+/*  AVX2 batched scorer: 4 windows per pass, same per-window L as the
+    scalar reference.  Returns the count scored (multiple of 4).  */
+sz fastent_bm_windows_avx2(const u8 * src, sz nfull, u32 * Lout);
+#endif
 
 struct fastent_result;  /*  fwd: analyze.h includes this header  */
 

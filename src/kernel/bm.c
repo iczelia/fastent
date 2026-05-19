@@ -12,6 +12,9 @@
 #include "analyze.h"
 #include "fastent-math.h"
 #include "chisq.h"
+#ifdef HAVE_AVX2
+#include "port-cpu.h"
+#endif
 
 #include <math.h>
 #include <stdlib.h>
@@ -117,30 +120,49 @@ static void fastent_bm_pack(const u8 * src, u32 mb, u64 * s) {
   }
 }
 
-/*  n/64 whole windows; the remainder is the stream's tail window.  */
+/*  Fold one full window's L into the integer accumulators.  */
+static inline void fastent_bm_account(fastent_bm_acc * a, u32 L) {
+  a->windows++;
+  a->meanl_sum += L;
+  u32 bin = (u32)(((u64) L * FASTENT_BM_LBINS) / (FASTENT_BM_M + 1u));
+  if (bin >= FASTENT_BM_LBINS) bin = FASTENT_BM_LBINS - 1u;
+  a->lhist[bin]++;
+  /*  NIST T = (L - mu) + 2/9 (M even); the 7 classes pooled to 6
+      (df = 5, odd) by merging both extreme tails into bin 0.  */
+  f64 T = ((f64) L - 256.27777777777777) + 0.2222222222222222;
+  u32 cls;
+  if      (T <= -2.5) cls = 0;
+  else if (T <= -1.5) cls = 1;
+  else if (T <= -0.5) cls = 2;
+  else if (T <=  0.5) cls = 3;
+  else if (T <=  1.5) cls = 4;
+  else if (T <=  2.5) cls = 5;
+  else                cls = 0;
+  a->tbin[cls]++;
+}
+
+/*  n/64 whole windows; the remainder is the stream's tail window.
+    AVX2 scores 4 windows at a time (same per-window L); the 0..3
+    tail and non-AVX2 hosts use the scalar reference.  */
 static void fastent_bm_parse_block(fastent_bm_acc * a, const u8 * src, sz n) {
   sz nw = n / FASTENT_BM_WB;
-  for (sz i = 0; i < nw; i++) {
+  sz i = 0;
+#ifdef HAVE_AVX2
+  if (nw >= 4 && fastent_cpu_get()->avx2) {
+    u32 Lb[FASTENT_BM_BATCH];
+    while (i + 4 <= nw) {
+      sz want = nw - i;
+      if (want > FASTENT_BM_BATCH) want = FASTENT_BM_BATCH;
+      sz did = fastent_bm_windows_avx2(src + i * FASTENT_BM_WB, want, Lb);
+      for (sz k = 0; k < did; k++) fastent_bm_account(a, Lb[k]);
+      i += did;
+    }
+  }
+#endif
+  for (; i < nw; i++) {
     u64 s[FASTENT_BM_W64];
     fastent_bm_pack(src + i * FASTENT_BM_WB, FASTENT_BM_WB, s);
-    u32 L = fastent_bm_window(s, FASTENT_BM_M);
-    a->windows++;
-    a->meanl_sum += L;
-    u32 bin = (u32)(((u64) L * FASTENT_BM_LBINS) / (FASTENT_BM_M + 1u));
-    if (bin >= FASTENT_BM_LBINS) bin = FASTENT_BM_LBINS - 1u;
-    a->lhist[bin]++;
-    /*  NIST T = (L - mu) + 2/9 (M even); the 7 classes pooled to 6
-        (df = 5, odd) by merging both extreme tails into bin 0.  */
-    f64 T = ((f64) L - 256.27777777777777) + 0.2222222222222222;
-    u32 cls;
-    if      (T <= -2.5) cls = 0;
-    else if (T <= -1.5) cls = 1;
-    else if (T <= -0.5) cls = 2;
-    else if (T <=  0.5) cls = 3;
-    else if (T <=  1.5) cls = 4;
-    else if (T <=  2.5) cls = 5;
-    else                cls = 0;
-    a->tbin[cls]++;
+    fastent_bm_account(a, fastent_bm_window(s, FASTENT_BM_M));
   }
   sz rem = n - nw * FASTENT_BM_WB;
   if (rem) {
