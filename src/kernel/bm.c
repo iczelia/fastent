@@ -22,46 +22,83 @@ static inline f64 fastent_bm_sqrt(f64 x) { return sqrt(x); }
 
 #if defined(__GNUC__) && !defined(__TINYC__)
   #define FASTENT_PARITY64(x) ((u32) __builtin_parityll((u64)(x)))
+  #define FASTENT_FALLTHROUGH __attribute__((fallthrough))
 #else
   #define FASTENT_PARITY64(x) (FASTENT_POPCOUNT64((u64)(x)) & 1u)
+  #define FASTENT_FALLTHROUGH ((void) 0)
 #endif
+
+/*  rev word w at step N: bit 63-k = source bit N-64w-k, MSB-first.  */
+static inline u64 fastent_bm_revword(const u64 * s, u32 N, u32 w) {
+  i64 base = (i64) N - (i64) (w << 6);
+  u64 r = 0;
+  for (u32 k = 0; k < 64u && base - (i64) k >= 0; k++) {
+    i64 idx = base - (i64) k;
+    r |= ((s[idx >> 6] >> (63u - ((u32) idx & 63u))) & 1ull) << (63u - k);
+  }
+  return r;
+}
 
 /*  L of one m-bit window via GF(2) Berlekamp-Massey.  c and the bits
     share the MSB-first layout; rev is the window read backwards from
-    N so the discrepancy is parity(c & rev).  Returns L in [0, m].  */
+    N, so the discrepancy is parity(c & rev).  Returns L in [0, m].  */
 static u32 fastent_bm_window(const u64 * s, u32 m) {
   u64 c[FASTENT_BM_W64], b[FASTENT_BM_W64], t[FASTENT_BM_W64];
   u64 rev[FASTENT_BM_W64];
   const u32 W = FASTENT_BM_W64;
   Fi((int) W, c[i] = b[i] = rev[i] = 0)
   c[0] = b[0] = (u64) 1 << 63;
-  u32 L = 0;
+  u32 L = 0, act = 1u, bw = 0;
   i64 mm = -1;
 
   for (u32 N = 0; N < m; N++) {
-    for (u32 w = W; w-- > 1; )
-      rev[w] = (rev[w] >> 1) | (rev[w - 1] << 63);
+    /*  C has degree <= L, so only nw = L/64 + 1 words are live; rev's
+        live prefix shifts in place, a newly live word is built from s. */
+    u32 nw = (L >> 6) + 1u, old = act;
+    u64 acc = 0;
+    /*  nw is tiny (1..4); the fall-through switch drops the counter.  */
+    #define RW(w) do { rev[w] = (rev[w] >> 1) | (rev[(w) - 1] << 63); \
+                       acc ^= c[w] & rev[w]; } while (0)
+    switch (old) {
+      case 8: RW(7);  FASTENT_FALLTHROUGH;
+      case 7: RW(6);  FASTENT_FALLTHROUGH;
+      case 6: RW(5);  FASTENT_FALLTHROUGH;
+      case 5: RW(4);  FASTENT_FALLTHROUGH;
+      case 4: RW(3);  FASTENT_FALLTHROUGH;
+      case 3: RW(2);  FASTENT_FALLTHROUGH;
+      case 2: RW(1);  FASTENT_FALLTHROUGH;
+      default: break;
+    }
+    #undef RW
     rev[0] >>= 1;
     rev[0] |= ((s[N >> 6] >> (63u - (N & 63u))) & 1ull) << 63;
-
-    u64 acc = 0;
-    Fi((int) W, acc ^= c[i] & rev[i])
+    acc ^= c[0] & rev[0];
+    while (act < nw) {
+      rev[act] = fastent_bm_revword(s, N, act);
+      acc ^= c[act] & rev[act];
+      act++;
+    }
     u32 d = (u32) FASTENT_PARITY64(acc);
 
     if (d) {
       memcpy(t, c, sizeof t);
       u32 shift = (u32)((i64) N - mm);
       u32 ws = shift >> 6, bs = shift & 63u;
+      /*  Clamp the XOR span to the live words of C and shifted B.  */
+      u32 cw = L >> 6, bwe = bw + ws + 1u;
+      u32 we = (cw > bwe ? cw : bwe) + 1u;
+      if (we > W) we = W;
       if (bs == 0) {
-        for (u32 w = W; w-- > ws; ) c[w] ^= b[w - ws];
+        for (u32 w = we; w-- > ws; ) c[w] ^= b[w - ws];
       } else {
-        for (u32 w = W; w-- > ws; ) {
+        for (u32 w = we; w-- > ws; ) {
           u64 v = b[w - ws] >> bs;
           if (w - ws > 0) v |= b[w - ws - 1] << (64u - bs);
           c[w] ^= v;
         }
       }
       if (2u * L <= N) {
+        bw = L >> 6;
         L = N + 1u - L;
         mm = (i64) N;
         memcpy(b, t, sizeof t);
@@ -188,8 +225,7 @@ void fastent_bm_acc_free(fastent_bm_acc * a) {
   free(a->blk);  a->blk = NULL;
 }
 
-/*  NIST SP800-22 random-sequence L expectation; libm-free (the 2^-m
-    scale is an exact product of halves).  */
+/*  NIST SP800-22 random-sequence L expectation; libm-free.  */
 static f64 fastent_bm_mu(u32 m) {
   f64 alt = (m & 1u) ? 1.0 : -1.0;
   f64 base = (f64) m / 2.0 + (9.0 + alt) / 36.0;
@@ -214,9 +250,8 @@ void fastent_bm_finalize(
 
   u64 W = a->windows;
   if (W == 0) {
-    /*  No full window: score the partial tail vs mu(m') if m' >= 64,
-        else stay at z = 0 (the total-function value, not the NaN
-        level sentinel).  */
+    /*  No full window: score the tail vs mu(m') if m' >= 64, else
+        z = 0 (the total-function value, not the NaN sentinel).  */
     if (a->have_tail && a->tail_bits >= 64u) {
       f64 mp = fastent_bm_mu(a->tail_bits);
       out->bm_mu      = mp;
@@ -229,8 +264,7 @@ void fastent_bm_finalize(
     return;
   }
 
-  /*  Headline z = |meanL - mu| / sqrt(VarL/W); the fuse goes through
-      the volatile barrier so it is bit-identical across hosts.  */
+  /*  z = |meanL - mu| / sqrt(VarL/W); fused via the volatile barrier.  */
   f64 meanL = (f64) a->meanl_sum / (f64) W;
   out->bm_mean_lc = meanL;
   const f64 mu  = out->bm_mu;
@@ -240,12 +274,10 @@ void fastent_bm_finalize(
   f64 sigma = fastent_bm_sqrt(var / (f64) W);
   out->bm_deviation = sigma > 0.0 ? num / sigma : 0.0;
 
-  /*  meanL < 2 reads as a near-constant stream (the L -> 0 limit);
-      the z still fails it.  */
+  /*  meanL < 2: near-constant stream; the z still fails it.  */
   if (meanL < 2.0) out->bm_degenerate = 1;
 
-  /*  Advisory NIST class chi-square, df = 5; bin 0 pools the two
-      extreme tails.  Each term fused through the volatile barrier.  */
+  /*  Advisory NIST class chi-square, df = 5; bin 0 pools the tails.  */
   static const f64 pi6[6] = {
     0.03125, 0.03125, 0.125, 0.5, 0.25, 0.0625
   };
