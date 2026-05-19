@@ -765,19 +765,23 @@ typedef struct {
 static void lz_mmap_worker_(sz w, void * vctx) {
   lz_mmap_ctx * c = (lz_mmap_ctx *) vctx;
   fastent_lz_acc * a = &c->accs[w];
+  /*  Heap, not stack: the acc is ~640 KiB.  One struct reused across
+      this worker's blocks (init re-zeros it, free releases buffers).  */
+  fastent_lz_acc * blk = (fastent_lz_acc *) malloc(sizeof *blk);
+  if (!blk) { c->oom = 1;  return; }
   for (u64 g = (u64) w; g < c->nblk; g += (u64) c->nthreads) {
     u64 off = g * FASTENT_LZ_GRID_U64;
     u64 len = c->size - off;
     if (len > FASTENT_LZ_GRID_U64) len = FASTENT_LZ_GRID_U64;
-    fastent_lz_acc blk;
-    fastent_lz_acc_init(&blk, off);
-    if (fastent_lz_acc_feed(&blk, c->data + off, (sz) len) != 0 ||
-        fastent_lz_acc_flush(&blk) != 0) {
-      c->oom = 1;  fastent_lz_acc_free(&blk);  return;
+    fastent_lz_acc_init(blk, off);
+    if (fastent_lz_acc_feed(blk, c->data + off, (sz) len) != 0 ||
+        fastent_lz_acc_flush(blk) != 0) {
+      c->oom = 1;  fastent_lz_acc_free(blk);  free(blk);  return;
     }
-    fastent_lz_acc_merge(a, &blk);
-    fastent_lz_acc_free(&blk);
+    fastent_lz_acc_merge(a, blk);
+    fastent_lz_acc_free(blk);
   }
+  free(blk);
 }
 #endif
 
@@ -1048,16 +1052,21 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   /*  -H per-file plots: human side output in walk order before the
       sorted rows.  JSON stays pure (no plot), as single-file does.  */
   const int do_plot = do_lz && c->o->histogram && !c->o->json;
-  fastent_lz_acc lz;
-  if (do_lz) fastent_lz_acc_init(&lz, 0);
+  /*  Heap, not stack: the acc is ~640 KiB.  */
+  fastent_lz_acc * lz = NULL;
+  if (do_lz) {
+    lz = (fastent_lz_acc *) malloc(sizeof *lz);
+    if (!lz) { fprintf(stderr, "out of memory\n");  exit(2); }
+    fastent_lz_acc_init(lz, 0);
+  }
 
   if (do_lz && src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, c->o, c->fn_byte, c->fn_bits,
                      c->fn_byte_fold, c->fn_bits_fold,
                      (const u8 *) src.map, src.size);
-    fastent_run_lz(&lz, c->o, &src);
+    fastent_run_lz(lz, c->o, &src);
   } else if (do_lz) {
-    fastent_run_stream_lz_tee(&st, &lz, c->o, c->fn_byte, c->fn_bits,
+    fastent_run_stream_lz_tee(&st, lz, c->o, c->fn_byte, c->fn_bits,
                               c->fn_byte_fold, c->fn_bits_fold, &src);
   } else if (src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, c->o, c->fn_byte, c->fn_bits,
@@ -1071,13 +1080,13 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   fastent_finalize(&st, c->o->binary, &r);
 
   if (do_lz) {
-    if (lz.oom) { fprintf(stderr, "out of memory\n"); exit(2); }
+    if (lz->oom) { fprintf(stderr, "out of memory\n"); exit(2); }
     if (do_plot) {
       r.lz = fastent_lz77f_tables_alloc();
       if (!r.lz) { fprintf(stderr, "out of memory\n"); exit(2); }
     }
-    fastent_lz_finalize(&lz, st.total_bytes, &r);
-    fastent_lz_acc_free(&lz);
+    fastent_lz_finalize(lz, st.total_bytes, &r);
+    fastent_lz_acc_free(lz);  free(lz);
     if (do_plot) {
       printf("%s\n", path);
       fastent_print_histogram(&r, c->o);
