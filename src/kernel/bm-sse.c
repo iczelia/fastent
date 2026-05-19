@@ -5,7 +5,7 @@
 #include "common.h"
 #include "bm.h"
 
-#include <smmintrin.h>
+#include <immintrin.h>
 #include <string.h>
 
 /*  Two 512-bit windows run in the 2 u64 lanes of one __m128i; the
