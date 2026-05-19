@@ -27,50 +27,68 @@ fi
 gen_zero() {
   [ -f "${FIX}/$1" ] || dd if=/dev/zero bs=1 count="$2" of="${FIX}/$1" status=none
 }
+#  Compile $2 (a C program writing fixture bytes to stdout) to a temp
+#  binary and stream it into fixture $1; remaining args go to the binary.
+cc_gen() {
+  local fixname="$1" body="$2"; shift 2
+  local src bin
+  src=$(mktemp "${TMPDIR:-/tmp}/ccgenXXXXXX.c")
+  bin=$(mktemp "${TMPDIR:-/tmp}/ccgenXXXXXX")
+  printf '%s\n' "${body}" > "${src}"
+  "${CC:-cc}" -O2 -o "${bin}" "${src}" && "${bin}" "$@" > "${FIX}/${fixname}"
+  rm -f "${src}" "${bin}"
+}
 gen_byte() {
+  #  count copies of a single byte value.
   if [ ! -f "${FIX}/$1" ]; then
-    python3 - "${FIX}/$1" "$2" "$3" <<'PY'
-import sys
-name, val, count = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-with open(name, "wb") as f:
-    f.write(bytes([val]) * count)
-PY
+    cc_gen "$1" '#include <stdio.h>
+#include <stdlib.h>
+int main(int argc, char ** argv) {
+  int val = atoi(argv[1]);
+  long count = atol(argv[2]);
+  for (long i = 0; i < count; i++) putchar(val);
+  return 0;
+}' "$2" "$3"
   fi
 }
 gen_uniform() {
-  #  256*N bytes: each byte value appears exactly N times.  Stable
-  #  permutation built from an LCG so it doesn't trivially correlate.
+  #  256*N bytes, each value exactly Nx, Fisher-Yates permuted by a
+  #  fixed-seed 64-bit LCG so it does not trivially correlate.
   if [ ! -f "${FIX}/$1" ]; then
-    python3 - "${FIX}/$1" "$2" <<'PY'
-import sys
-name, copies = sys.argv[1], int(sys.argv[2])
-buf = list(range(256)) * copies
-#  Fisher-Yates shuffle with a fixed seeded LCG, no stdlib RNG state.
-s = 0xDEADBEEFCAFEBABE
-n = len(buf)
-for i in range(n - 1, 0, -1):
-    s = (s * 6364136223846793005 + 1442695040888963407) & 0xFFFFFFFFFFFFFFFF
-    j = (s >> 17) % (i + 1)
-    buf[i], buf[j] = buf[j], buf[i]
-with open(name, "wb") as f:
-    f.write(bytes(buf))
-PY
+    cc_gen "$1" '#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+int main(int argc, char ** argv) {
+  long copies = atol(argv[1]);
+  long n = 256L * copies;
+  unsigned char * buf = malloc((size_t)n);
+  for (long i = 0; i < n; i++) buf[i] = (unsigned char)(i & 255);
+  uint64_t s = 0xDEADBEEFCAFEBABEull;
+  for (long i = n - 1; i > 0; i--) {
+    s = s * 6364136223846793005ull + 1442695040888963407ull;
+    long j = (long)((s >> 17) % (uint64_t)(i + 1));
+    unsigned char t = buf[i]; buf[i] = buf[j]; buf[j] = t;
+  }
+  fwrite(buf, 1, (size_t)n, stdout);
+  return 0;
+}' "$2"
   fi
 }
 gen_lcg() {
+  #  64-bit LCG, high byte (>>24) per output byte, fixed seed.
   if [ ! -f "${FIX}/$1" ]; then
-    python3 - "${FIX}/$1" "$2" <<'PY'
-import sys
-name, count = sys.argv[1], int(sys.argv[2])
-seed = 0xC0FFEE
-out = bytearray(count)
-s = seed
-for i in range(count):
-    s = (s * 6364136223846793005 + 1442695040888963407) & 0xFFFFFFFFFFFFFFFF
-    out[i] = (s >> 24) & 0xFF
-with open(name, "wb") as f:
-    f.write(out)
-PY
+    cc_gen "$1" '#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+int main(int argc, char ** argv) {
+  long count = atol(argv[1]);
+  uint64_t s = 0xC0FFEEull;
+  for (long i = 0; i < count; i++) {
+    s = s * 6364136223846793005ull + 1442695040888963407ull;
+    putchar((int)((s >> 24) & 0xFFu));
+  }
+  return 0;
+}' "$2"
   fi
 }
 
@@ -152,9 +170,45 @@ check "terse mode: well-formed" bash -c '
     grep -q "^1,1048576," <<< "$out"
 '
 
+#  JSON-validity scanner: nonzero exit on unbalanced braces/brackets,
+#  unterminated string, control byte outside strings, trailing garbage
+#  or empty input.
+JSONCHK=$(mktemp "${TMPDIR:-/tmp}/jsonchkXXXXXX")
+JSONCHK_SRC=$(mktemp "${TMPDIR:-/tmp}/jsonchkXXXXXX.c")
+cat > "${JSONCHK_SRC}" <<'EOF'
+#include <stdio.h>
+#include <ctype.h>
+int main(void) {
+  int c, depth = 0, instr = 0, esc = 0, seen = 0, done = 0;
+  while ((c = getchar()) != EOF) {
+    if (instr) {
+      if (esc) { esc = 0; continue; }
+      if (c == '\\') { esc = 1; continue; }
+      if (c == '"') instr = 0;
+      continue;
+    }
+    if (c == '"') { instr = 1; seen = 1; continue; }
+    if (c == '{' || c == '[') { depth++; seen = 1; continue; }
+    if (c == '}' || c == ']') {
+      if (--depth < 0) return 1;
+      if (depth == 0) done = 1;
+      continue;
+    }
+    if (isspace(c)) continue;
+    if (done) return 1;            /* trailing garbage after top-level close */
+    if (!isprint(c)) return 1;     /* control byte outside a string */
+  }
+  if (instr || depth != 0 || !seen) return 1;
+  return 0;
+}
+EOF
+"${CC:-cc}" -O2 -o "${JSONCHK}" "${JSONCHK_SRC}"
+rm -f "${JSONCHK_SRC}"
+trap 'rm -f "${JSONCHK}"' EXIT
+
 check "JSON mode: parseable" bash -c '
   out=$('"${FASTENT}"' --json "'"${FIX}"'/lcg.bin")
-  python3 -c "import json,sys; json.loads(sys.stdin.read())" <<< "$out"
+  printf "%s" "$out" | "'"${JSONCHK}"'"
 '
 
 check "counts mode: histogram present" bash -c '
@@ -229,27 +283,30 @@ check "no -ee: runs/longrun/cusum nan" bash -c '
   printf "%s\n" "$out" | sed -n 2p | awk -F, "{ exit !(\$34==\"nan\" && \$35==\"nan\" && \$36==\"nan\") }"
 '
 
+#  Runs=col34, Longest-Run=col35, Cusum-Max=col36; absent fields read "nan".
 check "-ee byte: longest-run set, cusum nan, runs set (mmap median)" bash -c '
-  out=$('"${FASTENT}"' -ee --json "'"${FIX}"'/lcg.bin")
-  python3 -c "import json,sys
-d=json.load(sys.stdin)
-assert d[\"longest_run\"] is not None and d[\"longest_run\"] >= 1
-assert d[\"cusum_max\"] is None
-assert d[\"runs\"] is not None" <<< "$out"
+  r=$('"${FASTENT}"' -ee -t "'"${FIX}"'/lcg.bin" | sed -n 2p)
+  runs=$(printf %s "$r" | cut -d, -f34)
+  lr=$(printf %s "$r" | cut -d, -f35)
+  cm=$(printf %s "$r" | cut -d, -f36)
+  [ "$cm" = "nan" ] && [ "$runs" != "nan" ] && [ "$lr" != "nan" ] &&
+    awk -v lr="$lr" "BEGIN{exit !(lr>=1)}"
 '
 
 check "-ee bit: runs/longest/cusum all set" bash -c '
-  out=$('"${FASTENT}"' -ee -b --json "'"${FIX}"'/lcg.bin")
-  python3 -c "import json,sys
-d=json.load(sys.stdin)
-assert d[\"runs\"] is not None and d[\"longest_run\"] is not None and d[\"cusum_max\"] is not None" <<< "$out"
+  r=$('"${FASTENT}"' -ee -b -t "'"${FIX}"'/lcg.bin" | sed -n 2p)
+  runs=$(printf %s "$r" | cut -d, -f34)
+  lr=$(printf %s "$r" | cut -d, -f35)
+  cm=$(printf %s "$r" | cut -d, -f36)
+  [ "$runs" != "nan" ] && [ "$lr" != "nan" ] && [ "$cm" != "nan" ]
 '
 
+#  samples=File-bytes col2 (byte mode), Longest-Run=col35.
 check "-ee all-zeros: 1 run, longest = N" bash -c '
-  out=$('"${FASTENT}"' -ee --json "'"${FIX}"'/all-zeros.bin")
-  python3 -c "import json,sys
-d=json.load(sys.stdin)
-assert d[\"longest_run\"] == d[\"samples\"]" <<< "$out"
+  r=$('"${FASTENT}"' -ee -t "'"${FIX}"'/all-zeros.bin" | sed -n 2p)
+  n=$(printf %s "$r" | cut -d, -f2)
+  lr=$(printf %s "$r" | cut -d, -f35)
+  awk -v n="$n" -v lr="$lr" "BEGIN{exit !(lr==n)}"
 '
 
 check "-ee runs determinism j1 vs j4" bash -c '
@@ -263,21 +320,22 @@ check "no -ee: bigram fields are nan" bash -c '
   printf "%s\n" "$out" | sed -n 2p | awk -F, "{ exit !(\$32==\"nan\" && \$33==\"nan\") }"
 '
 
+#  Entropy=col3, Conditional-Entropy=col32, Mutual-Information=col33.
 check "-ee text: low cond-entropy, high MI" bash -c '
-  out=$('"${FASTENT}"' -ee --json "'"${FIX}"'/lcg.bin")
-  python3 -c "import json,sys
-d=json.load(sys.stdin)
-ce=d[\"conditional_entropy\"]; mi=d[\"mutual_information\"]; h0=d[\"entropy\"]
-assert ce is not None and mi is not None
-assert ce <= h0 + 1e-9 and mi >= -1e-9" <<< "$out"
+  r=$('"${FASTENT}"' -ee -t "'"${FIX}"'/lcg.bin" | sed -n 2p)
+  h0=$(printf %s "$r" | cut -d, -f3)
+  ce=$(printf %s "$r" | cut -d, -f32)
+  mi=$(printf %s "$r" | cut -d, -f33)
+  [ "$ce" != "nan" ] && [ "$mi" != "nan" ] &&
+    awk -v ce="$ce" -v mi="$mi" -v h0="$h0" "BEGIN{exit !(ce<=h0+1e-9 && mi>=-1e-9)}"
 '
 
 check "-ee uniform: cond ~ H0, MI ~ 0" bash -c '
-  out=$('"${FASTENT}"' -ee --json "'"${FIX}"'/uniform.bin")
-  python3 -c "import json,sys
-d=json.load(sys.stdin)
-assert abs(d[\"conditional_entropy\"]-d[\"entropy\"]) < 0.05
-assert abs(d[\"mutual_information\"]) < 0.05" <<< "$out"
+  r=$('"${FASTENT}"' -ee -t "'"${FIX}"'/uniform.bin" | sed -n 2p)
+  h0=$(printf %s "$r" | cut -d, -f3)
+  ce=$(printf %s "$r" | cut -d, -f32)
+  mi=$(printf %s "$r" | cut -d, -f33)
+  awk -v ce="$ce" -v mi="$mi" -v h0="$h0" "BEGIN{d=ce-h0; if(d<0)d=-d; m=mi; if(m<0)m=-m; exit !(d<0.05 && m<0.05)}"
 '
 
 if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
@@ -293,22 +351,22 @@ check "no -eee: LZ77F fields are nan" bash -c '
   printf "%s\n" "$out" | sed -n 1p | grep -qv "LZ-Deviation"
 '
 
+#  lz77f: cr_excess=col37, match_coverage=col40, deviation=col45, single_dominant_match=col47.
 check "-eee zeros: mega-match FAIL" bash -c '
-  out=$('"${FASTENT}"' -eee --json "'"${FIX}"'/all-zeros.bin")
-  python3 -c "import json,sys
-d=json.load(sys.stdin)[\"lz77f\"]
-assert d[\"single_dominant_match\"] is True
-assert d[\"cr_excess\"] > 0.9 and d[\"match_coverage\"] > 0.9
-assert d[\"deviation\"] >= 3.0" <<< "$out"
+  r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/all-zeros.bin" | sed -n 2p)
+  cr=$(printf %s "$r" | cut -d, -f37)
+  mc=$(printf %s "$r" | cut -d, -f40)
+  dv=$(printf %s "$r" | cut -d, -f45)
+  sd=$(printf %s "$r" | cut -d, -f47)
+  awk -v cr="$cr" -v mc="$mc" -v dv="$dv" -v sd="$sd" "BEGIN{exit !(sd==1 && cr>0.9 && mc>0.9 && dv>=3.0)}"
 '
 
 check "-eee uniform: LZ77F ~ random PASS" bash -c '
-  out=$('"${FASTENT}"' -eee --json "'"${FIX}"'/uniform.bin")
-  python3 -c "import json,sys
-d=json.load(sys.stdin)[\"lz77f\"]
-assert d[\"match_coverage\"] < 0.05
-assert d[\"cr_excess\"] < 0.05
-assert d[\"deviation\"] < 2.0" <<< "$out"
+  r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/uniform.bin" | sed -n 2p)
+  cr=$(printf %s "$r" | cut -d, -f37)
+  mc=$(printf %s "$r" | cut -d, -f40)
+  dv=$(printf %s "$r" | cut -d, -f45)
+  awk -v cr="$cr" -v mc="$mc" -v dv="$dv" "BEGIN{exit !(mc<0.05 && cr<0.05 && dv<2.0)}"
 '
 
 if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
@@ -375,43 +433,112 @@ if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
   '
 fi
 
+#  Terse row 2 Maurer fields: Maurer-Deviation=57, Maurer-K=58,
+#  Maurer-Degenerate=59 (header field names: Maurer-*).
+check "no -eee: Maurer columns absent" bash -c '
+  '"${FASTENT}"' -ee -t "'"${FIX}"'/lcg.bin" | sed -n 1p | grep -qv "Maurer-Deviation"
+'
+
+check "-eee zeros: Maurer FAIL, repetitive flagged" bash -c '
+  r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/all-zeros.bin" | sed -n 2p)
+  d=$(printf %s "$r" | cut -d, -f57)
+  g=$(printf %s "$r" | cut -d, -f59)
+  awk -v d="$d" -v g="$g" "BEGIN{exit !(d>=3.0 && g==1)}"
+'
+
+check "-eee lcg.bin: Maurer < 2 PASS" bash -c '
+  r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/lcg.bin" | sed -n 2p)
+  d=$(printf %s "$r" | cut -d, -f57)
+  k=$(printf %s "$r" | cut -d, -f58)
+  awk -v d="$d" -v k="$k" "BEGIN{exit !(d<2.0 && k>0)}"
+'
+
+if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
+  check "-eee Maurer determinism j1 == j4" bash -c '
+    a=$('"${FASTENT}"' -eee -t -j 1 "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    b=$('"${FASTENT}"' -eee -t -j 4 "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    [ "$a" = "$b" ]
+  '
+  check "-eee Maurer determinism mmap == stream" bash -c '
+    a=$('"${FASTENT}"' -eee -t --io=mmap   "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    b=$('"${FASTENT}"' -eee -t --io=stream "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    [ "$a" = "$b" ]
+  '
+fi
+
 check "-ee bit mode: 2x2 computed" bash -c '
-  out=$('"${FASTENT}"' -ee -b --json "'"${FIX}"'/lcg.bin")
-  python3 -c "import json,sys
-d=json.load(sys.stdin)
-assert d[\"conditional_entropy\"] is not None and d[\"mutual_information\"] is not None" <<< "$out"
+  r=$('"${FASTENT}"' -ee -b -t "'"${FIX}"'/lcg.bin" | sed -n 2p)
+  ce=$(printf %s "$r" | cut -d, -f32)
+  mi=$(printf %s "$r" | cut -d, -f33)
+  [ "$ce" != "nan" ] && [ "$mi" != "nan" ]
 '
 
 check "-ee all-zeros: cond 0, MI 0" bash -c '
-  out=$('"${FASTENT}"' -ee --json "'"${FIX}"'/all-zeros.bin")
-  python3 -c "import json,sys
-d=json.load(sys.stdin)
-assert d[\"conditional_entropy\"]==0.0 and d[\"mutual_information\"]==0.0" <<< "$out"
+  r=$('"${FASTENT}"' -ee -t "'"${FIX}"'/all-zeros.bin" | sed -n 2p)
+  ce=$(printf %s "$r" | cut -d, -f32)
+  mi=$(printf %s "$r" | cut -d, -f33)
+  awk -v ce="$ce" -v mi="$mi" "BEGIN{exit !(ce==0.0 && mi==0.0)}"
 '
 
+#  Bit0..Bit7=cols22..29, Bit-Bias-Max=col30.
 check "uniform -e: bit balance perfect" bash -c '
-  out=$('"${FASTENT}"' --json -e "'"${FIX}"'/uniform.bin")
-  python3 -c "import json,sys; d=json.load(sys.stdin); assert d[\"bit_bias\"][\"max\"]==0.0 and len(d[\"bit_frequencies\"])==8 and all(f==0.5 for f in d[\"bit_frequencies\"])" <<< "$out"
+  hdr=$('"${FASTENT}"' -e -t "'"${FIX}"'/uniform.bin" | sed -n 1p)
+  r=$('"${FASTENT}"' -e -t "'"${FIX}"'/uniform.bin" | sed -n 2p)
+  printf %s "$hdr" | grep -q "Bit0,Bit1,Bit2,Bit3,Bit4,Bit5,Bit6,Bit7," || exit 1
+  bm=$(printf %s "$r" | cut -d, -f30)
+  [ "$bm" = "0.000000" ] || exit 1
+  i=22
+  while [ "$i" -le 29 ]; do
+    v=$(printf %s "$r" | cut -d, -f$i)
+    [ "$v" = "0.500000" ] || exit 1
+    i=$((i + 1))
+  done
 '
 
 check "all-zeros -e: bit7=0, max bias 0.5" bash -c '
-  out=$('"${FASTENT}"' --json -e "'"${FIX}"'/all-zeros.bin")
-  python3 -c "import json,sys; d=json.load(sys.stdin); assert d[\"bit_bias\"][\"max\"]==0.5 and d[\"bit_frequencies\"]==[0.0]*8" <<< "$out"
+  r=$('"${FASTENT}"' -e -t "'"${FIX}"'/all-zeros.bin" | sed -n 2p)
+  bm=$(printf %s "$r" | cut -d, -f30)
+  [ "$bm" = "0.500000" ] || exit 1
+  i=22
+  while [ "$i" -le 29 ]; do
+    v=$(printf %s "$r" | cut -d, -f$i)
+    [ "$v" = "0.000000" ] || exit 1
+    i=$((i + 1))
+  done
 '
 
+#  Bit mode: Bit0..Bit7 (cols22..29) and Bit-Bias-Max (col30) read "nan", Bit-Bias-Worst (col31) -1.
 check "bit mode: bit_frequencies null" bash -c '
-  out=$('"${FASTENT}"' --json -e -b "'"${FIX}"'/lcg.bin")
-  python3 -c "import json,sys; d=json.load(sys.stdin); assert d[\"bit_frequencies\"] is None and d[\"bit_bias\"] is None" <<< "$out"
+  r=$('"${FASTENT}"' -e -b -t "'"${FIX}"'/lcg.bin" | sed -n 2p)
+  bm=$(printf %s "$r" | cut -d, -f30)
+  bw=$(printf %s "$r" | cut -d, -f31)
+  [ "$bm" = "nan" ] && [ "$bw" = "-1" ] || exit 1
+  i=22
+  while [ "$i" -le 29 ]; do
+    v=$(printf %s "$r" | cut -d, -f$i)
+    [ "$v" = "nan" ] || exit 1
+    i=$((i + 1))
+  done
 '
 
+#  Min-Entropy=col9, Poker=col12, Poker-p=col13; byte-mode poker is always the 16-class test (df 15).
 check "JSON -e: poker + min_entropy keys" bash -c '
-  out=$('"${FASTENT}"' --json -e "'"${FIX}"'/lcg.bin")
-  python3 -c "import json,sys; d=json.load(sys.stdin); assert \"min_entropy\" in d and d[\"poker\"][\"df\"]==15" <<< "$out"
+  hdr=$('"${FASTENT}"' -e -t "'"${FIX}"'/lcg.bin" | sed -n 1p)
+  r=$('"${FASTENT}"' -e -t "'"${FIX}"'/lcg.bin" | sed -n 2p)
+  printf %s "$hdr" | grep -q "Min-Entropy" || exit 1
+  printf %s "$hdr" | grep -q "Poker,Poker-p," || exit 1
+  me=$(printf %s "$r" | cut -d, -f9)
+  pk=$(printf %s "$r" | cut -d, -f12)
+  pp=$(printf %s "$r" | cut -d, -f13)
+  [ "$me" != "nan" ] && [ "$pk" != "nan" ] && [ "$pp" != "nan" ]
 '
 
+#  Bit mode: Poker (col12) and Poker-p (col13) read "nan".
 check "JSON -e bit mode: poker null" bash -c '
-  out=$('"${FASTENT}"' --json -e -b "'"${FIX}"'/lcg.bin")
-  python3 -c "import json,sys; d=json.load(sys.stdin); assert d[\"poker\"] is None" <<< "$out"
+  r=$('"${FASTENT}"' -e -b -t "'"${FIX}"'/lcg.bin" | sed -n 2p)
+  pk=$(printf %s "$r" | cut -d, -f12)
+  pp=$(printf %s "$r" | cut -d, -f13)
+  [ "$pk" = "nan" ] && [ "$pp" = "nan" ]
 '
 
 check "annotate: verdict line present" bash -c '

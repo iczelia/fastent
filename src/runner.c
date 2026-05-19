@@ -7,6 +7,7 @@
 
 #include "lzest.h"
 #include "bm.h"
+#include "maurer.h"
 #include "output.h"
 #include "port-thread.h"
 #include "port-walk.h"
@@ -1103,6 +1104,182 @@ void fastent_run_bm(
   if (rc != 0) acc->oom = 1;
 }
 
+/*  Maurer (-eee) driver: same absolute 4 MiB-grid scheme as LZ77F /
+    BM.  Per-block partials reduce in absolute block order at finalize
+    so the f64 statistic is bit-identical for any -j / driver / host. */
+
+#ifdef FASTENT_HAVE_THREADS
+typedef struct {
+  const u8 *           data;
+  u64                  size;
+  u64                  nblk;
+  fastent_maurer_acc * accs;
+  i32                  nthreads;
+  volatile int         oom;
+} maurer_mmap_ctx;
+
+static void maurer_mmap_worker_(sz w, void * vctx) {
+  maurer_mmap_ctx * c = (maurer_mmap_ctx *) vctx;
+  fastent_maurer_acc * a = &c->accs[w];
+  /*  Heap, not stack: the acc owns a 4 MiB grid buffer plus the T
+      table.  One struct reused across this worker's blocks.  */
+  fastent_maurer_acc * blk =
+    (fastent_maurer_acc *) malloc(sizeof *blk);
+  if (!blk) { c->oom = 1;  return; }
+  for (u64 g = (u64) w; g < c->nblk; g += (u64) c->nthreads) {
+    u64 off = g * FASTENT_LZ_GRID_U64;
+    u64 len = c->size - off;
+    if (len > FASTENT_LZ_GRID_U64) len = FASTENT_LZ_GRID_U64;
+    fastent_maurer_acc_init(blk, off);
+    if (fastent_maurer_acc_feed(blk, c->data + off, (sz) len) != 0 ||
+        fastent_maurer_acc_flush(blk) != 0) {
+      c->oom = 1;  fastent_maurer_acc_free(blk);  free(blk);  return;
+    }
+    fastent_maurer_acc_merge(a, blk);
+    fastent_maurer_acc_free(blk);
+  }
+  free(blk);
+}
+#endif
+
+static int maurer_run_resident_(
+    fastent_maurer_acc * acc, const fastent_options * o, const u8 * data,
+    u64 size) {
+  if (size == 0) return 0;
+  u64 nblk = (size + FASTENT_LZ_GRID_U64 - 1) / FASTENT_LZ_GRID_U64;
+
+#ifdef FASTENT_HAVE_THREADS
+  if (o->threads > 1 && nblk > 1) {
+    i32 N = o->threads;
+    if ((u64) N > nblk) N = (i32) nblk;
+    fastent_set_num_threads(N);
+    fastent_maurer_acc * accs =
+      (fastent_maurer_acc *) calloc((sz) N, sizeof(*accs));
+    if (!accs) return -1;
+    Fk(N, fastent_maurer_acc_init(&accs[k], 0))
+    maurer_mmap_ctx c;
+    c.data = data;  c.size = size;  c.nblk = nblk;
+    c.accs = accs;  c.nthreads = N;  c.oom = 0;
+    fastent_parallel_for((sz) N, maurer_mmap_worker_, &c);
+    int rc = c.oom ? -1 : 0;
+    Fk(N, fastent_maurer_acc_merge(acc, &accs[k]);
+          fastent_maurer_acc_free(&accs[k]))
+    free(accs);
+    if (acc->oom) rc = -1;
+    return rc;
+  }
+#else
+  (void) o;
+#endif
+
+  if (fastent_maurer_acc_feed(acc, data, (sz) size) != 0) return -1;
+  if (fastent_maurer_acc_flush(acc) != 0) return -1;
+  return 0;
+}
+
+#ifdef FASTENT_HAVE_THREADS
+typedef struct {
+  int                  fd;
+  const char *         path;
+  const u64 *          bounds;
+  fastent_maurer_acc * accs;
+  volatile int         failed;
+  volatile int         oom;
+} maurer_uring_ctx;
+
+static void maurer_uring_worker_(sz k, void * vctx) {
+  maurer_uring_ctx * c = (maurer_uring_ctx *) vctx;
+  u64 start = c->bounds[k], end = c->bounds[k + 1];
+  fastent_maurer_acc * a = &c->accs[k];
+  if (end <= start) return;
+  fastent_uring_slab * r =
+    fastent_uring_slab_open(c->fd, c->path, start, end - start);
+  if (!r) { c->failed = 1;  return; }
+  for (;;) {
+    const u8 * blk = NULL;
+    sz n = fastent_uring_slab_next(r, &blk);
+    if (n == (sz) -1) {
+      c->failed = 1;  fastent_uring_slab_close(r);  return;
+    }
+    if (n == 0) break;
+    if (fastent_maurer_acc_feed(a, blk, n) != 0) {
+      c->oom = 1;  fastent_uring_slab_close(r);  return;
+    }
+  }
+  fastent_uring_slab_close(r);
+  if (fastent_maurer_acc_flush(a) != 0) c->oom = 1;
+}
+
+static int maurer_run_uring_(
+    fastent_maurer_acc * acc, const fastent_options * o,
+    fastent_source * src) {
+  u64 size = src->size;
+  if (size == 0) return 0;
+  i32 N = o->threads;
+  if (N < 1) N = 1;
+  u64 nblk = (size + FASTENT_LZ_GRID_U64 - 1) / FASTENT_LZ_GRID_U64;
+  if ((u64) N > nblk) N = (i32) nblk;
+  fastent_set_num_threads(N);
+
+  u64 * bounds = (u64 *) malloc((sz)(N + 1) * sizeof(u64));
+  fastent_maurer_acc * accs =
+    (fastent_maurer_acc *) calloc((sz) N, sizeof(*accs));
+  if (!bounds || !accs) { free(bounds);  free(accs);  return 0; }
+  bounds[0] = 0;  bounds[N] = size;
+  Fk0(N, 1,
+      u64 blk = (u64)((f64) nblk * (f64) k / (f64) N);
+      u64 b = blk * FASTENT_LZ_GRID_U64;
+      if (b > size) b = size;
+      bounds[k] = b)
+  Fk(N, fastent_maurer_acc_init(&accs[k], bounds[k]))
+
+  maurer_uring_ctx c;
+  c.fd = src->fd;  c.path = o->path;  c.bounds = bounds;
+  c.accs = accs;  c.failed = 0;  c.oom = 0;
+  fastent_parallel_for((sz) N, maurer_uring_worker_, &c);
+
+  int rc;
+  if (c.failed) {
+    rc = -1;
+  } else {
+    Fk(N, fastent_maurer_acc_merge(acc, &accs[k]))
+    rc = (c.oom || acc->oom) ? -2 : 0;
+  }
+  Fk(N, fastent_maurer_acc_free(&accs[k]))
+  free(accs);  free(bounds);
+  return rc;
+}
+#endif
+
+void fastent_run_maurer(
+    fastent_maurer_acc * acc, const fastent_options * o,
+    fastent_source * src) {
+  int rc = 0;
+  if (src->kind == FASTENT_SRC_MMAP) {
+    rc = maurer_run_resident_(acc, o, (const u8 *) src->map, src->size);
+  } else {
+#ifdef FASTENT_HAVE_THREADS
+    if (src->kind == FASTENT_SRC_URING && src->fd >= 0 && src->size > 0
+        && o->threads != 1) {
+      int u = maurer_run_uring_(acc, o, src);
+      if (u == 0)  return;
+      if (u == -2) { acc->oom = 1;  return; }
+      /*  u == -1: uring absent, fall through to the serial feed.  */
+    }
+#endif
+    for (;;) {
+      sz n = fastent_src_read(src);
+      if (n == (sz) -1) { perror("read");  exit(2); }
+      if (n == 0) break;
+      if (fastent_maurer_acc_feed(acc, src->stream_buf, n) != 0) {
+        acc->oom = 1;  return;
+      }
+    }
+    if (fastent_maurer_acc_flush(acc) != 0) acc->oom = 1;
+  }
+  if (rc != 0) acc->oom = 1;
+}
+
 void fastent_run_mmap(
     fastent_chunk_state * st, const fastent_options * o,
     fastent_analyze_fn fn_byte, fastent_analyze_fn fn_bits,
@@ -1162,14 +1339,15 @@ void fastent_run_stream(
 }
 
 /*  -eee non-mmap tee: one bounded pass feeds each chunk to the
-    order-0/-ee analyzer (analyze_fused_), the LZ77F acc and the
-    linear-complexity acc, O(chunk + grid block).  Serial on -j,
-    bit-identical to -j1/mmap.  Either acc may be NULL.  */
+    order-0/-ee analyzer (analyze_fused_), the LZ77F acc, the
+    linear-complexity acc and the Maurer acc, O(chunk + grid block).
+    Serial on -j, bit-identical to -j1/mmap.  Any acc may be NULL.  */
 void fastent_run_stream_lz_tee(
     fastent_chunk_state * st, fastent_lz_acc * lz, fastent_bm_acc * bm,
-    const fastent_options * o, fastent_analyze_fn fn_byte,
-    fastent_analyze_fn fn_bits, fastent_analyze_fn fn_byte_fold,
-    fastent_analyze_fn fn_bits_fold, fastent_source * src) {
+    fastent_maurer_acc * ma, const fastent_options * o,
+    fastent_analyze_fn fn_byte, fastent_analyze_fn fn_bits,
+    fastent_analyze_fn fn_byte_fold, fastent_analyze_fn fn_bits_fold,
+    fastent_source * src) {
   fastent_analyze_fn body = o->binary
     ? (o->fold ? fn_bits_fold : fn_bits)
     : (o->fold ? fn_byte_fold : fn_byte);
@@ -1187,9 +1365,13 @@ void fastent_run_stream_lz_tee(
     if (bm && fastent_bm_acc_feed(bm, src->stream_buf, n) != 0) {
       bm->oom = 1;  return;
     }
+    if (ma && fastent_maurer_acc_feed(ma, src->stream_buf, n) != 0) {
+      ma->oom = 1;  return;
+    }
   }
   if (lz && fastent_lz_acc_flush(lz) != 0) lz->oom = 1;
   if (bm && fastent_bm_acc_flush(bm) != 0) bm->oom = 1;
+  if (ma && fastent_maurer_acc_flush(ma) != 0) ma->oom = 1;
 }
 
 /*  Recursive mode.  */
@@ -1234,12 +1416,15 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
       LZ77F hash table); a stack-local one overflows wasm / DOS.  */
   fastent_lz_acc * lz = NULL;
   fastent_bm_acc * bm = NULL;
+  fastent_maurer_acc * ma = NULL;
   if (do_lz) {
     lz = (fastent_lz_acc *) malloc(sizeof *lz);
     bm = (fastent_bm_acc *) malloc(sizeof *bm);
-    if (!lz || !bm) { fprintf(stderr, "out of memory\n");  exit(2); }
+    ma = (fastent_maurer_acc *) malloc(sizeof *ma);
+    if (!lz || !bm || !ma) { fprintf(stderr, "out of memory\n");  exit(2); }
     fastent_lz_acc_init(lz, 0);
     fastent_bm_acc_init(bm, 0);
+    fastent_maurer_acc_init(ma, 0);
   }
 
   if (do_lz && src.kind == FASTENT_SRC_MMAP) {
@@ -1248,8 +1433,9 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
                      (const u8 *) src.map, src.size);
     fastent_run_lz(lz, c->o, &src);
     fastent_run_bm(bm, c->o, &src);
+    fastent_run_maurer(ma, c->o, &src);
   } else if (do_lz) {
-    fastent_run_stream_lz_tee(&st, lz, bm, c->o, c->fn_byte, c->fn_bits,
+    fastent_run_stream_lz_tee(&st, lz, bm, ma, c->o, c->fn_byte, c->fn_bits,
                               c->fn_byte_fold, c->fn_bits_fold, &src);
   } else if (src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, c->o, c->fn_byte, c->fn_bits,
@@ -1263,15 +1449,19 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   fastent_finalize(&st, c->o->binary, &r);
 
   if (do_lz) {
-    if (lz->oom || bm->oom) { fprintf(stderr, "out of memory\n"); exit(2); }
+    if (lz->oom || bm->oom || ma->oom) {
+      fprintf(stderr, "out of memory\n"); exit(2);
+    }
     if (do_plot) {
       r.lz = fastent_lz77f_tables_alloc();
       if (!r.lz) { fprintf(stderr, "out of memory\n"); exit(2); }
     }
     fastent_lz_finalize(lz, st.total_bytes, &r);
     fastent_bm_finalize(bm, st.total_bytes, &r);
+    fastent_maurer_finalize(ma, st.total_bytes, &r);
     fastent_lz_acc_free(lz);  free(lz);
     fastent_bm_acc_free(bm);  free(bm);
+    fastent_maurer_acc_free(ma);  free(ma);
     if (do_plot) {
       printf("%s\n", path);
       fastent_print_histogram(&r, c->o);
@@ -1360,6 +1550,7 @@ static f64 row_key_(const fastent_recursive_row * r) {
     case FASTENT_SORT_LZ_MATCH_COV: return r->result.lz_match_cov;
     case FASTENT_SORT_BM_DEVIATION: return r->result.bm_deviation;
     case FASTENT_SORT_BM_MEAN_LC:   return r->result.bm_mean_lc;
+    case FASTENT_SORT_MAURER_DEVIATION: return r->result.maurer_dev;
     default:                      return 0.0;
   }
 }

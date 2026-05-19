@@ -7,6 +7,42 @@ complete source-level history, see the ChangeLog.
 -------------------------------------------------------------------------------
 v1.3 (May 2026)
 
+  Maurer universal statistical test
+  ---------------------------------
+
+  -eee also computes a windowed Maurer universal statistical test
+  alongside order-0, order-1 bigram, LZ77F and linear complexity.
+  The bit stream is read most-significant first per byte and cut
+  into L = 8-bit blocks; after Q = 10*2^L initialisation blocks each
+  further block contributes log2 of the distance back to the
+  previous occurrence of its pattern.  It reports the statistic
+  maurer_fn (mean log2 distance), the NIST SP800-22 expected value
+  for L = 8 (maurer_expected), and a headline maurer_deviation z =
+  |fn - expected| / (c*sqrt(variance/K)) badged PASS / WEAK / FAIL.
+  A highly repetitive stream (fn far below expected) is flagged.
+
+  L is fixed at 8: a 4 MiB window then holds about 4.19 million
+  test blocks, sixteen times the NIST K >= 1000*2^L validity floor
+  (L = 16 would fall about forty-five times short).  Each 4 MiB
+  absolute-offset grid block runs a fresh recency table; the
+  per-block partial sums combine in absolute block index order, so
+  the f64 statistic is bit-identical for any thread count, I/O mode
+  and host.  Drift versus a textbook whole-stream table-carrying
+  Maurer is bounded and verdict-neutral (at most about 0.001%;
+  0.00073% measured on a 100 MB English text corpus), the
+  compressibility-class analogue of LZ77F's fresh-table drift.
+
+  It is reported in the default, terse CSV, JSON, recursive and
+  annotated output, sortable via --sort-by=maurer-deviation (which
+  implies -eee), and with -eee -H a log2-distance histogram follows
+  the linear-complexity plot.
+
+  Scope: Maurer is a global compressibility statistic ("how
+  compressible under an idealised universal compressor").  It
+  catches repetitive or compressible sources that pass order-0/-1,
+  LZ77F and the linear-complexity screen; it does not locate where
+  the structure is and does not replace the per-test advisories.
+
   Linear-complexity estimator
   ---------------------------
 

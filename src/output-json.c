@@ -143,6 +143,18 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
              r->bm_degenerate ? "true" : "false");
       printf("\n  }");
     }
+    printf(",\n  \"maurer_universal\": ");
+    if (r->maurer_dev != r->maurer_dev) {
+      fputs("null", stdout);
+    } else {
+      printf("{\n    \"fn\": ");                jnum_(fmt_fp, r->maurer_fn);
+      printf(",\n    \"expected\": ");          jnum_(fmt_fp, r->maurer_expected);
+      printf(",\n    \"deviation\": ");         jnum_(fmt_fp, r->maurer_dev);
+      printf(",\n    \"test_blocks\": %" PRIu64, (u64) r->maurer_k);
+      printf(",\n    \"repetitive\": %s",
+             r->maurer_degenerate ? "true" : "false");
+      printf("\n  }");
+    }
   }
   if (o->counts) {
     printf(",\n  \"occurrences\": [\n");

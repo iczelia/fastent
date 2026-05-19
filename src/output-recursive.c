@@ -58,7 +58,9 @@ void fastent_print_recursive_csv(
           "lz_mlen_excess,lz_lit_chi,lz_lit_chi_p,lz_deviation,"
           "lz_matches,lz_megamatch,"
           "bm_mean_lc,bm_mu,bm_chi,bm_chi_p,bm_deviation,"
-          "bm_windows,bm_degenerate", stdout);
+          "bm_windows,bm_degenerate,"
+          "maurer_fn,maurer_expected,maurer_deviation,"
+          "maurer_k,maurer_degenerate", stdout);
   putchar('\n');
   for (sz i = 0; i < n; i++) {
     const fastent_recursive_row * r = &rows[i];
@@ -122,6 +124,11 @@ void fastent_print_recursive_csv(
       putchar(','); cnum_(f, r->result.bm_deviation);
       printf(",%" PRIu64 ",%d",
              (u64) r->result.bm_windows, r->result.bm_degenerate);
+      putchar(','); cnum_(f, r->result.maurer_fn);
+      putchar(','); cnum_(f, r->result.maurer_expected);
+      putchar(','); cnum_(f, r->result.maurer_dev);
+      printf(",%" PRIu64 ",%d",
+             (u64) r->result.maurer_k, r->result.maurer_degenerate);
     }
     putchar('\n');
   }
@@ -286,6 +293,21 @@ void fastent_print_recursive_json(
         printf(", \"windows\": %" PRIu64, (u64) r->result.bm_windows);
         printf(", \"near_constant\": %s",
                r->result.bm_degenerate ? "true" : "false");
+        fputs(" }", stdout);
+      }
+      fputs(", \"maurer_universal\": ", stdout);
+      if (r->result.maurer_dev != r->result.maurer_dev) {
+        fputs("null", stdout);
+      } else {
+        fputs("{ \"fn\": ", stdout);
+        json_num_(f, r->result.maurer_fn);
+        fputs(", \"expected\": ", stdout);
+        json_num_(f, r->result.maurer_expected);
+        fputs(", \"deviation\": ", stdout);
+        json_num_(f, r->result.maurer_dev);
+        printf(", \"test_blocks\": %" PRIu64, (u64) r->result.maurer_k);
+        printf(", \"repetitive\": %s",
+               r->result.maurer_degenerate ? "true" : "false");
         fputs(" }", stdout);
       }
     }

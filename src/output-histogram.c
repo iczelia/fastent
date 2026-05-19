@@ -355,6 +355,39 @@ static void hist_lc_(const fastent_result * r, const fastent_options * o) {
   printf(")\n\n");
 }
 
+/*  Maurer log2-distance histogram: 64 bins (bin = floor log2 of the
+    recurrence distance), one column per bin (<= 79 cols).  Same 8-row
+    glyph grid as the byte plot.  */
+static void hist_maurer_(
+    const fastent_result * r, const fastent_options * o) {
+  printf("Maurer log2(recurrence distance) (fn=%.6g, expected=%.6g)\n",
+         r->maurer_fn, r->maurer_expected);
+  u64 g[64];
+  Fi(64, g[i] = r->maurer_lhist[i])
+  u64 max = 0;
+  Fi(64, if (g[i] > max) max = g[i])
+  if (max == 0) { printf("(no test blocks)\n\n");  return; }
+  const int use_color = color_active_(o->color);
+  i32 gw = hist_bars_(g, 64, max, o->histogram_log, use_color, NULL, NULL);
+  i32 tick_every = 64 / 8;
+  Fi(gw + 1, putchar(' '))
+  putchar('+');
+  Fi(64, putchar((i % tick_every == 0) ? '|' : '-'))
+  putchar('\n');
+  Fi(gw + 2, putchar(' '))
+  for (i32 c = 0; c < 64; c += tick_every) {
+    char buf[8];
+    i32 ln = snprintf(buf, sizeof(buf), "%d", c);
+    if (ln > tick_every) ln = tick_every;
+    if (c + tick_every >= 64) printf("%.*s", ln, buf);
+    else                      printf("%-*.*s", tick_every, ln, buf);
+  }
+  putchar('\n');
+  printf("(log2 distance");
+  if (o->histogram_log) printf(", log y");
+  printf(")\n\n");
+}
+
 void fastent_print_histogram(
     const fastent_result * r, const fastent_options * o) {
   hist_byte_(r, o);
@@ -374,4 +407,6 @@ void fastent_print_histogram(
   }
   if (o->extended >= 3 && r->bm_deviation == r->bm_deviation)
     hist_lc_(r, o);
+  if (o->extended >= 3 && r->maurer_dev == r->maurer_dev)
+    hist_maurer_(r, o);
 }

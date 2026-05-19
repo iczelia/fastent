@@ -47,7 +47,9 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
            "LZ-Mlen-Excess,LZ-Lit-Chi,LZ-Lit-Chi-p,LZ-Deviation,"
            "LZ-Matches,LZ-Megamatch,"
            "BM-Mean-LC,BM-Mu,BM-Chi,BM-Chi-p,BM-Deviation,"
-           "BM-Windows,BM-Degenerate");
+           "BM-Windows,BM-Degenerate,"
+           "Maurer-Fn,Maurer-Expected,Maurer-Deviation,"
+           "Maurer-K,Maurer-Degenerate");
   putchar('\n');
 
   const char * f = o->full_precision ? "%.17g" : "%f";
@@ -97,6 +99,10 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
     putchar(','); tnum_(f, r->bm_chi_p);
     putchar(','); tnum_(f, r->bm_deviation);
     printf(",%" PRIu64 ",%d", (u64) r->bm_windows, r->bm_degenerate);
+    putchar(','); tnum_(f, r->maurer_fn);
+    putchar(','); tnum_(f, r->maurer_expected);
+    putchar(','); tnum_(f, r->maurer_dev);
+    printf(",%" PRIu64 ",%d", (u64) r->maurer_k, r->maurer_degenerate);
   }
   putchar('\n');
   if (o->counts) print_counts_(r, o->binary);

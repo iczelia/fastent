@@ -1,5 +1,45 @@
 2026-05-19  Kamila Szewczyk  <k@iczelia.net>
 
+	v1.3:  windowed Maurer universal statistical test (-eee,
+	alongside LZ77F and the linear-complexity estimator).
+
+	A count-only Maurer scorer (src/kernel/maurer.c) on the bit
+	stream, MSB-first per byte.  L is fixed at 8 bits/block with
+	Q = 10*2^L init blocks; the 2^L recency table is heap.  Each
+	4 MiB absolute grid block runs a fresh-table Maurer producing
+	an in-order Sum log2(distance) and a test-block count K; the
+	per-block partials reduce in absolute block index order so the
+	f64 statistic is bit-identical for any thread count, I/O mode
+	and host.  L = 8 satisfies the NIST SP800-22 K >= 1000*2^L
+	per-window validity with a 16x margin within a 4 MiB window
+	(L = 16 would fall ~45x short); L/8 = 1 divides the grid.  The
+	finalizer derives:
+	  - maurer_fn: total Sum log2(distance) / total K.
+	  - maurer_expected: the NIST SP800-22 expected value for
+	    L = 8 (exact static constant; variance and the c
+	    correction factor likewise, the latter via a libm-free
+	    2^x so K^(-3/L) is bit-identical across hosts).
+	  - maurer_deviation: headline z = |fn - expected| /
+	    (c*sqrt(variance/K)), badged PASS / WEAK / FAIL.
+	  - maurer_degenerate: highly repetitive stream (fn far below
+	    expected), flagged like the linear-complexity note.
+	No test block anywhere yields z = 0.0 (total function); NaN is
+	the not-computed sentinel.  fastent_log2 only, the running sum
+	fused through a volatile f64 barrier.  Drift versus a textbook
+	whole-stream table-carrying Maurer is bounded and
+	verdict-neutral (<= ~0.001%, measured 0.00073% on enwik8).
+
+	Surfaced in the default, terse CSV, JSON, recursive and
+	annotated output and a -H log2-distance histogram; sortable
+	via --sort-by=maurer-deviation (which implies -eee).
+
+	Scope: Maurer catches compressible / repetitive sources
+	("how compressible under an idealised universal compressor")
+	that survive order-0/-1, LZ77F and the linear-complexity
+	screen; it is a global compressibility statistic, not a
+	structural locator and not a substitute for the per-test
+	advisories.
+
 	v1.3:  windowed linear-complexity estimator (-eee, alongside
 	LZ77F).
 

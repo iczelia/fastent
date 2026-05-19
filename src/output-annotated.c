@@ -369,6 +369,29 @@ void fastent_print_annotated(
              "(mean L below 2)\n", "  Note", "");
   }
 
+  /*  Maurer universal (-eee, alongside LZ77F / BM): maurer_dev is the
+      headline verdict; fn vs expected(L) is a compressibility
+      descriptor (B_INFO, no pass/fail).  */
+  if (r->maurer_dev != r->maurer_dev) {
+    row_(o, color, &v, 0, "Maurer universal", "pass -eee", B_NA, "");
+  } else {
+    int b = z_badge_(r->maurer_dev);
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "z=%.17g" : "z=%.4g", r->maurer_dev);
+    row_(o, color, &v, 1, "Maurer universal", aux, b,
+         b == B_PASS ? "incompressible (universal)"
+       : b == B_WEAK ? "weak compressible structure"
+       :               "compressible / repetitive");
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "fn=%.17g  exp=%.17g" : "fn=%.6g  exp=%.6g",
+             r->maurer_fn, r->maurer_expected);
+    row_(o, color, &v, 0, "  Fn / expected", aux, B_INFO,
+         "compressibility descriptor");
+    if (r->maurer_degenerate)
+      printf("  %-19s%-25s        highly repetitive stream "
+             "(fn far below expected)\n", "  Note", "");
+  }
+
   /*  Informational footer (no verdict).  */
   char d1[48], d2[48], d3[48];
   snprintf(d1, sizeof d1, "Distinct %u/%d", r->distinct, bins);

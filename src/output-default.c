@@ -226,4 +226,20 @@ void fastent_print_default(
     dnum_(fp ? "%.17g" : "%f", r->bm_deviation);
     printf(".\n");
   }
+
+  if (r->maurer_dev != r->maurer_dev) {
+    printf("Maurer universal: pass -eee to compute it.\n");
+  } else {
+    printf("\nMaurer universal fn is ");
+    dnum_(fp ? "%.17g" : "%f", r->maurer_fn);
+    printf(" (expected ");
+    dnum_(fp ? "%.17g" : "%f", r->maurer_expected);
+    printf(", %" PRIu64 " test blocks).\n", (u64) r->maurer_k);
+    if (r->maurer_degenerate)
+      printf("Maurer universal note: highly repetitive stream "
+             "(fn far below expected).\n");
+    printf("Maurer universal deviation z is ");
+    dnum_(fp ? "%.17g" : "%f", r->maurer_dev);
+    printf(".\n");
+  }
 }

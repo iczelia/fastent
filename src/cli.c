@@ -53,9 +53,11 @@ void fastent_print_help(void) {
                                                           " -ee adds\n"
     "                        order-1 bigram H(cur|prev)+I(prev;cur);"
                                                        " -eee adds the\n"
-    "                        LZ77F and linear-complexity estimators"
-                                                       " (with -H,\n"
-    "                        3 LZ77F log2 plots + an L histogram)\n"
+    "                        LZ77F, linear-complexity and Maurer"
+                                                       " universal\n"
+    "                        estimators (with -H, 3 LZ77F log2 plots"
+                                                       " + an L\n"
+    "                        histogram + a Maurer log2-distance plot)\n"
     "  -a, --annotate        Interpretive pass/fail report (implies -e)\n"
     "  -i, --io=MODE         Input: auto (default), mmap, stream, uring\n",
     stdout);
@@ -73,7 +75,7 @@ void fastent_print_help(void) {
                                                        " cond-entropy\n"
     "                        mutual-info lz-deviation lz-cr lz-match-cov"
                                                        " bm-deviation\n"
-    "                        bm-mean-lc\n"
+    "                        bm-mean-lc maurer-deviation\n"
     "  --fips-140-2          FIPS 140-2 RNG power-up self-tests"
                                                   " (exit 1 on fail)\n"
     "  -V, --version         Print version and exit\n"
@@ -136,12 +138,14 @@ static int parse_sort_by_(const char * arg, fastent_options * o) {
   else if (!strcmp(buf, "lz-match-cov")) col = FASTENT_SORT_LZ_MATCH_COV;
   else if (!strcmp(buf, "bm-deviation")) col = FASTENT_SORT_BM_DEVIATION;
   else if (!strcmp(buf, "bm-mean-lc"))   col = FASTENT_SORT_BM_MEAN_LC;
+  else if (!strcmp(buf, "maurer-deviation"))
+                                         col = FASTENT_SORT_MAURER_DEVIATION;
   else {
     fprintf(stderr, "--sort-by column must be one of: path samples entropy "
                     "chisq mean pi scc min-entropy collision ic poker "
                     "variance redundancy distinct bitbias cond-entropy "
                     "mutual-info lz-deviation lz-cr lz-match-cov "
-                    "bm-deviation bm-mean-lc\n");
+                    "bm-deviation bm-mean-lc maurer-deviation\n");
     return -1;
   }
   o->sort_by = (int) col;

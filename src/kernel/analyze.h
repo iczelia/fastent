@@ -197,6 +197,17 @@ typedef struct fastent_result {
   i32 bm_degenerate;        /*  1 = meanL<2 (near-constant; note)  */
   u32 bm_lhist[64];         /*  L_i bucket histogram (bin = L*64/513)  */
 
+  /*  Maurer universal test (-eee, alongside LZ77F / BM).  NaN
+      sentinel on maurer_dev unless extended >= 3.  maurer_lhist is
+      inline (256 bytes, like bm_lhist): a 64-bin log2-distance plot
+      that rides every recursive row at no real cost (no heap table). */
+  f64 maurer_fn;            /*  fn = Sum log2(dist) / K  */
+  f64 maurer_expected;      /*  NIST SP800-22 expected(L), L=8  */
+  f64 maurer_dev;           /*  headline z = |fn-exp|/(c*sqrt(var/K))  */
+  u64 maurer_k;             /*  total test blocks K  */
+  i32 maurer_degenerate;    /*  1 = fn << expected (repetitive; note)  */
+  u32 maurer_lhist[64];     /*  log2-distance bucket histogram  */
+
   u64 hist[256];            /*  -c output; bits: hist[0]/hist[1]  */
 } fastent_result;
 

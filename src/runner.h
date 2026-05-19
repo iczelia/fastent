@@ -10,6 +10,7 @@
 #include "fastent-options.h"
 #include "lzest.h"
 #include "bm.h"
+#include "maurer.h"
 #include "port-io.h"
 
 void fastent_run_mmap(
@@ -25,14 +26,15 @@ void fastent_run_stream(
     fastent_source * src);
 
 /*  -eee non-mmap tee: one bounded pass feeding the order-0/-ee
-    analyzer (st), the LZ77F acc (lz) and the linear-complexity acc
-    (bm); all init'd.  O(chunk + grid block), serial on -j,
-    bit-identical to -j1/mmap.  Either acc pointer may be NULL.  */
+    analyzer (st), the LZ77F acc (lz), the linear-complexity acc (bm)
+    and the Maurer acc (ma); all init'd.  O(chunk + grid block),
+    serial on -j, bit-identical to -j1/mmap.  Any acc may be NULL.  */
 void fastent_run_stream_lz_tee(
     fastent_chunk_state * st, fastent_lz_acc * lz, fastent_bm_acc * bm,
-    const fastent_options * o, fastent_analyze_fn fn_byte,
-    fastent_analyze_fn fn_bits, fastent_analyze_fn fn_byte_fold,
-    fastent_analyze_fn fn_bits_fold, fastent_source * src);
+    fastent_maurer_acc * ma, const fastent_options * o,
+    fastent_analyze_fn fn_byte, fastent_analyze_fn fn_bits,
+    fastent_analyze_fn fn_byte_fold, fastent_analyze_fn fn_bits_fold,
+    fastent_source * src);
 
 typedef struct {
   char *          path;
@@ -60,6 +62,14 @@ void fastent_run_lz(
     giving zero-drift bit-identical output for any -j / driver / host. */
 void fastent_run_bm(
     fastent_bm_acc * acc, const fastent_options * o, fastent_source * src);
+
+/*  Maurer universal test (-eee, alongside LZ77F / BM) driver.  Same
+    absolute 4 MiB-grid scheme; per-block partials reduce in absolute
+    block order so the f64 statistic is bit-identical for any -j /
+    driver / host.  */
+void fastent_run_maurer(
+    fastent_maurer_acc * acc, const fastent_options * o,
+    fastent_source * src);
 
 void fastent_rows_free(fastent_recursive_row * rows, sz n);
 

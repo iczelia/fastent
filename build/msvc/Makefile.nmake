@@ -31,7 +31,7 @@ CORE = \
   src\kernel\analyze.c src\kernel\analyze-scalar.c \
   src\kernel\analyze-ssse3.c src\kernel\analyze-sse41.c \
   src\kernel\digram.c src\kernel\chisq.c src\kernel\lzest.c \
-  src\kernel\bm.c \
+  src\kernel\bm.c src\kernel\maurer.c \
   src\kernel\fips1402.c \
   src\kernel\fips1402-scalar.c src\kernel\fips1402-ssse3.c \
   src\kernel\fips1402-sse41.c \
