@@ -388,6 +388,63 @@ static void hist_maurer_(
   printf(")\n\n");
 }
 
+/*  Binary matrix-rank 3-bar histogram: counts in the r=32 / r=31 /
+    r<=30 pooled bins, labelled under each bar.  Tiny plot, fits in any
+    terminal; the labels carry context the bar widths cannot.  */
+static void hist_mrank_(
+    const fastent_result * r, const fastent_options * o) {
+  printf("Matrix rank (32x32, %" PRIu64 " matrices)\n",
+         (u64) r->mrank_matrices);
+  u64 g[3];
+  g[0] = r->mrank_r32;  g[1] = r->mrank_r31;  g[2] = r->mrank_rlo;
+  u64 max = 0;
+  Fi(3, if (g[i] > max) max = g[i])
+  if (max == 0) { printf("(no matrices)\n\n");  return; }
+  const int use_color = color_active_(o->color);
+  i32 gw = hist_bars_(g, 3, max, o->histogram_log, use_color, NULL, NULL);
+  Fi(gw + 1, putchar(' '))
+  putchar('+');  Fi(3, putchar('|'))  putchar('\n');
+  Fi(gw + 2, putchar(' '))
+  fputs("r=32 r=31 r<=30", stdout);  putchar('\n');
+  printf("(rank bin");
+  if (o->histogram_log) printf(", log y");
+  printf(")\n\n");
+}
+
+/*  Bandt-Pompe permutation entropy: 24-bin pattern (Lehmer-code id)
+    histogram, one column per bin.  Same 8-row glyph grid as the byte
+    plot; tick every 4 bins so the axis stays readable.  */
+static void hist_perment_(
+    const fastent_result * r, const fastent_options * o) {
+  printf("Permutation entropy patterns (m=4, %" PRIu64 " windows, "
+         "H_norm=%.6g)\n",
+         (u64) r->perment_windows, r->perment_h_norm);
+  u64 g[24];
+  Fi(24, g[i] = r->perment_hist[i])
+  u64 max = 0;
+  Fi(24, if (g[i] > max) max = g[i])
+  if (max == 0) { printf("(no windows)\n\n");  return; }
+  const int use_color = color_active_(o->color);
+  i32 gw = hist_bars_(g, 24, max, o->histogram_log, use_color, NULL, NULL);
+  i32 tick_every = 4;
+  Fi(gw + 1, putchar(' '))
+  putchar('+');
+  Fi(24, putchar((i % tick_every == 0) ? '|' : '-'))
+  putchar('\n');
+  Fi(gw + 2, putchar(' '))
+  for (i32 c = 0; c < 24; c += tick_every) {
+    char buf[8];
+    i32 ln = snprintf(buf, sizeof(buf), "%d", c);
+    if (ln > tick_every) ln = tick_every;
+    if (c + tick_every >= 24) printf("%.*s", ln, buf);
+    else                      printf("%-*.*s", tick_every, ln, buf);
+  }
+  putchar('\n');
+  printf("(pattern id");
+  if (o->histogram_log) printf(", log y");
+  printf(")\n\n");
+}
+
 void fastent_print_histogram(
     const fastent_result * r, const fastent_options * o) {
   hist_byte_(r, o);
@@ -395,7 +452,7 @@ void fastent_print_histogram(
   /*  -eee + -H: the offset and length log2 plots side by side, then
       a 256-bin literal histogram titled with H_lit.  Composed with
       -t/--json like the byte plot.  */
-  if (o->extended >= 3 && r->lz) {
+  if (o->extended >= 1 && r->lz) {
     char t[96];
     hist_log2_pair_("LZ77F match offsets (1..65535)",
                     r->lz->off_par, 1, 65535,
@@ -409,4 +466,8 @@ void fastent_print_histogram(
     hist_lc_(r, o);
   if (o->extended >= 3 && r->maurer_dev == r->maurer_dev)
     hist_maurer_(r, o);
+  if (o->extended >= 3 && r->mrank_dev == r->mrank_dev)
+    hist_mrank_(r, o);
+  if (o->extended >= 1 && r->perment_deviation == r->perment_deviation)
+    hist_perment_(r, o);
 }

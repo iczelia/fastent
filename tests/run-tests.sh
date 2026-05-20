@@ -121,11 +121,28 @@ EOF
   fi
 }
 
-gen_zero    all-zeros.bin    1048576
-gen_byte    all-ones.bin     255 1048576
-gen_uniform uniform.bin      4096          # 1 MiB, each value 4096x
-gen_lcg     lcg.bin          1048576
-gen_lfsr16  lfsr16.bin       1048576
+gen_monotone() {
+  #  Monotone byte stream (i mod 256): every length-4 ordinal window is
+  #  strictly increasing, so permutation entropy collapses to one bin
+  #  (H_norm = 0, headline z huge).  Also bins all 32x32 matrices into
+  #  rank <= 30 (rows are identical-pattern integer arithmetic).
+  if [ ! -f "${FIX}/$1" ]; then
+    cc_gen "$1" '#include <stdio.h>
+#include <stdlib.h>
+int main(int argc, char ** argv) {
+  long n = atol(argv[1]);
+  for (long i = 0; i < n; i++) putchar((int)(i & 0xFFu));
+  return 0;
+}' "$2"
+  fi
+}
+
+gen_zero     all-zeros.bin    1048576
+gen_byte     all-ones.bin     255 1048576
+gen_uniform  uniform.bin      4096          # 1 MiB, each value 4096x
+gen_lcg      lcg.bin          1048576
+gen_lfsr16   lfsr16.bin       1048576
+gen_monotone monotone.bin     1048576       # i mod 256, fully ordered
 
 passes=0
 fails=0
@@ -270,12 +287,13 @@ check "uniform -e: min-entropy = 8.000000" bash -c '
     grep -qE "Collision entropy is 8\.000000 bits per byte\." <<< "$out"
 '
 
-check "terse -e: 36 columns" bash -c '
+check "terse -e: 50 columns (basic + extended + LZ77F + perment)" bash -c '
   out=$('"${FASTENT}"' -e -t "'"${FIX}"'/lcg.bin")
   grep -q "Chi-square,P-Exceed,Mean," <<< "$out" &&
     grep -q "Min-Entropy,Collision-Entropy,IC,Poker,Poker-p," <<< "$out" &&
     grep -q "Conditional-Entropy,Mutual-Information,Runs,Longest-Run,Cusum-Max" <<< "$out" &&
-    [ "$(printf "%s\n" "$out" | sed -n 2p | tr , "\n" | wc -l)" -eq 36 ]
+    grep -q "LZ-Deviation,LZ-Matches,LZ-Megamatch,Perment-Hnorm" <<< "$out" &&
+    [ "$(printf "%s\n" "$out" | sed -n 2p | tr , "\n" | wc -l)" -eq 50 ]
 '
 
 check "no -ee: runs/longrun/cusum nan" bash -c '
@@ -346,8 +364,8 @@ if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
   '
 fi
 
-check "no -eee: LZ77F fields are nan" bash -c '
-  out=$('"${FASTENT}"' -ee -t "'"${FIX}"'/lcg.bin")
+check "no -e: LZ77F columns absent" bash -c '
+  out=$('"${FASTENT}"' -t "'"${FIX}"'/lcg.bin")
   printf "%s\n" "$out" | sed -n 1p | grep -qv "LZ-Deviation"
 '
 
@@ -394,29 +412,29 @@ check "no -eee: BM columns absent" bash -c '
 
 check "-eee LFSR16: bm_deviation >= 3 FAIL, mean L ~ 16" bash -c '
   r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/lfsr16.bin" | sed -n 2p)
-  d=$(printf %s "$r" | cut -d, -f52)
-  m=$(printf %s "$r" | cut -d, -f48)
+  d=$(printf %s "$r" | cut -d, -f55)
+  m=$(printf %s "$r" | cut -d, -f51)
   awk -v d="$d" -v m="$m" "BEGIN{exit !(d>=3.0 && m>=14 && m<=18)}"
 '
 
 check "-eee uniform: bm_deviation < 2 PASS, mean L ~ 256" bash -c '
   r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/uniform.bin" | sed -n 2p)
-  d=$(printf %s "$r" | cut -d, -f52)
-  m=$(printf %s "$r" | cut -d, -f48)
+  d=$(printf %s "$r" | cut -d, -f55)
+  m=$(printf %s "$r" | cut -d, -f51)
   awk -v d="$d" -v m="$m" "BEGIN{exit !(d<2.0 && m>=254 && m<=258)}"
 '
 
 check "-eee lcg.bin (MSB-byte): bm PASS (documented boundary)" bash -c '
   r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/lcg.bin" | sed -n 2p)
-  d=$(printf %s "$r" | cut -d, -f52)
+  d=$(printf %s "$r" | cut -d, -f55)
   awk -v d="$d" "BEGIN{exit !(d<2.0)}"
 '
 
 check "-eee zeros: near-constant flagged, FAIL" bash -c '
   r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/all-zeros.bin" | sed -n 2p)
-  g=$(printf %s "$r" | cut -d, -f54)
-  m=$(printf %s "$r" | cut -d, -f48)
-  d=$(printf %s "$r" | cut -d, -f52)
+  g=$(printf %s "$r" | cut -d, -f57)
+  m=$(printf %s "$r" | cut -d, -f51)
+  d=$(printf %s "$r" | cut -d, -f55)
   awk -v g="$g" -v m="$m" -v d="$d" "BEGIN{exit !(g==1 && m==0 && d>=3.0)}"
 '
 
@@ -433,7 +451,7 @@ if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
   '
 fi
 
-#  Terse row 2 Maurer fields: Maurer-Deviation=57, Maurer-K=58,
+#  Terse row 2 Maurer fields: Maurer-Deviation=60, Maurer-K=61,
 #  Maurer-Degenerate=59 (header field names: Maurer-*).
 check "no -eee: Maurer columns absent" bash -c '
   '"${FASTENT}"' -ee -t "'"${FIX}"'/lcg.bin" | sed -n 1p | grep -qv "Maurer-Deviation"
@@ -441,15 +459,15 @@ check "no -eee: Maurer columns absent" bash -c '
 
 check "-eee zeros: Maurer FAIL, repetitive flagged" bash -c '
   r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/all-zeros.bin" | sed -n 2p)
-  d=$(printf %s "$r" | cut -d, -f57)
-  g=$(printf %s "$r" | cut -d, -f59)
+  d=$(printf %s "$r" | cut -d, -f60)
+  g=$(printf %s "$r" | cut -d, -f62)
   awk -v d="$d" -v g="$g" "BEGIN{exit !(d>=3.0 && g==1)}"
 '
 
 check "-eee lcg.bin: Maurer < 2 PASS" bash -c '
   r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/lcg.bin" | sed -n 2p)
-  d=$(printf %s "$r" | cut -d, -f57)
-  k=$(printf %s "$r" | cut -d, -f58)
+  d=$(printf %s "$r" | cut -d, -f60)
+  k=$(printf %s "$r" | cut -d, -f61)
   awk -v d="$d" -v k="$k" "BEGIN{exit !(d<2.0 && k>0)}"
 '
 
@@ -462,6 +480,85 @@ if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
   check "-eee Maurer determinism mmap == stream" bash -c '
     a=$('"${FASTENT}"' -eee -t --io=mmap   "'"${FIX}"'/lcg.bin" | sed -n 2p)
     b=$('"${FASTENT}"' -eee -t --io=stream "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    [ "$a" = "$b" ]
+  '
+fi
+
+#  Terse row 2 -eee mrank / perment fields (1-indexed column numbers):
+#    MRank-Dev=60, MRank-Chi=61, MRank-Matrices=62, MRank-Underpowered=63,
+#    Perment-Hnorm=64, Perment-Deviation=65, Perment-Windows=66.
+check "no -eee: mrank columns absent" bash -c '
+  '"${FASTENT}"' -ee -t "'"${FIX}"'/lcg.bin" | sed -n 1p | grep -qv "MRank-Dev"
+'
+
+check "no -e: perment columns absent" bash -c '
+  '"${FASTENT}"' -t "'"${FIX}"'/lcg.bin" | sed -n 1p | grep -qv "Perment-Deviation"
+'
+
+check "no -eee JSON: binary_matrix_rank key absent" bash -c '
+  '"${FASTENT}"' -ee --json "'"${FIX}"'/lcg.bin" | grep -qv "binary_matrix_rank"
+'
+
+check "no -eee JSON: permutation_entropy key absent" bash -c '
+  '"${FASTENT}"' -ee --json "'"${FIX}"'/lcg.bin" | grep -qv "permutation_entropy"
+'
+
+check "-eee zeros: mrank FAIL (z >= 3)" bash -c '
+  r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/all-zeros.bin" | sed -n 2p)
+  d=$(printf %s "$r" | cut -d, -f60)
+  awk -v d="$d" "BEGIN{exit !(d>=3.0)}"
+'
+
+check "-e zeros: perment FAIL (z >= 3)" bash -c '
+  r=$('"${FASTENT}"' -e -t "'"${FIX}"'/all-zeros.bin" | sed -n 2p)
+  d=$(printf %s "$r" | cut -d, -f49)
+  awk -v d="$d" "BEGIN{exit !(d>=3.0)}"
+'
+
+check "-e monotone: perment H_norm ~ 0 FAIL" bash -c '
+  r=$('"${FASTENT}"' -e -t "'"${FIX}"'/monotone.bin" | sed -n 2p)
+  hn=$(printf %s "$r" | cut -d, -f48)
+  d=$(printf %s "$r" | cut -d, -f49)
+  awk -v hn="$hn" -v d="$d" "BEGIN{exit !(hn<0.05 && d>=3.0)}"
+'
+
+check "-eee monotone: mrank low-rank FAIL" bash -c '
+  r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/monotone.bin" | sed -n 2p)
+  d=$(printf %s "$r" | cut -d, -f60)
+  awk -v d="$d" "BEGIN{exit !(d>=3.0)}"
+'
+
+check "-eee lcg.bin: mrank PASS" bash -c '
+  r=$('"${FASTENT}"' -eee -t "'"${FIX}"'/lcg.bin" | sed -n 2p)
+  d=$(printf %s "$r" | cut -d, -f60)
+  awk -v d="$d" "BEGIN{exit !(d<3.0)}"
+'
+
+check "-e lcg.bin: perment PASS" bash -c '
+  r=$('"${FASTENT}"' -e -t "'"${FIX}"'/lcg.bin" | sed -n 2p)
+  d=$(printf %s "$r" | cut -d, -f49)
+  awk -v d="$d" "BEGIN{exit !(d<3.0)}"
+'
+
+if "${FASTENT}" --help 2>&1 | grep -q -- "-j"; then
+  check "-eee mrank determinism j1 == j4" bash -c '
+    a=$('"${FASTENT}"' -eee -t -j 1 "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    b=$('"${FASTENT}"' -eee -t -j 4 "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    [ "$a" = "$b" ]
+  '
+  check "-eee mrank determinism mmap == stream" bash -c '
+    a=$('"${FASTENT}"' -eee -t --io=mmap   "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    b=$('"${FASTENT}"' -eee -t --io=stream "'"${FIX}"'/lcg.bin" | sed -n 2p)
+    [ "$a" = "$b" ]
+  '
+  check "-eee perment determinism j1 == j4" bash -c '
+    a=$('"${FASTENT}"' -eee -t -j 1 "'"${FIX}"'/monotone.bin" | sed -n 2p)
+    b=$('"${FASTENT}"' -eee -t -j 4 "'"${FIX}"'/monotone.bin" | sed -n 2p)
+    [ "$a" = "$b" ]
+  '
+  check "-eee perment determinism mmap == stream" bash -c '
+    a=$('"${FASTENT}"' -eee -t --io=mmap   "'"${FIX}"'/monotone.bin" | sed -n 2p)
+    b=$('"${FASTENT}"' -eee -t --io=stream "'"${FIX}"'/monotone.bin" | sed -n 2p)
     [ "$a" = "$b" ]
   '
 fi

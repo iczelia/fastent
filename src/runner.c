@@ -8,6 +8,8 @@
 #include "lzest.h"
 #include "bm.h"
 #include "maurer.h"
+#include "mrank.h"
+#include "perment.h"
 #include "output.h"
 #include "port-thread.h"
 #include "port-walk.h"
@@ -764,6 +766,12 @@ static int run_uring_mt_(
 #define FASTENT_GRID_EST maurer
 #include "runner-grid.h"
 
+#define FASTENT_GRID_EST mrank
+#include "runner-grid.h"
+
+#define FASTENT_GRID_EST perment
+#include "runner-grid.h"
+
 void fastent_run_mmap(
     fastent_chunk_state * st, const fastent_options * o,
     fastent_analyze_fn fn_byte, fastent_analyze_fn fn_bits,
@@ -823,12 +831,14 @@ void fastent_run_stream(
 }
 
 /*  -eee non-mmap tee: one bounded pass feeds each chunk to the
-    order-0/-ee analyzer (analyze_fused_), the LZ77F acc, the
-    linear-complexity acc and the Maurer acc, O(chunk + grid block).
-    Serial on -j, bit-identical to -j1/mmap.  Any acc may be NULL.  */
+    order-0/-ee analyzer (analyze_fused_), the LZ77F acc, the linear-
+    complexity acc, the Maurer acc, the matrix-rank acc and the
+    permutation-entropy acc, O(chunk + grid block).  Serial on -j,
+    bit-identical to -j1/mmap.  Any acc may be NULL.  */
 void fastent_run_stream_lz_tee(
     fastent_chunk_state * st, fastent_lz_acc * lz, fastent_bm_acc * bm,
-    fastent_maurer_acc * ma, const fastent_options * o,
+    fastent_maurer_acc * ma, fastent_mrank_acc * mr,
+    fastent_perment_acc * pe, const fastent_options * o,
     fastent_analyze_fn fn_byte, fastent_analyze_fn fn_bits,
     fastent_analyze_fn fn_byte_fold, fastent_analyze_fn fn_bits_fold,
     fastent_source * src) {
@@ -852,10 +862,18 @@ void fastent_run_stream_lz_tee(
     if (ma && fastent_maurer_acc_feed(ma, src->stream_buf, n) != 0) {
       ma->oom = 1;  return;
     }
+    if (mr && fastent_mrank_acc_feed(mr, src->stream_buf, n) != 0) {
+      mr->oom = 1;  return;
+    }
+    if (pe && fastent_perment_acc_feed(pe, src->stream_buf, n) != 0) {
+      pe->oom = 1;  return;
+    }
   }
   if (lz && fastent_lz_acc_flush(lz) != 0) lz->oom = 1;
   if (bm && fastent_bm_acc_flush(bm) != 0) bm->oom = 1;
   if (ma && fastent_maurer_acc_flush(ma) != 0) ma->oom = 1;
+  if (mr && fastent_mrank_acc_flush(mr) != 0) mr->oom = 1;
+  if (pe && fastent_perment_acc_flush(pe) != 0) pe->oom = 1;
 }
 
 /*  Recursive mode.  */
@@ -889,37 +907,56 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
       fprintf(stderr, "out of memory\n"); exit(2);
     }
   }
-  /*  -eee: mmap feeds both consumers directly, a stream tees per
-      chunk (bit-identical to mmap/-j1).  The stored row keeps lz=NULL;
-      under -H the tables are materialised transiently then freed.  */
-  const int do_lz   = (c->o->extended >= 3);
+  /*  Grid estimators by speed band (matches fastent.c::main): LZ77F
+      and perment ride -e; BM / Maurer / mrank stay at -eee.  mmap
+      feeds each consumer directly, a stream tees per chunk
+      (bit-identical to mmap/-j1).  Heap-allocated: every acc carries
+      a 4 MiB grid buffer (small wasm / DJGPP stacks).  */
+  const int do_lzp = (c->o->extended >= 1);
+  const int do_bmm = (c->o->extended >= 3);
   /*  -H per-file plots: human side output in walk order before the
       sorted rows.  JSON stays pure (no plot), as single-file does.  */
-  const int do_plot = do_lz && c->o->histogram && !c->o->json;
-  /*  Heap, not stack: both accs carry a 4 MiB grid buffer (and the
-      LZ77F hash table); a stack-local one overflows wasm / DOS.  */
+  const int do_plot = do_lzp && c->o->histogram && !c->o->json;
   fastent_lz_acc * lz = NULL;
   fastent_bm_acc * bm = NULL;
   fastent_maurer_acc * ma = NULL;
-  if (do_lz) {
+  fastent_mrank_acc * mr = NULL;
+  fastent_perment_acc * pe = NULL;
+  if (do_lzp) {
     lz = (fastent_lz_acc *) malloc(sizeof *lz);
+    pe = (fastent_perment_acc *) malloc(sizeof *pe);
+    if (!lz || !pe) { fprintf(stderr, "out of memory\n");  exit(2); }
+    fastent_lz_acc_init(lz, 0);
+    fastent_perment_acc_init(pe, 0);
+  }
+  if (do_bmm) {
     bm = (fastent_bm_acc *) malloc(sizeof *bm);
     ma = (fastent_maurer_acc *) malloc(sizeof *ma);
-    if (!lz || !bm || !ma) { fprintf(stderr, "out of memory\n");  exit(2); }
-    fastent_lz_acc_init(lz, 0);
+    mr = (fastent_mrank_acc *) malloc(sizeof *mr);
+    if (!bm || !ma || !mr) { fprintf(stderr, "out of memory\n");  exit(2); }
     fastent_bm_acc_init(bm, 0);
     fastent_maurer_acc_init(ma, 0);
+    fastent_mrank_acc_init(mr, 0);
   }
 
-  if (do_lz && src.kind == FASTENT_SRC_MMAP) {
+  if (do_lzp && src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, c->o, c->fn_byte, c->fn_bits,
                      c->fn_byte_fold, c->fn_bits_fold,
                      (const u8 *) src.map, src.size);
     fastent_run_lz(lz, c->o, &src);
-    fastent_run_bm(bm, c->o, &src);
-    fastent_run_maurer(ma, c->o, &src);
-  } else if (do_lz) {
-    fastent_run_stream_lz_tee(&st, lz, bm, ma, c->o, c->fn_byte, c->fn_bits,
+    fastent_run_perment(pe, c->o, &src);
+    if (do_bmm) {
+      fastent_run_bm(bm, c->o, &src);
+      fastent_run_maurer(ma, c->o, &src);
+      fastent_run_mrank(mr, c->o, &src);
+    }
+  } else if (do_lzp) {
+    fastent_run_stream_lz_tee(&st, lz,
+                              do_bmm ? bm : NULL,
+                              do_bmm ? ma : NULL,
+                              do_bmm ? mr : NULL,
+                              pe, c->o,
+                              c->fn_byte, c->fn_bits,
                               c->fn_byte_fold, c->fn_bits_fold, &src);
   } else if (src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, c->o, c->fn_byte, c->fn_bits,
@@ -932,8 +969,9 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   fastent_result r;
   fastent_finalize(&st, c->o->binary, &r);
 
-  if (do_lz) {
-    if (lz->oom || bm->oom || ma->oom) {
+  if (do_lzp) {
+    if (lz->oom || pe->oom
+        || (do_bmm && (bm->oom || ma->oom || mr->oom))) {
       fprintf(stderr, "out of memory\n"); exit(2);
     }
     if (do_plot) {
@@ -941,11 +979,17 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
       if (!r.lz) { fprintf(stderr, "out of memory\n"); exit(2); }
     }
     fastent_lz_finalize(lz, st.total_bytes, &r);
-    fastent_bm_finalize(bm, st.total_bytes, &r);
-    fastent_maurer_finalize(ma, st.total_bytes, &r);
+    fastent_perment_finalize(pe, st.total_bytes, &r);
     fastent_lz_acc_free(lz);  free(lz);
-    fastent_bm_acc_free(bm);  free(bm);
-    fastent_maurer_acc_free(ma);  free(ma);
+    fastent_perment_acc_free(pe);  free(pe);
+    if (do_bmm) {
+      fastent_bm_finalize(bm, st.total_bytes, &r);
+      fastent_maurer_finalize(ma, st.total_bytes, &r);
+      fastent_mrank_finalize(mr, st.total_bytes, &r);
+      fastent_bm_acc_free(bm);  free(bm);
+      fastent_maurer_acc_free(ma);  free(ma);
+      fastent_mrank_acc_free(mr);  free(mr);
+    }
     if (do_plot) {
       printf("%s\n", path);
       fastent_print_histogram(&r, c->o);
@@ -1035,6 +1079,8 @@ static f64 row_key_(const fastent_recursive_row * r) {
     case FASTENT_SORT_BM_DEVIATION: return r->result.bm_deviation;
     case FASTENT_SORT_BM_MEAN_LC:   return r->result.bm_mean_lc;
     case FASTENT_SORT_MAURER_DEVIATION: return r->result.maurer_dev;
+    case FASTENT_SORT_MRANK_DEV:    return r->result.mrank_dev;
+    case FASTENT_SORT_PERMENT_DEV:  return r->result.perment_deviation;
     default:                      return 0.0;
   }
 }

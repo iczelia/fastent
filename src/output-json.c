@@ -103,7 +103,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
     printf(",\n  \"longest_run\": ");   jint_(r->longest_run);
     printf(",\n  \"cusum_max\": ");     jint_(r->cusum_max);
   }
-  if (o->extended >= 3) {
+  if (o->extended >= 1) {
     printf(",\n  \"lz77f\": ");
     if (r->lz_deviation != r->lz_deviation) {
       fputs("null", stdout);
@@ -126,6 +126,8 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
              r->lz_megamatch ? "true" : "false");
       printf("\n  }");
     }
+  }
+  if (o->extended >= 3) {
     printf(",\n  \"linear_complexity\": ");
     if (r->bm_deviation != r->bm_deviation) {
       fputs("null", stdout);
@@ -153,6 +155,39 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
       printf(",\n    \"test_blocks\": %" PRIu64, (u64) r->maurer_k);
       printf(",\n    \"repetitive\": %s",
              r->maurer_degenerate ? "true" : "false");
+      printf("\n  }");
+    }
+  }
+  if (o->extended >= 1) {
+    printf(",\n  \"permutation_entropy\": ");
+    if (r->perment_deviation != r->perment_deviation) {
+      fputs("null", stdout);
+    } else {
+      printf("{\n    \"h_norm\": ");            jnum_(fmt_fp, r->perment_h_norm);
+      printf(",\n    \"deviation\": ");         jnum_(fmt_fp, r->perment_deviation);
+      printf(",\n    \"chi_square\": ");        jnum_(fmt_fp, r->perment_chi);
+      printf(",\n    \"chi_p\": ");             jnum_(fmt_fp, r->perment_chi_p);
+      printf(",\n    \"windows\": %" PRIu64,    (u64) r->perment_windows);
+      printf(",\n    \"histogram\": [");
+      Fi(24, if (i) putchar(','); printf(" %u", r->perment_hist[i]))
+      fputs(" ]", stdout);
+      printf("\n  }");
+    }
+  }
+  if (o->extended >= 3) {
+    printf(",\n  \"binary_matrix_rank\": ");
+    if (r->mrank_dev != r->mrank_dev) {
+      fputs("null", stdout);
+    } else {
+      printf("{\n    \"deviation\": ");         jnum_(fmt_fp, r->mrank_dev);
+      printf(",\n    \"chi_square\": ");        jnum_(fmt_fp, r->mrank_chi);
+      printf(",\n    \"chi_p\": ");             jnum_(fmt_fp, r->mrank_chi_p);
+      printf(",\n    \"matrices\": %" PRIu64,   (u64) r->mrank_matrices);
+      printf(",\n    \"rank_32\": %u",          r->mrank_r32);
+      printf(",\n    \"rank_31\": %u",          r->mrank_r31);
+      printf(",\n    \"rank_low\": %u",         r->mrank_rlo);
+      printf(",\n    \"underpowered\": %s",
+             r->mrank_underpowered ? "true" : "false");
       printf("\n  }");
     }
   }

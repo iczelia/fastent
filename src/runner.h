@@ -11,6 +11,8 @@
 #include "lzest.h"
 #include "bm.h"
 #include "maurer.h"
+#include "mrank.h"
+#include "perment.h"
 #include "port-io.h"
 
 void fastent_run_mmap(
@@ -26,12 +28,14 @@ void fastent_run_stream(
     fastent_source * src);
 
 /*  -eee non-mmap tee: one bounded pass feeding the order-0/-ee
-    analyzer (st), the LZ77F acc (lz), the linear-complexity acc (bm)
-    and the Maurer acc (ma); all init'd.  O(chunk + grid block),
-    serial on -j, bit-identical to -j1/mmap.  Any acc may be NULL.  */
+    analyzer (st), the LZ77F acc (lz), the linear-complexity acc (bm),
+    the Maurer acc (ma), the binary matrix-rank acc (mr) and the
+    permutation-entropy acc (pe); each may be NULL.  O(chunk + grid
+    block), serial on -j, bit-identical to -j1/mmap.  */
 void fastent_run_stream_lz_tee(
     fastent_chunk_state * st, fastent_lz_acc * lz, fastent_bm_acc * bm,
-    fastent_maurer_acc * ma, const fastent_options * o,
+    fastent_maurer_acc * ma, fastent_mrank_acc * mr,
+    fastent_perment_acc * pe, const fastent_options * o,
     fastent_analyze_fn fn_byte, fastent_analyze_fn fn_bits,
     fastent_analyze_fn fn_byte_fold, fastent_analyze_fn fn_bits_fold,
     fastent_source * src);
@@ -51,7 +55,7 @@ int fastent_run_recursive(
     fastent_analyze_fn fn_bits_fold, fastent_recursive_row ** out_rows,
     sz * out_n);
 
-/*  LZ77F (-eee) driver.  Runs the absolute 4 MiB-grid LZ77F parse
+/*  LZ77F (-e) driver.  Runs the absolute 4 MiB-grid LZ77F parse
     over `src` and writes the merged accumulator into *acc (already
     init'd).  Result is bit-identical for any -j / driver / host.  */
 void fastent_run_lz(
@@ -69,6 +73,21 @@ void fastent_run_bm(
     driver / host.  */
 void fastent_run_maurer(
     fastent_maurer_acc * acc, const fastent_options * o,
+    fastent_source * src);
+
+/*  Binary matrix-rank (-eee) driver.  Same absolute 4 MiB-grid scheme
+    as fastent_run_lz; 128 divides the grid so matrices never straddle,
+    giving bit-identical integer output for any -j / driver / host.  */
+void fastent_run_mrank(
+    fastent_mrank_acc * acc, const fastent_options * o,
+    fastent_source * src);
+
+/*  Bandt-Pompe permutation entropy (-e) driver.  Same absolute
+    4 MiB-grid scheme; the (m - 1) windows that span a grid boundary
+    are dropped (bounded drift, verdict-neutral); bit-identical for
+    any -j / driver / host.  */
+void fastent_run_perment(
+    fastent_perment_acc * acc, const fastent_options * o,
     fastent_source * src);
 
 void fastent_rows_free(fastent_recursive_row * rows, sz n);

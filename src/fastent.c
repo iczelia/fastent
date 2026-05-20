@@ -151,39 +151,72 @@ int main(int argc, char ** argv) {
     }
   }
 
-  /*  -eee reads the bytes twice (SIMD order-0/-ee scan + absolute-grid
-      LZ77F parse).  mmap feeds both directly; a stream tees each chunk
-      to both, O(chunk + grid block) and bit-identical to mmap/-j1.  */
-  /*  Heap, not stack: fastent_lz_acc is ~640 KiB and would overflow
-      the small stacks on wasm / DJGPP targets.  */
+  /*  -e reads the bytes twice (SIMD order-0/-ee scan + absolute-grid
+      LZ77F parse), and also runs perment on the same grid.  mmap feeds
+      every acc directly; a stream tees each chunk, O(chunk + grid
+      block) and bit-identical to mmap/-j1.  -eee additionally drives
+      the BM / Maurer / matrix-rank accs.  Heap, not stack: each acc
+      carries a 4 MiB grid buffer (small wasm / DJGPP stacks).  */
   fastent_lz_acc * lz = NULL;
   fastent_bm_acc * bm = NULL;
   fastent_maurer_acc * ma = NULL;
-  int lz_active = (o.extended >= 3);
-  if (lz_active) {
+  fastent_mrank_acc * mr = NULL;
+  fastent_perment_acc * pe = NULL;
+  /*  Grid estimators are bucketed by measured single-thread throughput.
+      LZ77F (~2 GiB/s) and Bandt-Pompe permutation entropy (~1 GiB/s)
+      ride -e; Berlekamp-Massey, Maurer and matrix-rank (~50-350 MiB/s)
+      stay at -eee.  Allocations split accordingly.  */
+  int lzp_active = (o.extended >= 1);
+  int bmm_active = (o.extended >= 3);
+  if (lzp_active) {
     lz = (fastent_lz_acc *) malloc(sizeof *lz);
-    bm = (fastent_bm_acc *) malloc(sizeof *bm);
-    ma = (fastent_maurer_acc *) malloc(sizeof *ma);
-    if (!lz || !bm || !ma) {
+    pe = (fastent_perment_acc *) malloc(sizeof *pe);
+    if (!lz || !pe) {
       fprintf(stderr, "out of memory\n");
-      free(lz);  free(bm);  free(ma);
+      free(lz);  free(pe);
       fastent_src_close(&src);  fastent_bigram_free(st.bigram);
       fastent_dg_u32_free(st.dg_u32);  free((void *) o.path);
       return 2;
     }
     fastent_lz_acc_init(lz, 0);
+    fastent_perment_acc_init(pe, 0);
+  }
+  if (bmm_active) {
+    bm = (fastent_bm_acc *) malloc(sizeof *bm);
+    ma = (fastent_maurer_acc *) malloc(sizeof *ma);
+    mr = (fastent_mrank_acc *) malloc(sizeof *mr);
+    if (!bm || !ma || !mr) {
+      fprintf(stderr, "out of memory\n");
+      free(bm);  free(ma);  free(mr);
+      if (lzp_active) {
+        fastent_lz_acc_free(lz);  free(lz);
+        fastent_perment_acc_free(pe);  free(pe);
+      }
+      fastent_src_close(&src);  fastent_bigram_free(st.bigram);
+      fastent_dg_u32_free(st.dg_u32);  free((void *) o.path);
+      return 2;
+    }
     fastent_bm_acc_init(bm, 0);
     fastent_maurer_acc_init(ma, 0);
+    fastent_mrank_acc_init(mr, 0);
   }
 
-  if (o.extended >= 3 && src.kind == FASTENT_SRC_MMAP) {
+  if (lzp_active && src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, &o, fn_byte, fn_bits, fn_byte_fold, fn_bits_fold,
                      (const u8 *) src.map, src.size);
     fastent_run_lz(lz, &o, &src);
-    fastent_run_bm(bm, &o, &src);
-    fastent_run_maurer(ma, &o, &src);
-  } else if (o.extended >= 3) {
-    fastent_run_stream_lz_tee(&st, lz, bm, ma, &o, fn_byte, fn_bits,
+    fastent_run_perment(pe, &o, &src);
+    if (bmm_active) {
+      fastent_run_bm(bm, &o, &src);
+      fastent_run_maurer(ma, &o, &src);
+      fastent_run_mrank(mr, &o, &src);
+    }
+  } else if (lzp_active) {
+    fastent_run_stream_lz_tee(&st, lz,
+                              bmm_active ? bm : NULL,
+                              bmm_active ? ma : NULL,
+                              bmm_active ? mr : NULL,
+                              pe, &o, fn_byte, fn_bits,
                               fn_byte_fold, fn_bits_fold, &src);
   } else if (src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, &o, fn_byte, fn_bits, fn_byte_fold, fn_bits_fold,
@@ -196,15 +229,22 @@ int main(int argc, char ** argv) {
   fastent_result result;
   fastent_finalize(&st, o.binary, &result);
 
-  /*  LZ77F (-eee): finalize the merged accumulator; sentinels stay
-      NaN below level 3.  */
-  if (lz_active) {
+  /*  Grid finalize.  LZ77F + perment finalise at -e; BM, Maurer, mrank
+      finalise at -eee.  Sentinel fields stay NaN/0 when each gate is
+      off.  result.lz (the 528 KiB LZ77F raw tables) is allocated under
+      -e since LZ77F itself runs there.  */
+  if (lzp_active) {
     result.lz = fastent_lz77f_tables_alloc();
-    if (lz->oom || bm->oom || ma->oom || !result.lz) {
+    if (lz->oom || pe->oom || !result.lz
+        || (bmm_active && (bm->oom || ma->oom || mr->oom))) {
       fprintf(stderr, "out of memory\n");
       fastent_lz_acc_free(lz);  free(lz);
-      fastent_bm_acc_free(bm);  free(bm);
-      fastent_maurer_acc_free(ma);  free(ma);
+      fastent_perment_acc_free(pe);  free(pe);
+      if (bmm_active) {
+        fastent_bm_acc_free(bm);  free(bm);
+        fastent_maurer_acc_free(ma);  free(ma);
+        fastent_mrank_acc_free(mr);  free(mr);
+      }
       fastent_lz77f_tables_free(result.lz);
       fastent_src_close(&src);
       fastent_bigram_free(st.bigram);
@@ -213,11 +253,17 @@ int main(int argc, char ** argv) {
       return 2;
     }
     fastent_lz_finalize(lz, st.total_bytes, &result);
-    fastent_bm_finalize(bm, st.total_bytes, &result);
-    fastent_maurer_finalize(ma, st.total_bytes, &result);
+    fastent_perment_finalize(pe, st.total_bytes, &result);
     fastent_lz_acc_free(lz);  free(lz);
-    fastent_bm_acc_free(bm);  free(bm);
-    fastent_maurer_acc_free(ma);  free(ma);
+    fastent_perment_acc_free(pe);  free(pe);
+    if (bmm_active) {
+      fastent_bm_finalize(bm, st.total_bytes, &result);
+      fastent_maurer_finalize(ma, st.total_bytes, &result);
+      fastent_mrank_finalize(mr, st.total_bytes, &result);
+      fastent_bm_acc_free(bm);  free(bm);
+      fastent_maurer_acc_free(ma);  free(ma);
+      fastent_mrank_acc_free(mr);  free(mr);
+    }
   }
 
   fastent_src_close(&src);

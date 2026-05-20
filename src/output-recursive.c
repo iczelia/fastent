@@ -53,14 +53,17 @@ void fastent_print_recursive_csv(
           "bit_bias_max,bit_bias_worst,"
           "conditional_entropy,mutual_information,"
           "runs,longest_run,cusum_max", stdout);
-  if (o->extended >= 3)
+  if (o->extended >= 1)
     fputs(",lz_cr_excess,lz_lit_h,lz_lit_kl,lz_match_cov,lz_off_conc,"
           "lz_mlen_excess,lz_lit_chi,lz_lit_chi_p,lz_deviation,"
           "lz_matches,lz_megamatch,"
-          "bm_mean_lc,bm_mu,bm_chi,bm_chi_p,bm_deviation,"
+          "perment_hnorm,perment_deviation,perment_windows", stdout);
+  if (o->extended >= 3)
+    fputs(",bm_mean_lc,bm_mu,bm_chi,bm_chi_p,bm_deviation,"
           "bm_windows,bm_degenerate,"
           "maurer_fn,maurer_expected,maurer_deviation,"
-          "maurer_k,maurer_degenerate", stdout);
+          "maurer_k,maurer_degenerate,"
+          "mrank_dev,mrank_chi,mrank_matrices,mrank_underpowered", stdout);
   putchar('\n');
   for (sz i = 0; i < n; i++) {
     const fastent_recursive_row * r = &rows[i];
@@ -105,7 +108,7 @@ void fastent_print_recursive_csv(
         printf("%.0f", r->result.cusum_max);
       else fputs("nan", stdout);
     }
-    if (o->extended >= 3) {
+    if (o->extended >= 1) {
       putchar(','); cnum_(f, r->result.lz_cr_excess);
       putchar(','); cnum_(f, r->result.lz_lit_h);
       putchar(','); cnum_(f, r->result.lz_lit_kl);
@@ -117,6 +120,11 @@ void fastent_print_recursive_csv(
       putchar(','); cnum_(f, r->result.lz_deviation);
       printf(",%" PRIu64 ",%d",
              (u64) r->result.lz_nmatch, r->result.lz_megamatch);
+      putchar(','); cnum_(f, r->result.perment_h_norm);
+      putchar(','); cnum_(f, r->result.perment_deviation);
+      printf(",%" PRIu64, (u64) r->result.perment_windows);
+    }
+    if (o->extended >= 3) {
       putchar(','); cnum_(f, r->result.bm_mean_lc);
       putchar(','); cnum_(f, r->result.bm_mu);
       putchar(','); cnum_(f, r->result.bm_chi);
@@ -129,6 +137,10 @@ void fastent_print_recursive_csv(
       putchar(','); cnum_(f, r->result.maurer_dev);
       printf(",%" PRIu64 ",%d",
              (u64) r->result.maurer_k, r->result.maurer_degenerate);
+      putchar(','); cnum_(f, r->result.mrank_dev);
+      putchar(','); cnum_(f, r->result.mrank_chi);
+      printf(",%" PRIu64 ",%d",
+             (u64) r->result.mrank_matrices, r->result.mrank_underpowered);
     }
     putchar('\n');
   }
@@ -246,7 +258,7 @@ void fastent_print_recursive_json(
       fputs(", \"longest_run\": ", stdout);  json_int_(r->result.longest_run);
       fputs(", \"cusum_max\": ", stdout);    json_int_(r->result.cusum_max);
     }
-    if (o->extended >= 3) {
+    if (o->extended >= 1) {
       fputs(", \"lz77f\": ", stdout);
       if (r->result.lz_deviation != r->result.lz_deviation) {
         fputs("null", stdout);
@@ -275,6 +287,27 @@ void fastent_print_recursive_json(
                r->result.lz_megamatch ? "true" : "false");
         fputs(" }", stdout);
       }
+      fputs(", \"permutation_entropy\": ", stdout);
+      if (r->result.perment_deviation != r->result.perment_deviation) {
+        fputs("null", stdout);
+      } else {
+        fputs("{ \"h_norm\": ", stdout);
+        json_num_(f, r->result.perment_h_norm);
+        fputs(", \"deviation\": ", stdout);
+        json_num_(f, r->result.perment_deviation);
+        fputs(", \"chi_square\": ", stdout);
+        json_num_(f, r->result.perment_chi);
+        fputs(", \"chi_p\": ", stdout);
+        json_num_(f, r->result.perment_chi_p);
+        printf(", \"windows\": %" PRIu64, (u64) r->result.perment_windows);
+        fputs(", \"histogram\": [", stdout);
+        Fi(24, if (i) putchar(',');
+              printf(" %u", r->result.perment_hist[i]))
+        fputs(" ]", stdout);
+        fputs(" }", stdout);
+      }
+    }
+    if (o->extended >= 3) {
       fputs(", \"linear_complexity\": ", stdout);
       if (r->result.bm_deviation != r->result.bm_deviation) {
         fputs("null", stdout);
@@ -308,6 +341,26 @@ void fastent_print_recursive_json(
         printf(", \"test_blocks\": %" PRIu64, (u64) r->result.maurer_k);
         printf(", \"repetitive\": %s",
                r->result.maurer_degenerate ? "true" : "false");
+        fputs(" }", stdout);
+      }
+    }
+    if (o->extended >= 3) {
+      fputs(", \"binary_matrix_rank\": ", stdout);
+      if (r->result.mrank_dev != r->result.mrank_dev) {
+        fputs("null", stdout);
+      } else {
+        fputs("{ \"deviation\": ", stdout);
+        json_num_(f, r->result.mrank_dev);
+        fputs(", \"chi_square\": ", stdout);
+        json_num_(f, r->result.mrank_chi);
+        fputs(", \"chi_p\": ", stdout);
+        json_num_(f, r->result.mrank_chi_p);
+        printf(", \"matrices\": %" PRIu64, (u64) r->result.mrank_matrices);
+        printf(", \"rank_32\": %u", r->result.mrank_r32);
+        printf(", \"rank_31\": %u", r->result.mrank_r31);
+        printf(", \"rank_low\": %u", r->result.mrank_rlo);
+        printf(", \"underpowered\": %s",
+               r->result.mrank_underpowered ? "true" : "false");
         fputs(" }", stdout);
       }
     }

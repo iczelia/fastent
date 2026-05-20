@@ -328,8 +328,8 @@ void fastent_finalize(
     }
   }
 
-  /*  LZ77F (-eee) sentinels: fastent_lz_finalize overwrites these
-      when extended >= 3, else NaN (as conditional_entropy below).  */
+  /*  LZ77F (-e) sentinels: fastent_lz_finalize overwrites these
+      when extended >= 1, else NaN (as conditional_entropy below).  */
   out->lz_cr_excess = out->lz_lit_h = out->lz_lit_kl = NAN;
   out->lz_match_cov = out->lz_off_conc = out->lz_mlen_excess = NAN;
   out->lz_lit_chi = out->lz_lit_chi_p = out->lz_deviation = NAN;
@@ -351,6 +351,20 @@ void fastent_finalize(
   out->maurer_k = 0;
   out->maurer_degenerate = 0;
   Fi(64, out->maurer_lhist[i] = 0)
+
+  /*  Binary matrix-rank (-eee) sentinels: fastent_mrank_finalize
+      overwrites these when extended >= 3, else NaN / 0.  */
+  out->mrank_dev = out->mrank_chi = out->mrank_chi_p = NAN;
+  out->mrank_matrices = 0;
+  out->mrank_r32 = out->mrank_r31 = out->mrank_rlo = 0;
+  out->mrank_underpowered = 0;
+
+  /*  Permutation entropy (-e) sentinels: fastent_perment_finalize
+      overwrites these when extended >= 1, else NaN / 0.  */
+  out->perment_h_norm = out->perment_deviation = NAN;
+  out->perment_chi = out->perment_chi_p = NAN;
+  out->perment_windows = 0;
+  Fi(24, out->perment_hist[i] = 0)
 }
 
 /*  Variant table.  Order matters: dispatcher picks the LAST entry

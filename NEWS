@@ -7,6 +7,76 @@ complete source-level history, see the ChangeLog.
 -------------------------------------------------------------------------------
 v1.3 (May 2026)
 
+  Binary matrix-rank estimator
+  ----------------------------
+
+  -eee adds the NIST SP800-22 sec 2.5 binary matrix-rank test
+  alongside the linear-complexity and Maurer estimators.  The byte stream
+  is partitioned into disjoint 32x32 GF(2) matrices (128 bytes
+  each); each matrix rank is reduced in place by Gauss-Jordan on
+  32-bit row words and binned into the three pooled NIST rank
+  classes (r == 32, r == 31, r <= 30).  A chi-square against the
+  NIST closed-form probabilities (df = 2) drives the headline
+  mrank_dev = sqrt(chi2) badged PASS / WEAK / FAIL.  An
+  underpowered run (fewer than 16 matrices) skips the verdict and
+  flags mrank_underpowered = 1.
+
+  128 divides the 4 MiB absolute-offset grid so matrices never
+  straddle a block boundary; the three rank bin counts sum-merge
+  order-free, so the result is bit-identical for any thread
+  count, I/O mode and host.  The chi-square upper tail uses the
+  same fastent_chisq_tail family as the other estimators; df = 2
+  is even and outside its odd-df contract, so the advisory p-value
+  is NaN by design (the headline z is the verdict-bearing field).
+
+  It is reported in the default, terse CSV, JSON, recursive and
+  annotated output, sortable via --sort-by=mrank-dev (which
+  implies -eee), and with -eee -H a 3-bar rank histogram
+  follows the Maurer plot.
+
+  Scope: the matrix-rank test catches truncated-bit linear
+  recurrence sources that survive order-0 byte histograms and the
+  512-bit Berlekamp-Massey scorer (a low-bit LFSR that folds onto
+  32-bit rows lands in the r <= 30 tail).  It does not locate
+  where the structure is and is not a substitute for the
+  per-test advisories.
+
+  Bandt-Pompe permutation entropy
+  -------------------------------
+
+  -e also computes a Bandt-Pompe permutation entropy estimator
+  with embedding dimension m = 4 (24 ordinal patterns).  It runs
+  at about 1 GiB/s on Zen 4 and rides the -e tier together with
+  LZ77F.  Each
+  length-4 byte window is reduced to one of 24 Lehmer-code ids by
+  six strict comparisons (ties break by index, the standard
+  Bandt-Pompe convention) and the 24-bin pattern histogram
+  sum-merges on the 4 MiB absolute-offset grid.  The finaliser
+  reports the normalised entropy perment_h_norm in [0, 1] (1.0
+  for uniform patterns) and a headline perment_deviation z =
+  (1 - H_norm) * sqrt(W * 2 * ln 2) badged PASS / WEAK / FAIL, so
+  random sources pass cleanly and concentrated histograms (a
+  strictly monotone stream) hit the FAIL band.
+
+  The (m - 1) windows that would span a grid boundary are dropped,
+  capping drift at about (nblocks - 1) * 3 windows out of n total
+  (~7.2e-7 at 4 MiB blocks, verdict-neutral, mirroring LZ77F's
+  fresh-table bounded drift).  Histogram merge is integer-additive
+  and order-free, so the result is bit-identical for any thread
+  count, I/O mode and host.  An advisory 24-bin chi-square
+  (df = 23) rides alongside the headline.
+
+  It is reported in the default, terse CSV, JSON, recursive and
+  annotated output, sortable via --sort-by=perment-dev (which
+  implies -e), and with -e -H a 24-bin pattern histogram is the
+  last extra plot before any -eee additions.
+
+  Scope: permutation entropy catches short-range monotone or
+  structural correlations that order-0 and order-1 measures miss
+  (a strictly increasing byte sequence collapses to one of the 24
+  pattern bins); it is blind to long-range patterns by
+  construction.
+
   Maurer universal statistical test
   ---------------------------------
 
@@ -76,10 +146,9 @@ v1.3 (May 2026)
   LZ77F estimator
   ---------------
 
-  -e / --extended takes a third level.  Passing it three times
-  (-eee, or --extended thrice) runs the LZ77F estimator: a
-  count-only LZ77F match finder (acceleration 1, HLOG 13) that
-  measures structure an order-0/order-1 model misses.  It reports
+  -e / --extended runs the LZ77F estimator: a count-only LZ77F
+  match finder (acceleration 1, HLOG 13) that measures structure
+  an order-0/order-1 model misses.  It reports
   the compressibility excess versus an incompressible baseline
   (lz_cr_excess), the literal byte-value entropy and its KL
   divergence to uniform (lz_lit_h / lz_lit_kl), the match coverage
@@ -93,7 +162,7 @@ v1.3 (May 2026)
 
   All of it is reported in the default, terse CSV, JSON, recursive
   and annotated output and is sortable via --sort-by=lz-deviation,
-  lz-cr or lz-match-cov (which imply -eee).  With -eee -H, three
+  lz-cr or lz-match-cov (which imply -e).  With -e -H, three
   extra plots follow the byte/bit plot: match offsets and match
   lengths in log2 buckets and the literal byte-value histogram
   (256 bins, its title carrying H_lit).

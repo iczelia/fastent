@@ -42,14 +42,17 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
            "Bit-Bias-Max,Bit-Bias-Worst,"
            "Conditional-Entropy,Mutual-Information,"
            "Runs,Longest-Run,Cusum-Max");
-  if (o->extended >= 3)
+  if (o->extended >= 1)
     printf(",LZ-CR-Excess,LZ-Lit-H,LZ-Lit-KL,LZ-Match-Cov,LZ-Off-Conc,"
            "LZ-Mlen-Excess,LZ-Lit-Chi,LZ-Lit-Chi-p,LZ-Deviation,"
            "LZ-Matches,LZ-Megamatch,"
-           "BM-Mean-LC,BM-Mu,BM-Chi,BM-Chi-p,BM-Deviation,"
+           "Perment-Hnorm,Perment-Deviation,Perment-Windows");
+  if (o->extended >= 3)
+    printf(",BM-Mean-LC,BM-Mu,BM-Chi,BM-Chi-p,BM-Deviation,"
            "BM-Windows,BM-Degenerate,"
            "Maurer-Fn,Maurer-Expected,Maurer-Deviation,"
-           "Maurer-K,Maurer-Degenerate");
+           "Maurer-K,Maurer-Degenerate,"
+           "MRank-Dev,MRank-Chi,MRank-Matrices,MRank-Underpowered");
   putchar('\n');
 
   const char * f = o->full_precision ? "%.17g" : "%f";
@@ -82,7 +85,7 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
     putchar(','); tint_(r->longest_run);
     putchar(','); tint_(r->cusum_max);
   }
-  if (o->extended >= 3) {
+  if (o->extended >= 1) {
     putchar(','); tnum_(f, r->lz_cr_excess);
     putchar(','); tnum_(f, r->lz_lit_h);
     putchar(','); tnum_(f, r->lz_lit_kl);
@@ -93,6 +96,11 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
     putchar(','); tnum_(f, r->lz_lit_chi_p);
     putchar(','); tnum_(f, r->lz_deviation);
     printf(",%" PRIu64 ",%d", (u64) r->lz_nmatch, r->lz_megamatch);
+    putchar(','); tnum_(f, r->perment_h_norm);
+    putchar(','); tnum_(f, r->perment_deviation);
+    printf(",%" PRIu64, (u64) r->perment_windows);
+  }
+  if (o->extended >= 3) {
     putchar(','); tnum_(f, r->bm_mean_lc);
     putchar(','); tnum_(f, r->bm_mu);
     putchar(','); tnum_(f, r->bm_chi);
@@ -103,6 +111,10 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
     putchar(','); tnum_(f, r->maurer_expected);
     putchar(','); tnum_(f, r->maurer_dev);
     printf(",%" PRIu64 ",%d", (u64) r->maurer_k, r->maurer_degenerate);
+    putchar(','); tnum_(f, r->mrank_dev);
+    putchar(','); tnum_(f, r->mrank_chi);
+    printf(",%" PRIu64 ",%d",
+           (u64) r->mrank_matrices, r->mrank_underpowered);
   }
   putchar('\n');
   if (o->counts) print_counts_(r, o->binary);

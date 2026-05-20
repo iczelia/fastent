@@ -49,15 +49,17 @@ void fastent_print_help(void) {
     "  -p, --full-precision  Render every float at %.17g\n"
     "  -e, --extended        Extended stats: min-entropy, collision/IC,"
                                                             " poker,\n"
-    "                        variance, distinct, per-bit bias. Repeat:"
+    "                        variance, distinct, per-bit bias, LZ77F"
+                                                       " estimator,\n"
+    "                        Bandt-Pompe permutation entropy. Repeat:"
                                                           " -ee adds\n"
     "                        order-1 bigram H(cur|prev)+I(prev;cur);"
                                                        " -eee adds the\n"
-    "                        LZ77F, linear-complexity and Maurer"
-                                                       " universal\n"
-    "                        estimators (with -H, 3 LZ77F log2 plots"
-                                                       " + an L\n"
-    "                        histogram + a Maurer log2-distance plot)\n"
+    "                        linear-complexity, Maurer universal and"
+                                                       "\n"
+    "                        binary matrix-rank estimators (with -H,"
+                                                       " the matching\n"
+    "                        plots)\n"
     "  -a, --annotate        Interpretive pass/fail report (implies -e)\n"
     "  -i, --io=MODE         Input: auto (default), mmap, stream, uring\n",
     stdout);
@@ -75,7 +77,8 @@ void fastent_print_help(void) {
                                                        " cond-entropy\n"
     "                        mutual-info lz-deviation lz-cr lz-match-cov"
                                                        " bm-deviation\n"
-    "                        bm-mean-lc maurer-deviation\n"
+    "                        bm-mean-lc maurer-deviation mrank-dev"
+                                                       " perment-dev\n"
     "  --fips-140-2          FIPS 140-2 RNG power-up self-tests"
                                                   " (exit 1 on fail)\n"
     "  -V, --version         Print version and exit\n"
@@ -140,17 +143,21 @@ static int parse_sort_by_(const char * arg, fastent_options * o) {
   else if (!strcmp(buf, "bm-mean-lc"))   col = FASTENT_SORT_BM_MEAN_LC;
   else if (!strcmp(buf, "maurer-deviation"))
                                          col = FASTENT_SORT_MAURER_DEVIATION;
+  else if (!strcmp(buf, "mrank-dev"))    col = FASTENT_SORT_MRANK_DEV;
+  else if (!strcmp(buf, "perment-dev"))  col = FASTENT_SORT_PERMENT_DEV;
   else {
     fprintf(stderr, "--sort-by column must be one of: path samples entropy "
                     "chisq mean pi scc min-entropy collision ic poker "
                     "variance redundancy distinct bitbias cond-entropy "
                     "mutual-info lz-deviation lz-cr lz-match-cov "
-                    "bm-deviation bm-mean-lc maurer-deviation\n");
+                    "bm-deviation bm-mean-lc maurer-deviation "
+                    "mrank-dev perment-dev\n");
     return -1;
   }
   o->sort_by = (int) col;
-  /*  Sorting by an extended column implies it is emitted: the LZ77F
-      columns need -eee (level 3), the bigram columns -ee (level 2).  */
+  /*  Sorting by an extended column implies it is emitted: LZ77F / BM /
+      Maurer / mrank / perment columns need -eee (level 3), the bigram
+      columns need -ee (level 2), the basic extended columns -e.  */
   if (col >= FASTENT_SORT_LZ_DEVIATION) {
     if (o->extended < 3) o->extended = 3;
   } else if (col >= FASTENT_SORT_COND_ENTROPY) {

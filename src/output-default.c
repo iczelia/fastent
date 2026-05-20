@@ -175,7 +175,7 @@ void fastent_print_default(
   }
 
   if (r->lz_deviation != r->lz_deviation) {
-    printf("LZ77F estimator: pass -eee to compute it.\n");
+    printf("LZ77F estimator: pass -e to compute it.\n");
   } else {
     printf("\nLZ77F compressibility excess is ");
     dnum_(fp ? "%.17g" : "%f", r->lz_cr_excess);
@@ -242,4 +242,39 @@ void fastent_print_default(
     dnum_(fp ? "%.17g" : "%f", r->maurer_dev);
     printf(".\n");
   }
+
+  if (r->perment_deviation != r->perment_deviation) {
+    printf("Permutation entropy: pass -e to compute it.\n");
+  } else {
+    printf("\nPermutation entropy H_norm is ");
+    dnum_(fp ? "%.17g" : "%f", r->perment_h_norm);
+    printf(" (m=4, %" PRIu64 " windows).\n", (u64) r->perment_windows);
+    printf("Permutation entropy chi square (df=23) is ");
+    dnum_(fp ? "%.17g" : "%1.2f", r->perment_chi);
+    printf(" (p ");
+    dnum_(fp ? "%.17g" : "%f", r->perment_chi_p);
+    printf(", advisory).\n");
+    printf("Permutation entropy deviation z is ");
+    dnum_(fp ? "%.17g" : "%f", r->perment_deviation);
+    printf(".\n");
+  }
+
+  if (r->mrank_dev != r->mrank_dev) {
+    printf("Binary matrix rank: pass -eee to compute it.\n");
+  } else {
+    printf("\nBinary matrix rank (32x32, %" PRIu64 " matrices): "
+           "r=32 %u, r=31 %u, r<=30 %u.\n",
+           (u64) r->mrank_matrices,
+           r->mrank_r32, r->mrank_r31, r->mrank_rlo);
+    if (r->mrank_underpowered)
+      printf("Binary matrix rank note: underpowered "
+             "(fewer than 16 matrices).\n");
+    printf("Binary matrix rank chi square (df=2) is ");
+    dnum_(fp ? "%.17g" : "%1.2f", r->mrank_chi);
+    printf(".\n");
+    printf("Binary matrix rank deviation z is ");
+    dnum_(fp ? "%.17g" : "%f", r->mrank_dev);
+    printf(".\n");
+  }
+
 }

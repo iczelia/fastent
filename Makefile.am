@@ -13,6 +13,7 @@ bin_PROGRAMS  = fastent
 noinst_HEADERS = src/kernel/analyze.h src/kernel/analyze-impl.h \
                  src/kernel/chisq.h src/kernel/lzest.h \
                  src/kernel/bm.h src/kernel/maurer.h \
+                 src/kernel/mrank.h src/kernel/perment.h \
                  src/kernel/analyze-vec-x86.h src/kernel/analyze-vec-neon.h \
                  src/kernel/analyze-vec-wasm.h \
                  src/kernel/fastent-math.h src/kernel/log2_tables.h \
@@ -28,6 +29,7 @@ fastent_SOURCES = src/fastent.c src/cli.c src/runner.c \
                   src/kernel/analyze.c src/kernel/analyze-scalar.c \
                   src/kernel/digram.c src/kernel/chisq.c \
                   src/kernel/lzest.c src/kernel/bm.c src/kernel/maurer.c \
+                  src/kernel/mrank.c src/kernel/perment.c \
                   src/kernel/fips1402.c src/kernel/fips1402-scalar.c \
                   src/kernel/fastent-math.c \
                   src/output-default.c src/output-terse.c src/output-json.c \

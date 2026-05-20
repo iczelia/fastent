@@ -84,24 +84,7 @@ quantities are derived at finalisation, so they add no per-byte cost
 and remain bit-identical across hosts and thread counts.
 .IP
 .B \-e
-is repeatable.  Passing it twice
-.RB ( \-ee ", " "or " \-e\~\-e ", or " \-\-extended\~\-\-extended )
-additionally computes the order-1 bigram conditional entropy
-.RB H( cur | prev ),
-the adjacent mutual information
-.RB I( prev ; cur ),
-a longest identical-symbol run, a runs test, and a bit-mode cusum
-max excursion.  The order-0 statistics keep full SIMD throughput; the
-level-2 reductions are split across the
-.B \-j
-workers (per-slab on mmap, an SPMC pipeline on stream and io_uring)
-and merged with a boundary stitch, deterministic and bit-identical
-across thread counts.  Byte mode keeps two 64K u64 tables per worker
-thread (1 MiB); bit mode is free.
-.IP
-Passing it three times
-.RB ( \-eee ", or " \-\-extended " thrice)"
-additionally runs the
+also runs the
 .B LZ77F
 estimator: a count-only LZ77F match finder (acceleration 1,
 HLOG 13) that never emits a byte.  It reports the compressibility
@@ -140,9 +123,51 @@ and across hosts.  Drift versus a whole-file table-carrying serial
 parse is at most about 0.055 percent and verdict-neutral.  Reported
 in the default, terse, JSON, recursive and annotated output.
 .IP
+.B \-e
+also computes a Bandt-Pompe permutation entropy estimator with
+embedding dimension m = 4 (24 ordinal patterns).  Each length-4
+byte window is reduced to one of 24 Lehmer-code ids by six strict
+byte comparisons (ties break by index, the standard Bandt-Pompe
+convention) and the 24-bin pattern histogram sum-merges on the 4
+MiB absolute-offset grid.  The finaliser reports the normalised
+entropy
+.B perment_h_norm
+in [0, 1] (1.0 for uniform patterns) and a headline
+.B perment_deviation
+z = (1 - H_norm) * sqrt(W * 2 * ln 2) badged
+.BR PASS / WEAK / FAIL
+(z < 2 / z < 3 / z >= 3), so random sources pass cleanly and
+concentrated histograms (a strictly monotone stream collapses to
+one of the 24 bins) hit the FAIL band.  The (m - 1) windows that
+would span a grid boundary are dropped, capping drift at about
+(nblocks - 1) * 3 windows out of n total (~7.2e-7 at 4 MiB blocks,
+verdict-neutral); histogram merge is integer-additive and order-
+free, so the result is bit-identical for any thread count, I/O
+mode and host.  An advisory 24-bin chi-square
+.RB ( perment_chi ,
+df = 23) rides alongside the headline.  Scope: permutation entropy
+catches short-range monotone or structural correlations that
+order-0 and order-1 measures miss; it is blind to long-range
+patterns by construction.
+.IP
+.B \-ee
+.RB ( "or " \-e\~\-e ", or " \-\-extended\~\-\-extended )
+additionally computes the order-1 bigram conditional entropy
+.RB H( cur | prev ),
+the adjacent mutual information
+.RB I( prev ; cur ),
+a longest identical-symbol run, a runs test, and a bit-mode cusum
+max excursion.  The order-0 statistics keep full SIMD throughput;
+the level-2 reductions are split across the
+.B \-j
+workers (per-slab on mmap, an SPMC pipeline on stream and io_uring)
+and merged with a boundary stitch, deterministic and bit-identical
+across thread counts.  Byte mode keeps two 64K u64 tables per worker
+thread (1 MiB); bit mode is free.
+.IP
 .B \-eee
-additionally runs a windowed linear-complexity estimator alongside
-LZ77F.  Each whole 512-bit (64-byte) window of the stream is reduced
+runs a windowed linear-complexity estimator.  Each whole 512-bit
+(64-byte) window of the stream is reduced
 by GF(2) Berlekamp-Massey to its linear complexity
 .IR L ,
 the length of the shortest LFSR that generates it.  It reports the
@@ -179,7 +204,7 @@ whose output bits carry no short GF(2) recurrence.
 .IP
 .B \-eee
 also runs a windowed Maurer universal statistical test alongside
-LZ77F and the linear-complexity estimator.  The bit stream is read
+the linear-complexity estimator.  The bit stream is read
 most-significant first per byte and cut into
 .I L
 = 8-bit blocks; after
@@ -218,6 +243,35 @@ idealised universal compressor"); it catches repetitive or
 compressible sources that pass order-0/-1, LZ77F and the
 linear-complexity screen but does not locate the structure and does
 not replace the per-test advisories.
+.IP
+The same
+.B \-eee
+level additionally runs the NIST SP800-22 sec 2.5 binary matrix-rank test.
+The byte stream is partitioned into disjoint 32x32 GF(2) matrices
+(128 bytes each); each matrix rank is reduced in place by Gauss-
+Jordan on 32-bit row words and binned into the three pooled NIST
+rank classes (r == 32, r == 31, r <= 30).  A chi-square against the
+NIST closed-form probabilities (df = 2) drives the headline
+.B mrank_dev
+z = sqrt(chi2) badged
+.BR PASS / WEAK / FAIL
+(z < 2 / z < 3 / z >= 3).  An underpowered run (fewer than 16
+matrices) skips the verdict, sets the headline to NaN and flags
+.BR mrank_underpowered .
+128 divides the 4 MiB absolute-offset grid so matrices never
+straddle; the three rank bin counts sum-merge order-free, so the
+result is bit-identical for any thread count, I/O mode and host.
+The chi-square upper tail is computed by the same
+.B fastent_chisq_tail
+family as the other estimators; df = 2 is even and outside its
+odd-df contract, so the advisory p-value
+.RB ( mrank_chi_p )
+is NaN by design.  Scope: the matrix-rank test catches truncated-
+bit linear recurrence sources that survive order-0 byte histograms
+and the 512-bit Berlekamp-Massey scorer (a low-bit LFSR that folds
+onto 32-bit rows lands in the r <= 30 tail).  It does not locate
+where the structure is and is not a substitute for the per-test
+advisories.
 .TP
 .BR \-a ", " \-\-annotate
 Render an interpretive report instead of the plain text: every metric
@@ -293,18 +347,22 @@ included alongside
 .BR \-t " and " \-\-json
 when those are set.
 .IP
-Under
-.BR \-eee ,
-five extra plots follow the byte/bit plot, using the same
-Unicode-glyph,
+Extra plots follow the byte/bit plot under
+.BR \-e " and " \-eee ,
+using the same Unicode-glyph,
 .BR \-\-log ,
-Y-axis-scale and X-tick rendering: the LZ77F match offsets
-(1..65535) and match lengths (4..255+) in log2 buckets, the
-LZ77F literal byte-value histogram (256 bins, its title carrying
-H_lit), the linear-complexity
+Y-axis-scale and X-tick rendering.  Under
+.B \-e
+the LZ77F match offsets (1..65535) and match lengths (4..255+) in
+log2 buckets, the LZ77F literal byte-value histogram (256 bins,
+its title carrying H_lit), and a 24-bin Bandt-Pompe pattern
+histogram follow.  Under
+.B \-eee
+the linear-complexity
 .I L
-histogram (64 bins over 0..512), and the Maurer log2-distance
-histogram (64 bins).  They compose with
+histogram (64 bins over 0..512), the Maurer log2-distance
+histogram (64 bins), and a 3-bar matrix-rank histogram follow
+those.  They compose with
 .BR \-t " and " \-\-json
 exactly as the byte/bit plot does.
 .TP
@@ -350,19 +408,20 @@ is one of
 .BR redundancy ", " distinct ", " bitbias ", "
 .BR cond-entropy ", " mutual-info ", "
 .BR lz-deviation ", " lz-cr ", " lz-match-cov ", "
-.BR bm-deviation ", " bm-mean-lc ", " maurer-deviation .
-Selecting any of the extended columns implies
+.BR bm-deviation ", " bm-mean-lc ", " maurer-deviation ", "
+.BR mrank-dev ", " perment-dev .
+Selecting any of the basic extended columns implies
 .BR \-e ;
-the
+.BR lz-deviation ", " lz-cr ", " lz-match-cov " and " perment-dev
+also imply
+.BR \-e ;
 .B cond-entropy
 and
 .B mutual-info
-columns imply
+imply
 .BR \-ee ;
-the
-.BR lz-deviation ", " lz-cr ", " lz-match-cov ", " bm-deviation ", "
-.BR bm-mean-lc " and " maurer-deviation
-columns imply
+.BR bm-deviation ", " bm-mean-lc ", " maurer-deviation " and " mrank-dev
+imply
 .BR \-eee .
 .I DIR
 is
@@ -511,6 +570,20 @@ in bit mode) and the
 .B bit_bias
 sub-object
 .RB ( max ", " worst_bit ).
+Under
+.B \-e
+the LZ77F and permutation entropy columns are also appended:
+.BR LZ-CR-Excess ", " LZ-Lit-H ", " LZ-Lit-KL ", " LZ-Match-Cov ", "
+.BR LZ-Off-Conc ", " LZ-Mlen-Excess ", " LZ-Lit-Chi ", " LZ-Lit-Chi-p ", "
+.BR LZ-Deviation ", " LZ-Matches ", " LZ-Megamatch ", " Perment-Hnorm ", "
+.BR Perment-Deviation ", " Perment-Windows ;
+JSON gains the
+.B lz77f
+and
+.B permutation_entropy
+sub-objects (each
+.B null
+when the stream has no scored content).
 With
 .B \-ee
 the
@@ -518,6 +591,17 @@ the
 .BR longest_run " and " cusum_max
 fields are populated (otherwise
 .BR null ).
+Under
+.B \-eee
+the slower grid columns follow:
+.BR BM-Mean-LC ", " BM-Mu ", " BM-Chi ", " BM-Chi-p ", " BM-Deviation ", "
+.BR BM-Windows ", " BM-Degenerate ", "
+.BR Maurer-Fn ", " Maurer-Expected ", " Maurer-Deviation ", " Maurer-K ", "
+.BR Maurer-Degenerate ", " MRank-Dev ", " MRank-Chi ", " MRank-Matrices ", "
+.BR MRank-Underpowered ;
+JSON gains the
+.BR linear_complexity ", " maurer_universal " and " binary_matrix_rank
+sub-objects.
 In
 .BR \-\-annotate
 mode the plain text is replaced by an aligned table: one row per

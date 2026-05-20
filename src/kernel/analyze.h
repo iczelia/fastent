@@ -129,7 +129,7 @@ typedef struct {
 #define FASTENT_SCC_UNDEF      (-100000.0)
 #define FASTENT_SCC_DEFINED(s) ((s) > -99999.0)
 
-/*  LZ77F (-eee) raw tables; defined in lzest.h, only a pointer here.  */
+/*  LZ77F (-e) raw tables; defined in lzest.h, only a pointer here.  */
 struct fastent_lz77f_tables;
 
 /*  Final reduced results.  */
@@ -167,9 +167,10 @@ typedef struct fastent_result {
                                 bytes); NaN if no samples  */
   f64 cusum_max;            /*  max |S|, +-1 bit walk; bit mode only  */
 
-  /*  LZ77F estimator (-eee).  NaN sentinel unless extended >= 3.  lz
-      holds the 3 raw tables, heap-allocated only under -eee and freed
-      per result so the recursive row struct stays small.  */
+  /*  LZ77F estimator (-e, ~2 GiB/s ST band).  NaN sentinel unless
+      extended >= 1.  lz holds the 3 raw tables, heap-allocated only
+      under -e and freed per result so the recursive row struct stays
+      small.  */
   f64 lz_cr_excess;         /*  S1 max(0,(outsz_rand-B)/n)  */
   f64 lz_lit_h;             /*  S2 H_lit (literal byte entropy, bits)  */
   f64 lz_lit_kl;            /*  S2 8 - H_lit (= KL to uniform)  */
@@ -181,10 +182,10 @@ typedef struct fastent_result {
   f64 lz_deviation;         /*  headline z = max(S1,S2/8,S3)/sigma0  */
   u64 lz_nmatch;            /*  total LZ77 matches  */
   i32 lz_megamatch;         /*  1 = single dominant match (mega note)  */
-  struct fastent_lz77f_tables * lz;  /*  3 raw tables; NULL unless -eee */
+  struct fastent_lz77f_tables * lz;  /*  3 raw tables; NULL unless -e */
 
-  /*  Linear-complexity estimator (-eee, alongside LZ77F).  NaN
-      sentinel on bm_deviation unless extended >= 3.  bm_lhist is
+  /*  Linear-complexity estimator (-eee; ~55 MiB/s ST, the bottleneck).
+      NaN sentinel on bm_deviation unless extended >= 3.  bm_lhist is
       inline (256 bytes): 2048x smaller than the LZ77F offset table,
       so it rides every recursive row at no real cost (no heap
       pointer, unlike struct fastent_lz77f_tables).  */
@@ -207,6 +208,30 @@ typedef struct fastent_result {
   u64 maurer_k;             /*  total test blocks K  */
   i32 maurer_degenerate;    /*  1 = fn << expected (repetitive; note)  */
   u32 maurer_lhist[64];     /*  log2-distance bucket histogram  */
+
+  /*  Binary matrix-rank estimator (-eee, NIST SP800-22 sec 2.5).  NaN
+      sentinel on mrank_dev unless extended >= 3.  Three pooled rank
+      bins (r==32, r==31, r<=30) and the matrix count ride every row;
+      df = 2 is even so the p-value is NaN by design.  */
+  f64 mrank_dev;            /*  headline z = sqrt(chi2)  */
+  f64 mrank_chi;            /*  chi-square statistic, df = 2  */
+  f64 mrank_chi_p;          /*  advisory p (NaN: df even)  */
+  u64 mrank_matrices;       /*  total full 32x32 GF(2) matrices  */
+  u32 mrank_r32;            /*  count of matrices with rank == 32  */
+  u32 mrank_r31;            /*  count of matrices with rank == 31  */
+  u32 mrank_rlo;            /*  count of matrices with rank <= 30  */
+  i32 mrank_underpowered;   /*  1 if matrices < FASTENT_MRANK_MIN  */
+
+  /*  Bandt-Pompe permutation entropy (-e, m = 4; ~1 GiB/s ST band).
+      NaN sentinel on perment_deviation unless extended >= 1.  The 24-bin pattern
+      histogram is inline (96 bytes); chi-square df = 23 is odd so the
+      advisory p-value uses fastent_chisq_tail_df directly.  */
+  f64 perment_h_norm;       /*  normalized entropy in [0, 1]  */
+  f64 perment_deviation;    /*  headline z = (1-H_norm)*sqrt(W*2 ln 2)  */
+  f64 perment_chi;          /*  chi-square over 24 bins (advisory)  */
+  f64 perment_chi_p;        /*  upper-tail p, df = 23  */
+  u64 perment_windows;      /*  total m-tuple windows scored  */
+  u32 perment_hist[24];     /*  24-bin Lehmer-id histogram  */
 
   u64 hist[256];            /*  -c output; bits: hist[0]/hist[1]  */
 } fastent_result;

@@ -13,34 +13,37 @@ Project homepage: https://github.com/iczelia/fastent
 
 ## What it reports
 
-Shannon entropy, chi-square statistic with tail probability, arithmetic
-mean, Monte Carlo value of pi, and serial correlation coefficient.
-With `-e` it additionally reports min-entropy, collision entropy and
-index of coincidence, a poker test (16-bin nibble chi-square, df=15),
-variance and standard deviation, redundancy, the distinct-symbol count,
-the most/least common symbol, and the per-bit-position bias.  Repeating
-the flag (`-ee`) adds the order-1 bigram conditional entropy
-`H(cur|prev)` and adjacent mutual information `I(prev;cur)`, which expose
-order-1 structure (text, code, many binary formats) that the order-0
-measures and the linear serial correlation miss.  A third level
-(`-eee`) runs the LZ77F estimator (a count-only match finder
-reporting the compressibility excess, literal byte skew, match
-coverage, offset/length concentration and a headline `lz_deviation`
-z, catching repetition and dictionary structure the entropy and
-bigram measures miss) together with a windowed linear-complexity
-estimator: per 512-bit window GF(2) Berlekamp-Massey reduces the
-window to its shortest-LFSR length L, whose mean is compared to the
-random-sequence expectation `bm_mu` via a headline `bm_deviation` z,
-catching LFSR-class and low-bit linear recurrences.  The same level
-also runs a windowed Maurer universal statistical test (fixed
-`L = 8`), a global compressibility statistic whose headline
-`maurer_deviation` z catches repetitive or compressible sources
-the other screens miss.  Byte mode by default;
-bit mode under `-b`.  Output formats: human-readable, CSV (`-t`), JSON
-(`-J`), and an interpretive pass/fail report (`-a`/`--annotate`); add a
-per-value
-occurrence table with `-c` or a terminal block-plot of the histogram
-with `-H`.
+Default output: Shannon entropy, chi-square statistic with tail
+probability, arithmetic mean, Monte Carlo value of pi, and serial
+correlation coefficient.  `-e` is repeatable; tiers are bucketed by
+measured per-test single-thread throughput.
+
+`-e` adds the basic extended stats (min-entropy, collision entropy and
+index of coincidence, a poker test, variance and standard deviation,
+redundancy, the distinct-symbol count, the most/least common symbol,
+per-bit-position bias), the LZ77F match-finder estimator, and the
+Bandt-Pompe permutation entropy: the two grid-based tests in the
+"fast" band, both running at 1-2 GiB/s single-thread on a Zen 4.
+
+`-ee` adds the order-1 bigram conditional entropy `H(cur|prev)` and
+adjacent mutual information `I(prev;cur)`, a longest identical-symbol
+run, a runs test, and a bit-mode cusum max excursion.  Exposes order-1
+structure (text, code, many binary formats) that the order-0 measures
+and the linear serial correlation miss.
+
+`-eee` adds the slow grid-based tests: a windowed linear-complexity
+estimator (per 512-bit window GF(2) Berlekamp-Massey, `bm_deviation`
+catches LFSR-class recurrences), a Maurer universal statistical test
+(fixed `L = 8`, `maurer_deviation` catches repetitive / compressible
+sources the other screens miss), and a NIST binary matrix-rank test
+(32x32 GF(2) matrices, `mrank_dev` catches truncated-bit linear
+structure).  Single-thread throughput in this band runs 50-350 MiB/s,
+gated by Berlekamp-Massey.
+
+Byte mode by default; bit mode under `-b`.  Output formats:
+human-readable, CSV (`-t`), JSON (`-J`), and an interpretive pass/fail
+report (`-a`/`--annotate`); add a per-value occurrence table with `-c`
+or a terminal block-plot of the histogram with `-H`.
 
 ## Highlights
 
@@ -66,23 +69,23 @@ with `-H`.
   across the `-j` workers and merged with a boundary stitch,
   deterministic and bit-identical across thread counts (~1 MiB/thread
   byte table, 2x2 in bit mode)
-- LZ77F estimator (`-eee`): a count-only (acceleration 1,
+- LZ77F estimator (`-e`): a count-only (acceleration 1,
   HLOG 13) match finder; compressibility excess, literal byte
   entropy / KL, match coverage, offset and match-length
   concentration, an advisory literal chi-square, and a headline
   `lz_deviation` z badged PASS / WEAK / FAIL.  Keyed to a fixed
   4 MiB absolute-offset block grid.  Sortable via
-  `--sort-by=lz-deviation` / `lz-cr` / `lz-match-cov`; `-eee -H`
+  `--sort-by=lz-deviation` / `lz-cr` / `lz-match-cov`; `-e -H`
   adds log2-bucket offset / length plots and a literal byte plot
-- linear-complexity estimator (`-eee`, alongside LZ77F): per
-  512-bit window GF(2) Berlekamp-Massey yields the shortest-LFSR
-  length L; mean L vs the random-sequence expectation `bm_mu` gives
+- linear-complexity estimator (`-eee`, slowest grid test ~55 MiB/s
+  single-thread): per 512-bit window GF(2) Berlekamp-Massey yields
+  the shortest-LFSR length L; mean L vs the random-sequence
+  expectation `bm_mu` gives
   a headline `bm_deviation` z badged PASS / WEAK / FAIL, plus an
   advisory NIST class chi-square. `-eee -H` adds an L
   histogram.  Catches LFSR-class and low-bit linear recurrences,
   not a truncated-high-byte LCG.
-- Maurer universal test (`-eee`, alongside LZ77F and linear
-  complexity): a count-only Maurer scorer on the MSB-first bit
+- Maurer universal test (`-eee`): a count-only Maurer scorer on the MSB-first bit
   stream with fixed `L = 8`; the mean log2 recurrence distance
   `maurer_fn` versus the NIST SP800-22 `maurer_expected` gives a
   headline `maurer_deviation` z badged PASS / WEAK / FAIL.  Fresh
@@ -92,6 +95,25 @@ with `-H`.
   `--sort-by=maurer-deviation`; `-eee -H` adds a log2-distance
   plot.  Catches repetitive / compressible sources the other
   screens miss; a global compressibility statistic, not a locator.
+- binary matrix-rank estimator (`-eee`, NIST SP800-22 sec 2.5):
+  partitions the bit stream into 32x32 GF(2) matrices, scores each
+  matrix rank by Gauss-Jordan, bins into r=32 / r=31 / r<=30 and
+  chi-squares against the NIST closed-form probabilities (df = 2);
+  the headline `mrank_dev` is `sqrt(chi2)` badged PASS / WEAK / FAIL.
+  128 divides the 4 MiB grid so matrices never straddle (exact
+  integer sum-merge, bit-identical for any `-j` / I/O / host).
+  Sortable via `--sort-by=mrank-dev`.  Catches truncated-bit linear
+  recurrences that the byte-mode order-0 and the 512-bit Berlekamp-
+  Massey scorer can both miss.
+- Bandt-Pompe permutation entropy (`-e`, m = 4): folds each length-4
+  byte window to one of 24 ordinal Lehmer-code patterns and computes
+  the normalised entropy `perment_h_norm` in `[0, 1]`; the headline
+  `perment_deviation` z scales `(1 - H_norm)` by the IID-variance,
+  badged PASS / WEAK / FAIL.  Sum-merged on the 4 MiB grid with
+  bounded boundary drift (mirrors LZ77F).  Sortable via
+  `--sort-by=perment-dev`; with `-H` a 24-bin pattern plot follows.
+  Catches short-range monotone / ordinal structure missed by order-0
+  and order-1; blind to long-range patterns by construction.
 - recursive mode (`-r DIR`): one CSV / JSON row per file, sortable via
   `--sort-by` (path, entropy, chisq, the extended columns, ...)
 - terminal histogram (`-H`) with Unicode block glyphs, a Y-axis

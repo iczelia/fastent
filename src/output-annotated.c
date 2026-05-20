@@ -285,7 +285,7 @@ void fastent_print_annotated(
       badge so the headline is exactly their worst.  Off/len conc. is
       a structure descriptor (no pass/fail), literal chi advisory.  */
   if (r->lz_deviation != r->lz_deviation) {
-    row_(o, color, &v, 0, "LZ77F", "pass -eee", B_NA, "");
+    row_(o, color, &v, 0, "LZ77F", "pass -e", B_NA, "");
   } else {
     int b = z_badge_(r->lz_deviation);
     /*  z_i = component / sigma0 ; sigma0 = cmax / lz_deviation, so
@@ -390,6 +390,57 @@ void fastent_print_annotated(
     if (r->maurer_degenerate)
       printf("  %-19s%-25s        highly repetitive stream "
              "(fn far below expected)\n", "  Note", "");
+  }
+
+  /*  Binary matrix-rank (-eee, NIST sec 2.5): mrank_dev is the
+      headline verdict; the three rank bin counts ride as a structure
+      descriptor.  Underpowered runs (matrices < 16) emit a Note.  */
+  if (r->mrank_dev != r->mrank_dev) {
+    row_(o, color, &v, 0, "Matrix rank", "pass -eee", B_NA, "");
+  } else {
+    int b = z_badge_(r->mrank_dev);
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "z=%.17g" : "z=%.4g", r->mrank_dev);
+    row_(o, color, &v, 1, "Matrix rank", aux, b,
+         b == B_PASS ? "rank distribution matches NIST"
+       : b == B_WEAK ? "weak rank-distribution skew"
+       :               "rank distribution skewed");
+    snprintf(aux, sizeof aux, "32=%u 31=%u <=30=%u",
+             r->mrank_r32, r->mrank_r31, r->mrank_rlo);
+    row_(o, color, &v, 0, "  Rank bins", aux, B_INFO,
+         "structure descriptor");
+    if (r->mrank_underpowered)
+      printf("  %-19s%-25s        underpowered "
+             "(fewer than 16 matrices)\n", "  Note", "");
+  }
+
+  /*  Bandt-Pompe permutation entropy (-eee, m=4): perment_deviation
+      is the headline verdict; H_norm is a structure descriptor.  */
+  if (r->perment_deviation != r->perment_deviation) {
+    row_(o, color, &v, 0, "Permutation H", "pass -e", B_NA, "");
+  } else {
+    int b = z_badge_(r->perment_deviation);
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "z=%.17g" : "z=%.4g", r->perment_deviation);
+    row_(o, color, &v, 1, "Permutation H", aux, b,
+         b == B_PASS ? "ordinal patterns uniform"
+       : b == B_WEAK ? "weak ordinal-pattern skew"
+       :               "ordinal patterns concentrated");
+    snprintf(aux, sizeof aux, o->full_precision
+             ? "H_norm=%.17g" : "H_norm=%.6g", r->perment_h_norm);
+    row_(o, color, &v, 0, "  H_norm", aux, B_INFO,
+         "structure descriptor");
+    {
+      int cb = p_badge_(r->perment_chi_p);
+      snprintf(aux, sizeof aux, o->full_precision
+               ? "%.17g  p=%.17g" : "%.4g  p=%.4f",
+               r->perment_chi, r->perment_chi_p);
+      row_(o, color, &v, 0, "  Pattern chi", aux, cb,
+           cb == B_PASS ? "patterns uniform (advisory)"
+         : cb == B_WEAK ? "suspect pattern bias (advisory)"
+         : cb == B_NA   ? ""
+         :                "pattern frequencies skewed (advisory)");
+    }
   }
 
   /*  Informational footer (no verdict).  */

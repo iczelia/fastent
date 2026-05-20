@@ -1,4 +1,72 @@
-2026-05-19  Kamila Szewczyk  <k@iczelia.net>
+2026-05-20  Kamila Szewczyk  <k@iczelia.net>
+
+	v1.3:  binary matrix-rank estimator (-eee, alongside the
+	linear-complexity and Maurer estimators).
+
+	A NIST SP800-22 sec 2.5 matrix-rank scorer
+	(src/kernel/mrank.c): the byte stream is partitioned into
+	disjoint 32x32 GF(2) matrices (128 bytes each); each matrix
+	rank is reduced by in-place Gauss-Jordan on 32-bit row words,
+	binned into the three pooled rank classes (r == 32, r == 31,
+	r <= 30) and chi-squared against the NIST closed-form
+	probabilities (df = 2).  The finalizer derives:
+	  - mrank_dev: headline z = sqrt(chi2), badged PASS / WEAK /
+	    FAIL.
+	  - mrank_chi: the chi-square statistic.
+	  - mrank_chi_p: NaN (df = 2 is even; fastent_chisq_tail_df
+	    consumes only odd df).
+	  - mrank_matrices: total 32x32 matrices scored.
+	  - mrank_r32 / mrank_r31 / mrank_rlo: the three rank bin
+	    counts (saturating-u32 copies of the merged acc).
+	  - mrank_underpowered: 1 if fewer than 16 matrices (skips the
+	    chi-square verdict; headline NaN).
+	128 divides the 4 MiB absolute grid so matrices never straddle:
+	the integer sum-merge is order-free and bit-identical for any
+	thread count, I/O mode and host.
+
+	Surfaced in the default, terse CSV, JSON, recursive and
+	annotated output and a -H 3-bar rank histogram; sortable via
+	--sort-by=mrank-dev (which implies -eee).
+
+	Scope: the matrix-rank test catches truncated-bit linear
+	recurrence sources that the byte-mode order-0 and the 512-bit
+	Berlekamp-Massey scorer can both miss (a low-bit LFSR that
+	folds onto 32-bit rows lands in the r <= 30 tail).  It does
+	not locate where the structure is and is not a substitute for
+	the per-test advisories.
+
+	v1.3:  Bandt-Pompe permutation entropy estimator (-e,
+	alongside LZ77F).
+
+	A count-only ordinal-pattern scorer (src/kernel/perment.c):
+	each length-4 byte window (x[i], x[i+1], x[i+2], x[i+3]) is
+	reduced to one of 24 Lehmer-code ids via six strict
+	comparisons (ties break by index, the standard Bandt-Pompe
+	convention), and the 24-bin pattern histogram sum-merges on
+	the 4 MiB grid.  The finalizer derives:
+	  - perment_h_norm: normalised entropy in [0, 1] (1.0 for
+	    uniform patterns).
+	  - perment_deviation: headline z = (1 - H_norm) *
+	    sqrt(W * 2 * ln 2), badged PASS / WEAK / FAIL.
+	  - perment_chi: advisory chi-square over 24 bins.
+	  - perment_chi_p: its upper-tail p, df = 23 (odd; consumed by
+	    fastent_chisq_tail_df).
+	  - perment_windows: total m-tuple windows scored.
+	  - perment_hist[24]: the 24-bin Lehmer-id histogram.
+	The (m - 1) windows that would span a grid boundary are
+	dropped, capping drift at (nblocks - 1) * 3 windows out of ~n
+	total (~7.2e-7 at 4 MiB blocks, verdict-neutral, mirrors
+	LZ77F).  Histogram merge is integer-additive and order-free:
+	bit-identical for any thread count, I/O mode and host.
+
+	Surfaced in the default, terse CSV, JSON, recursive and
+	annotated output and a -H 24-bin pattern histogram; sortable
+	via --sort-by=perment-dev (which implies -e).
+
+	Scope: permutation entropy catches short-range monotone or
+	structural correlations missed by order-0 and order-1 (a
+	strictly increasing byte sequence collapses to one bin); it is
+	blind to long-range patterns by construction (m = 4).
 
 	v1.3:  windowed Maurer universal statistical test (-eee,
 	alongside LZ77F and the linear-complexity estimator).
