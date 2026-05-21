@@ -213,6 +213,16 @@ Numbers in MiB/s.  A single fastent worker is 22 to 90x faster than
 `ent(1)`; saturated multi-threaded `fastent` reaches 140 to 327x
 before DDR4 bandwidth caps it.
 
+## TODO
+
+- Major readability-focused code reorganisation.
+- NIST SP 800-90B battery.
+- Order-2/3 conditional entropy.
+- LZ76 / LZ78 / LZW dictionary complexity -- need to determine actual
+  practical gains to justify addition over the LZ77F estimator.
+- Spectral / DFT test, Hurst exponent / DFA / autocorrelation(lag k) tests.
+- NIST SP 800-22 STS battery.
+
 ## See also
 
 `rngtest(1)`, `dieharder(1)`, `od(1)`, `ent(1)`
