@@ -209,16 +209,6 @@ timed alongside as a single-threaded baseline.
 
 ![throughput scaling](doc/bench.png)
 
-Median throughput on a Ryzen 9 5950X (16C/32T, dual-channel DDR4):
-
-| jobs    |  byte  |  bit   | byte + `-f` |
-|:--------|-------:|-------:|------------:|
-| `ent`   |    112 |     52 |          94 |
-| `-j 1`  |  2 540 |  4 721 |       1 943 |
-| `-j 8`  | 10 772 | 16 497 |       9 337 |
-| `-j 16` | 13 244 | **17 308** |    11 826 |
-| `-j 32` | **15 707** | 17 070 |  **14 475** |
-
 Numbers in MiB/s.  A single fastent worker is 22 to 90x faster than
 `ent(1)`; saturated multi-threaded `fastent` reaches 140 to 327x
 before DDR4 bandwidth caps it.
