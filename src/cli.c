@@ -282,8 +282,9 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
     fprintf(stderr, "fastent: duplicate file name: %s\n", r->pos_args[1]);
     rc = -1;
   }
-  if (rc == 0 && r->pos_argc == 1) {
-    /*  Copy out of the result; owned for the process lifetime.  */
+  if (rc == 0 && r->pos_argc == 1 && strcmp(r->pos_args[0], "-")) {
+    /*  Copy out of the result; owned for the process lifetime.
+        A lone "-" is left as a NULL path, i.e. read stdin.  */
     char * p = yarg_strdup(r->pos_args[0]);
     if (!p) { fprintf(stderr, "fastent: out of memory\n"); rc = -1; }
     else o->path = p;

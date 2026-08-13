@@ -209,26 +209,7 @@ if test "x$fastent_skip_simd" != "xyes"; then
 #   AArch64 (`__aarch64__`): NEON is mandatory, baseline.  No flag.
 #   ARMv7-A (`__arm__`):     NEON is optional.  Needs `-mfpu=neon`
 #                            and a float-ABI that matches the rest
-#                            of the build (see softfp note below).
-#
-# Probe with no flag first.  If that fails, detect the base float-ABI
-# and pick the right -mfpu/-mfloat-abi combination for the NEON TU.
-# Note on armel (-mfloat-abi=soft) hosts: forcing only `-mfpu=neon`
-# either fails outright or, on lenient toolchains, builds the NEON TU
-# with a vector calling convention that differs from the non-NEON
-# TUs (vectors in NEON regs vs. on the stack).  That mismatch is
-# silent at compile time and breaks at runtime.  The cure is to also
-# pass `-mfloat-abi=softfp` to the NEON TU: softfp uses the same
-# call boundary as soft (FP/vector args in GPRs+stack) so a soft
-# caller can invoke a softfp callee, while softfp still permits NEON
-# instructions and intrinsics inside the function body.  On hardfp
-# (__ARM_PCS_VFP) we must leave the ABI alone; switching that TU to
-# softfp would mismatch the rest of the program.
-# The probe exercises a few of the bread-and-butter intrinsics we
-# rely on (vcntq_u8 for popcount, vpaddlq_s16 for SCC reduction).
-# The AArch64-only ops (vqtbl1q_u8 / vaddvq_*) are emulated in
-# analyze-impl.h via shims gated on __aarch64__, so we don't need
-# them in the probe.
+#                            of the build.
 
 CFLAGS="$save_CFLAGS"
 fastent_have_neon=no

@@ -12,7 +12,6 @@
 #endif
 
 #include <arm_sve.h>
-#include <string.h>
 
 static inline u8 sve2_fold_byte(u8 b) {
   u32 c = b;

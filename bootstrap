@@ -53,10 +53,10 @@ fetch_dep() {
 #  yarg: single-header command-line argument parser, by the same
 #  author.  Used by src/cli.c.
 fetch_dep iczelia/yarg \
-  adc3050ecdeef3118c75bd81a0b5294b20b3d88f \
+  0fbf7c3c717fc27b26e554d1315b439cb30a85a0 \
   yarg.h \
   src/yarg.h \
-  4e82adf605225d129b284b1c0cf39042ca9628dc35571146f2b0617da769bffc
+  71f97498969f619d19eb8845d06a700126e37ccf2bc6ac7f7b1d77ede370984b
 #  ---------------------------------------------------------------------
 
 autoreconf --install

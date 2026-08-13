@@ -93,8 +93,7 @@ or a terminal block-plot of the histogram with `-H`.
   block order (bit-identical for any `-j` / I/O / host; drift versus
   whole-stream Maurer at most about 0.001%).  Sortable via
   `--sort-by=maurer-deviation`; `-eee -H` adds a log2-distance
-  plot.  Catches repetitive / compressible sources the other
-  screens miss; a global compressibility statistic, not a locator.
+  plot.
 - binary matrix-rank estimator (`-eee`, NIST SP800-22 sec 2.5):
   partitions the bit stream into 32x32 GF(2) matrices, scores each
   matrix rank by Gauss-Jordan, bins into r=32 / r=31 / r<=30 and
@@ -102,9 +101,7 @@ or a terminal block-plot of the histogram with `-H`.
   the headline `mrank_dev` is `sqrt(chi2)` badged PASS / WEAK / FAIL.
   128 divides the 4 MiB grid so matrices never straddle (exact
   integer sum-merge, bit-identical for any `-j` / I/O / host).
-  Sortable via `--sort-by=mrank-dev`.  Catches truncated-bit linear
-  recurrences that the byte-mode order-0 and the 512-bit Berlekamp-
-  Massey scorer can both miss.
+  Sortable via `--sort-by=mrank-dev`.
 - Bandt-Pompe permutation entropy (`-e`, m = 4): folds each length-4
   byte window to one of 24 ordinal Lehmer-code patterns and computes
   the normalised entropy `perment_h_norm` in `[0, 1]`; the headline
@@ -112,8 +109,6 @@ or a terminal block-plot of the histogram with `-H`.
   badged PASS / WEAK / FAIL.  Sum-merged on the 4 MiB grid with
   bounded boundary drift (mirrors LZ77F).  Sortable via
   `--sort-by=perment-dev`; with `-H` a 24-bin pattern plot follows.
-  Catches short-range monotone / ordinal structure missed by order-0
-  and order-1; blind to long-range patterns by construction.
 - recursive mode (`-r DIR`): one CSV / JSON row per file, sortable via
   `--sort-by` (path, entropy, chisq, the extended columns, ...)
 - terminal histogram (`-H`) with Unicode block glyphs, a Y-axis
