@@ -1796,6 +1796,7 @@ FASTENT_FN(eq_mask)(const u8 * RESTRICT buf, sz base) {
   /*  No movemask on NEON: narrow each 16-bit lane to 4 bits via
       shrn so a 128-bit compare result becomes a 64-bit value with
       4 bits per byte; bit (4*j) is the per-byte equal flag.  */
+  sz i;
   uint8x8_t nn = vshrn_n_u16(vreinterpretq_u16_u8(eq), 4);
   u64 packed = vget_lane_u64(vreinterpret_u64_u8(nn), 0);
   u64 m = 0;
