@@ -30,9 +30,7 @@ path, it reads standard input. Normal output contains Shannon entropy,
 chi-square and its upper-tail probability, arithmetic mean, a Monte Carlo
 estimate of pi, and serial correlation.
 .PP
-The program dispatches SIMD kernels at run time and can split work across
-threads. Results are stable across supported kernels, I/O modes, and thread
-counts.
+fastent uses SIMD when available and can split work across threads.
 .SH OPTIONS
 .TP
 .BR \-b ", " \-\-bits
@@ -83,14 +81,14 @@ backend.
 .BR \-i ", " "\-\-io=" \fIMODE\fR
 Select input handling.
 .B auto
-maps regular files and streams other inputs;
+maps regular files and streams other inputs.
 .B mmap
-requires a mapping;
+rejects input that cannot be mapped.
 .B stream
-uses ordinary reads; and
+uses ordinary reads.
 .B uring
-uses io_uring on Linux or IOCP on Windows. An unavailable explicitly selected
-backend is an error.
+uses io_uring on Linux or IOCP on Windows. Selecting an unavailable backend is
+an error.
 .TP
 .BR \-H ", " \-\-histogram
 Draw the selected distribution. Active extended tests add their own plots.
@@ -120,8 +118,8 @@ Sort recursive output. Basic columns are
 .BR pi ,
 and
 .BR scc .
-Extended columns use the field names printed by CSV. Their selection enables
-the needed extended level. Numeric columns default to descending order; paths
+Extended columns use the field names printed by CSV. Sorting by one enables the
+needed extended level. Numeric columns default to descending order. Paths
 default to ascending order.
 .TP
 .B \-\-fips\-140\-2
@@ -135,16 +133,16 @@ Print usage and exit.
 .BR \-V ", " \-\-version
 Print the version and license notice.
 .SH OUTPUT
-Plain output describes one stream. CSV and JSON retain stable field names for
+Plain output reports one stream. CSV and JSON retain stable field names for
 scripts. Values that cannot be computed are written as
 .BR nan
 or JSON
 .BR null .
 .PP
-Annotated output gives each applicable metric a verdict. PASS is below two
-standard deviations, WEAK is below three, and FAIL is at least three where a
-normal score exists. Advisory statistics are marked separately. These screens
-do not certify a random generator.
+Annotated output gives each scored metric a verdict. For metrics with a normal
+score, PASS is below two standard deviations, WEAK is below three, and FAIL is
+three or more. Other statistics are advisory. Passing every test does not prove
+that the input is random.
 .SH EXIT STATUS
 .TP
 .B 0
@@ -165,23 +163,22 @@ fastent -r --sort-by=entropy data/
 fastent --fips-140-2 rng.bin
 .fi
 .SH PERFORMANCE
-The order-0 path uses banked SIMD histograms. Mapped files are split into
-aligned slabs; streams use a bounded shared pipeline. The extended grid tests
+Basic analysis uses banked SIMD histograms. fastent splits mapped files into
+aligned slabs. Streams use a bounded shared pipeline. Grid-based extended tests
 process fixed 4 MiB blocks. Higher
 .B \-e
 levels cost more, with Berlekamp-Massey normally the slowest test.
 .SH PORTABILITY
-The C99 sources support common Linux, Windows, macOS, OpenBSD, and FreeBSD
-hosts. Release builds also cover WebAssembly, Windows 95, DJGPP/MS-DOS, and
-several further Linux architectures.
+fastent builds on Linux, Windows, macOS, OpenBSD, and FreeBSD on x86 and ARM.
+Release archives also include statically linked Linux binaries, WebAssembly,
+Windows 95, and DJGPP/MS-DOS.
 .PP
-The runtime may dispatch scalar, SSSE3, SSE4.1, AVX2, AVX-512, NEON, SVE2, or
-WebAssembly SIMD128 kernels when they were built and the host supports them.
+fastent includes scalar, SSSE3, SSE4.1, AVX2, AVX-512, NEON, SVE2, and
+WebAssembly SIMD128 kernels. It selects one at run time.
 .SH LIMITS
-Several tests need large samples. Underpowered tests return no verdict. LZ77F
-and permutation entropy restart at 4 MiB boundaries and therefore have a small,
-bounded difference from whole-stream forms. FIPS mode ignores a final partial
-20,000-bit block.
+Tests with too little data return no verdict. LZ77F and permutation entropy
+restart every 4 MiB, which slightly changes their whole-stream values. FIPS
+mode ignores a final partial 20,000-bit block.
 .SH AUTHOR
 Kamila Szewczyk <k@iczelia.net>
 .SH SEE ALSO

@@ -1,8 +1,6 @@
 # fastent
 
-fastent measures entropy and statistical randomness in byte or bit streams. It
-uses runtime-dispatched SIMD and produces the same result across supported hosts,
-I/O modes, and thread counts.
+fastent measures entropy and runs statistical tests on byte or bit streams.
 
 fastent is licensed under GNU GPL version 3. See [COPYING](COPYING). Report
 issues to Kamila Szewczyk <k@iczelia.net>. The project is hosted at
@@ -39,8 +37,8 @@ correlation. Repeat `-e` to add slower tests.
 runs, and long-run power-up tests over each complete 20,000-bit block. It exits
 with status 1 when a block fails.
 
-These tests screen data; they do not certify a random generator. Small samples
-also weaken or disable some verdicts.
+Passing every test does not prove that the input is random. Some tests need
+more data than others.
 
 ## Output
 
@@ -55,7 +53,7 @@ their tests are active. `--log` selects a logarithmic Y axis and
 
 Recursive mode accepts `--sort-by=COL[:asc|desc]`. Common columns are `path`,
 `samples`, `entropy`, `chisq`, `mean`, `pi`, and `scc`; `fastent --help` lists
-the extended columns. Selecting one also enables the required `-e` level.
+the extended columns. Sorting by one enables the required `-e` level.
 
 ## Installation
 
@@ -84,27 +82,25 @@ optional.
 
 ## Input and concurrency
 
-`--io=auto` maps regular files and streams everything else. `mmap` requires a
-mapping, `stream` always uses ordinary reads, and `uring` selects the asynchronous
-backend: io_uring on Linux or IOCP on Windows. Explicitly requesting an
-unavailable backend is an error.
+`--io=auto` maps regular files and reads other input as a stream. `mmap` rejects
+input that cannot be mapped. `stream` uses ordinary reads. `uring` uses io_uring
+on Linux or IOCP on Windows. Selecting an unavailable backend is an error.
 
 `-j N` uses `N` workers; `-j auto` uses the online CPU count. Mapped files are
 split into aligned slabs. Stream and asynchronous input use a bounded shared
-pipeline. Integer reductions and fixed-order boundary merges keep output stable.
+pipeline.
 
-The implementation dispatches scalar, SSSE3, SSE4.1, AVX2, AVX-512, NEON,
-SVE2, or WebAssembly SIMD128 kernels when built and available. The scalar path
-remains the reference.
+fastent includes scalar, SSSE3, SSE4.1, AVX2, AVX-512, NEON, SVE2, and
+WebAssembly SIMD128 kernels. It selects one at run time.
 
 ## Portability
 
-Regular builds support Linux, Windows, macOS, OpenBSD, and FreeBSD on their
-common x86 and ARM targets. Release builds also cover several musl and glibc
-architectures, WebAssembly, Windows 95, and DJGPP/MS-DOS. Cross-build recipes
-are in [the release workflow](.github/workflows/release.yml).
+fastent builds on Linux, Windows, macOS, OpenBSD, and FreeBSD on x86 and ARM.
+Release archives also include statically linked Linux binaries, WebAssembly,
+Windows 95, and DJGPP/MS-DOS. Cross-build recipes are in
+[the release workflow](.github/workflows/release.yml).
 
-A Windows build with MinGW resembles
+Build for 64-bit Windows with
 
 ```sh
 ./configure --host=x86_64-w64-mingw32 \
@@ -112,15 +108,13 @@ A Windows build with MinGW resembles
 make
 ```
 
-For WebAssembly, use the matching Emscripten host and `-msimd128`. The release
-workflow builds a single-file Node launcher. DOS builds include CWSDPMI in the
-executable.
+Emscripten builds use `-msimd128` and produce a single-file Node launcher. DOS
+builds include CWSDPMI in the executable.
 
 ## Performance
 
-The byte path uses banked histograms; SIMD kernels also handle correlation and
-bit population counts. Extended grid tests use fixed 4 MiB blocks. A stream is
-therefore reproducible without retaining the whole input.
+Byte analysis uses banked histograms. SIMD kernels compute correlation and bit
+counts. Grid tests process fixed 4 MiB blocks.
 
 `make bench` generates ten deterministic 512 MiB inputs and compares all modes
 and thread counts with `ent(1)`. `make bench-quick` runs a smaller sanity check.
