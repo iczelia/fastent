@@ -1,6 +1,16 @@
-/*  fastent: annotated interpretive report.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "output.h"
@@ -12,7 +22,7 @@
 #include <stdlib.h>
 
 #ifndef M_PI
-  #define M_PI 3.14159265358979323846
+#define M_PI 3.14159265358979323846
 #endif
 
 enum { B_PASS = 0, B_WEAK = 1, B_FAIL = 2, B_NA = 3, B_INFO = 4 };
@@ -152,9 +162,7 @@ void fastent_print_annotated(
   }
 
   /*  Poker (16 nibble bins, df=15); byte mode only.  */
-  if (o->binary) {
-    row_(o, color, &v, 0, "Poker d=15", "not applicable to bits", B_NA, "");
-  } else {
+  if (o->binary) { row_(o, color, &v, 0, "Poker d=15", "not applicable to bits", B_NA, ""); } else {
     int b = p_badge_(r->poker_p);
     snprintf(aux, sizeof aux, o->full_precision
              ? "%.17g  p=%.17g" : "%.4g  p=%.4f",
@@ -280,10 +288,9 @@ void fastent_print_annotated(
        :               "prev highly informative");
   }
 
-  /*  LZ77F (-eee): lz_deviation is the headline verdict; the two
-      z-component rows (S1/S3 and S2) carry their own per-component
-      badge so the headline is exactly their worst.  Off/len conc. is
-      a structure descriptor (no pass/fail), literal chi advisory.  */
+  /*  LZ77F (-eee): lz_deviation is the headline verdict; the two z-component
+      rows (S1/S3 and S2) carry their own per-component badge so the headline
+      is exactly their worst.  */
   if (r->lz_deviation != r->lz_deviation) {
     row_(o, color, &v, 0, "LZ77F", "pass -e", B_NA, "");
   } else {
@@ -460,13 +467,12 @@ void fastent_print_annotated(
     putchar('\n');
   }
 
-  /*  Headline.  */
-  const char * head = v.worst == B_PASS ? "PASSES AS RANDOM"
-                    : v.worst == B_WEAK ? "PASSES AS ALMOST RANDOM"
-                    :                     "DOES NOT PASS AS RANDOM";
+  const char * head = v.worst == B_PASS ? "appears random"
+                    : v.worst == B_WEAK ? "weak evidence of structure"
+                    :                     "does not appear random";
   const int hsev = v.worst == B_PASS ? B_PASS
                  : v.worst == B_WEAK ? B_WEAK : B_FAIL;
-  printf("\n  VERDICT: ");
+  printf("\n  verdict: ");
   if (color) fastent_term_set_sev(hsev);
   fastent_term_write(head);
   if (color) fastent_term_set_sev(-1);

@@ -1,6 +1,16 @@
-/*  fastent: recursive-mode output (CSV + JSON).
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "output.h"
@@ -44,6 +54,8 @@ void fastent_print_recursive_csv(
     const fastent_recursive_row * rows, sz n, const fastent_options * o) {
   const int fp = o->full_precision;
   const char * f = fp ? "%.17g" : "%g";
+  sz k;
+  i32 i;
   fputs("path,unit,samples,entropy,chi_square,p_exceed,"
         "mean,monte_carlo_pi,serial_correlation", stdout);
   if (o->extended)
@@ -65,8 +77,8 @@ void fastent_print_recursive_csv(
           "maurer_k,maurer_degenerate,"
           "mrank_dev,mrank_chi,mrank_matrices,mrank_underpowered", stdout);
   putchar('\n');
-  for (sz i = 0; i < n; i++) {
-    const fastent_recursive_row * r = &rows[i];
+  for (k = 0; k < n; k++) {
+    const fastent_recursive_row * r = &rows[k];
     csv_escape_(r->path);
     printf(",%s,%" PRIu64 ",", o->binary ? "bit" : "byte",
            (u64) r->result.total_samples);
@@ -91,7 +103,7 @@ void fastent_print_recursive_csv(
              (u64) r->result.mode_count,
              r->result.rarest_value,
              (u64) r->result.rarest_count);
-      Fi(8, putchar(','); cnum_(f, r->result.bit_freq[i]))
+      Fi(8, putchar(','); cnum_(f, r->result.bit_freq[i]));
       putchar(','); cnum_(f, r->result.bit_bias_max);
       printf(",%d", r->result.bit_bias_worst);
       putchar(','); cnum_(f, r->result.conditional_entropy);
@@ -159,10 +171,9 @@ static void json_escape_(const char * s) {
       case '\r': fputs("\\r",  stdout); break;
       case '\t': fputs("\\t",  stdout); break;
       default:
-        /*  Escape controls and every non-ASCII byte: paths are
-            arbitrary byte strings, so a raw >= 0x80 byte would
-            produce invalid UTF-8 (and U+2028/U+2029) in the JSON.
-            \u00xx per byte keeps the document valid ASCII.  */
+        /*  Escape controls and every non-ASCII byte: paths are arbitrary byte
+            strings, so a raw >= 0x80 byte would produce invalid UTF-8 (and
+            U+2028/U+2029) in the JSON.  */
         if (c < 0x20 || c >= 0x7F) printf("\\u%04x", c);
         else                       putchar((int) c);
     }
@@ -187,10 +198,12 @@ void fastent_print_recursive_json(
     const fastent_recursive_row * rows, sz n, const fastent_options * o) {
   const int fp = o->full_precision;
   const char * f = fp ? "%.17g" : "%g";
+  sz k;
+  i32 i;
   printf("{\n  \"unit\": \"%s\",\n  \"files\": [\n",
          o->binary ? "bit" : "byte");
-  for (sz i = 0; i < n; i++) {
-    const fastent_recursive_row * r = &rows[i];
+  for (k = 0; k < n; k++) {
+    const fastent_recursive_row * r = &rows[k];
     fputs("    { \"path\": ", stdout);
     json_escape_(r->path);
     printf(", \"samples\": %" PRIu64,
@@ -212,9 +225,7 @@ void fastent_print_recursive_json(
       fputs(", \"index_of_coincidence\": ", stdout);
       json_num_(f, r->result.ic);
       fputs(", \"poker\": ", stdout);
-      if (!(r->result.poker_chisq == r->result.poker_chisq)) {
-        fputs("null", stdout);
-      } else {
+      if (!(r->result.poker_chisq == r->result.poker_chisq)) { fputs("null", stdout); } else {
         printf("{ \"statistic\": "); json_num_(f, r->result.poker_chisq);
         printf(", \"df\": 15, \"p_exceed\": ");
         json_num_(f, r->result.poker_p);
@@ -235,18 +246,14 @@ void fastent_print_recursive_json(
                   r->result.rarest_value,
                   (u64) r->result.rarest_count);
       fputs(", \"bit_frequencies\": ", stdout);
-      if (r->result.bit_bias_worst < 0) {
-        fputs("null", stdout);
-      } else {
+      if (r->result.bit_bias_worst < 0) { fputs("null", stdout); } else {
         putchar('[');
         Fi(8, if (i) putchar(',');
-              putchar(' '); json_num_(f, r->result.bit_freq[i]))
+             putchar(' '); json_num_(f, r->result.bit_freq[i]));
         fputs(" ]", stdout);
       }
       fputs(", \"bit_bias\": ", stdout);
-      if (r->result.bit_bias_worst < 0) {
-        fputs("null", stdout);
-      } else {
+      if (r->result.bit_bias_worst < 0) { fputs("null", stdout); } else {
         printf("{ \"max\": "); json_num_(f, r->result.bit_bias_max);
         printf(", \"worst_bit\": %d }", r->result.bit_bias_worst);
       }
@@ -260,9 +267,7 @@ void fastent_print_recursive_json(
     }
     if (o->extended >= 1) {
       fputs(", \"lz77f\": ", stdout);
-      if (r->result.lz_deviation != r->result.lz_deviation) {
-        fputs("null", stdout);
-      } else {
+      if (r->result.lz_deviation != r->result.lz_deviation) { fputs("null", stdout); } else {
         fputs("{ \"cr_excess\": ", stdout);
         json_num_(f, r->result.lz_cr_excess);
         fputs(", \"literal_entropy\": ", stdout);
@@ -302,16 +307,14 @@ void fastent_print_recursive_json(
         printf(", \"windows\": %" PRIu64, (u64) r->result.perment_windows);
         fputs(", \"histogram\": [", stdout);
         Fi(24, if (i) putchar(',');
-              printf(" %u", r->result.perment_hist[i]))
+             printf(" %u", r->result.perment_hist[i]));
         fputs(" ]", stdout);
         fputs(" }", stdout);
       }
     }
     if (o->extended >= 3) {
       fputs(", \"linear_complexity\": ", stdout);
-      if (r->result.bm_deviation != r->result.bm_deviation) {
-        fputs("null", stdout);
-      } else {
+      if (r->result.bm_deviation != r->result.bm_deviation) { fputs("null", stdout); } else {
         fputs("{ \"mean_lc\": ", stdout);
         json_num_(f, r->result.bm_mean_lc);
         fputs(", \"mu\": ", stdout);
@@ -329,9 +332,7 @@ void fastent_print_recursive_json(
         fputs(" }", stdout);
       }
       fputs(", \"maurer_universal\": ", stdout);
-      if (r->result.maurer_dev != r->result.maurer_dev) {
-        fputs("null", stdout);
-      } else {
+      if (r->result.maurer_dev != r->result.maurer_dev) { fputs("null", stdout); } else {
         fputs("{ \"fn\": ", stdout);
         json_num_(f, r->result.maurer_fn);
         fputs(", \"expected\": ", stdout);
@@ -346,9 +347,7 @@ void fastent_print_recursive_json(
     }
     if (o->extended >= 3) {
       fputs(", \"binary_matrix_rank\": ", stdout);
-      if (r->result.mrank_dev != r->result.mrank_dev) {
-        fputs("null", stdout);
-      } else {
+      if (r->result.mrank_dev != r->result.mrank_dev) { fputs("null", stdout); } else {
         fputs("{ \"deviation\": ", stdout);
         json_num_(f, r->result.mrank_dev);
         fputs(", \"chi_square\": ", stdout);
@@ -365,7 +364,7 @@ void fastent_print_recursive_json(
       }
     }
     fputs(" }", stdout);
-    if (i + 1 < n) putchar(',');
+    if (k + 1 < n) putchar(',');
     putchar('\n');
   }
   fputs("  ]\n}\n", stdout);

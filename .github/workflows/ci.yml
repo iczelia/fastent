@@ -16,14 +16,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: install build deps + compressors
+      - name: Install build deps + compressors
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             autoconf-archive libtool-bin build-essential pkg-config \
             xz-utils bzip2 bzip3 zip
 
-      - name: build + install autoconf 2.73 and automake 1.18.1 from source
+      - name: Build + install autoconf 2.73 and automake 1.18.1 from source
         run: |
           cd /tmp
           curl -fsSL https://ftp.gnu.org/gnu/autoconf/autoconf-2.73.tar.gz | tar xz
@@ -33,13 +33,13 @@ jobs:
           cd automake-1.18.1 && ./configure --prefix=/usr/local && make && sudo make install
           hash -r
 
-      - name: bootstrap + configure + make dist
+      - name: Bootstrap + configure + make dist
         run: |
           ./bootstrap
           ./configure
           make dist
 
-      - name: upload tarballs
+      - name: Upload tarballs
         uses: actions/upload-artifact@v7
         with:
           name: fastent-dist
@@ -58,44 +58,44 @@ jobs:
     env:
       CC: gcc
     steps:
-      - name: install build deps
+      - name: Install build deps
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             build-essential python3
 
-      - name: download tarball
+      - name: Download tarball
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack
+      - name: Unpack
         run: |
           tar xzf fastent-*.tar.gz
           ln -s fastent-*/ fastent-src
 
-      - name: configure + build
+      - name: Configure + build
         working-directory: fastent-src
         run: |
           ./configure --enable-lto
           make -j"$(nproc)"
 
-      - name: smoke the binary
+      - name: Sanity check
         working-directory: fastent-src
         run: |
           ./fastent --version
-          dd if=/dev/urandom bs=4096 count=4 status=none > /tmp/smoke.bin
-          ./fastent -t  /tmp/smoke.bin
-          ./fastent -tb /tmp/smoke.bin
-          ./fastent -tf /tmp/smoke.bin
-          ./fastent --json /tmp/smoke.bin | python3 -c \
+          dd if=/dev/urandom bs=4096 count=4 status=none > /tmp/sanity.bin
+          ./fastent -t  /tmp/sanity.bin
+          ./fastent -tb /tmp/sanity.bin
+          ./fastent -tf /tmp/sanity.bin
+          ./fastent --json /tmp/sanity.bin | python3 -c \
             "import json,sys; json.loads(sys.stdin.read())"
 
-      - name: make check
+      - name: Make check
         working-directory: fastent-src
         run: make check
 
-  # Cross-compile static binaries with zig cc, one per matrix entry.
+  #  Cross-compile static binaries with zig cc, one per matrix entry.
   cross-binaries:
     name: zig cc / ${{ matrix.target.id }}
     needs: dist
@@ -104,12 +104,12 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          # Linux (musl, fully static).
+          #  Linux (musl, fully static).
           - { id: linux-x86_64,           zig: x86_64-linux-musl,         host: x86_64-unknown-linux-musl,         lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-x86_64-static     }
           - { id: linux-i386,             zig: x86-linux-musl,            host: x86-unknown-linux-musl,            lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-i386-static       }
           - { id: linux-aarch64,          zig: aarch64-linux-musl,        host: aarch64-unknown-linux-musl,        lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-aarch64-static    }
           - { id: linux-armhf,            zig: arm-linux-musleabihf,      host: arm-unknown-linux-musleabihf,      lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-arm-static        }
-          # LTO off on riscv64/loongarch64: ld.lld target-abi mismatch with crt1.o.
+          #  LTO off on riscv64/loongarch64: ld.lld target-abi mismatch with crt1.o.
           - { id: linux-riscv64,          zig: riscv64-linux-musl,        host: riscv64-unknown-linux-musl,        lto: 0, ldflags: "-static -s", bin: fastent,     qemu: qemu-riscv64-static    }
           - { id: linux-powerpc64le,      zig: powerpc64le-linux-musl,    host: powerpc64le-unknown-linux-musl,    lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-ppc64le-static    }
           - { id: linux-powerpc64,        zig: powerpc64-linux-musl,      host: powerpc64-unknown-linux-musl,      lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-ppc64-static      }
@@ -120,36 +120,36 @@ jobs:
           - { id: linux-mipsel,           zig: mipsel-linux-musleabihf,   host: mipsel-unknown-linux-musleabihf,   lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-mipsel-static     }
           - { id: linux-mips64,           zig: mips64-linux-muslabi64,    host: mips64-unknown-linux-musl,         lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-mips64-static     }
           - { id: linux-mips64el,         zig: mips64el-linux-muslabi64,  host: mips64el-unknown-linux-musl,       lto: 1, ldflags: "-static -s", bin: fastent,     qemu: qemu-mips64el-static   }
-          # Windows (mingw-w64, fully static).
+          #  Windows (mingw-w64, fully static).
           - { id: windows-x86_64,         zig: x86_64-windows-gnu,        host: x86_64-w64-mingw32,                lto: 1, ldflags: "-static -s", bin: fastent.exe, qemu: ""                     }
           - { id: windows-i686,           zig: x86-windows-gnu,           host: i686-w64-mingw32,                  lto: 1, ldflags: "-static -s", bin: fastent.exe, qemu: ""                     }
           - { id: windows-aarch64,        zig: aarch64-windows-gnu,       host: aarch64-w64-mingw32,               lto: 1, ldflags: "-static -s", bin: fastent.exe, qemu: ""                     }
-          # macOS (libSystem stub, not fully static).
+          #  macOS (libSystem stub, not fully static).
           - { id: macos-x86_64,           zig: x86_64-macos-none,         host: x86_64-apple-darwin,               lto: 1, ldflags: "-s",         bin: fastent,     qemu: ""                     }
           - { id: macos-aarch64,          zig: aarch64-macos-none,        host: aarch64-apple-darwin,              lto: 1, ldflags: "-s",         bin: fastent,     qemu: ""                     }
     steps:
-      - name: install zig
+      - name: Install zig
         uses: mlugg/setup-zig@v2
         with:
           version: 0.14.0
 
-      - name: install qemu-user-static (for non-native linux smoke test)
+      - name: Install qemu-user-static (for non-native linux sanity check)
         if: startsWith(matrix.target.id, 'linux-') && matrix.target.id != 'linux-x86_64'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qemu-user-static
 
-      - name: download tarball
+      - name: Download tarball
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack
+      - name: Unpack
         run: |
           tar xzf fastent-*.tar.gz
           ln -s fastent-*/ fastent-src
 
-      - name: configure + build
+      - name: Configure + build
         env:
           ZIGT: ${{ matrix.target.zig }}
           HOSTT: ${{ matrix.target.host }}
@@ -168,7 +168,7 @@ jobs:
             LDFLAGS="$LDFLAGS_X"
           make -j"$(nproc)"
 
-      - name: smoke test
+      - name: Sanity check
         env:
           QEMU: ${{ matrix.target.qemu }}
           BIN: ${{ matrix.target.bin }}
@@ -177,21 +177,21 @@ jobs:
           set -euo pipefail
           cd build
           file "./$BIN"
-          # native, qemu-user-static, or skip (Windows/macOS).
+          #  native, qemu-user-static, or skip (Windows/macOS).
           run=""
           case "$ID" in
             linux-x86_64) run="" ;;
             linux-i386)   run="" ;;     # i386 runs on x86_64 kernel
             linux-*)      run="$QEMU" ;;
-            windows-*|macos-*) echo "skipping execution smoke for $ID"; exit 0 ;;
+            windows-*|macos-*) echo "skipping sanity check for $ID"; exit 0 ;;
           esac
-          dd if=/dev/urandom bs=4096 count=8 status=none > /tmp/smoke.bin
+          dd if=/dev/urandom bs=4096 count=8 status=none > /tmp/sanity.bin
           $run "./$BIN" --version
-          $run "./$BIN" -t  /tmp/smoke.bin
-          $run "./$BIN" -tb /tmp/smoke.bin
-          $run "./$BIN" -tf /tmp/smoke.bin
+          $run "./$BIN" -t  /tmp/sanity.bin
+          $run "./$BIN" -tb /tmp/sanity.bin
+          $run "./$BIN" -tf /tmp/sanity.bin
 
-      - name: package binary
+      - name: Package binary
         env:
           BIN: ${{ matrix.target.bin }}
           ID: ${{ matrix.target.id }}
@@ -207,7 +207,7 @@ jobs:
             *)         (cd dist && tar -czf "${name}.tar.gz" "$name") ;;
           esac
 
-      - name: upload binary artifact
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v7
         with:
           name: fastent-${{ matrix.target.id }}
@@ -224,9 +224,9 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          # sparc32: sparc64 gcc + -m32 (sparcv8plus); -m32 in CC.
-          # SH3, C-SKY: no Debian multilib / cross-gcc; skipped.
-          # alpha libc package is libc6.1-dev (DEC SONAME quirk).
+          #  sparc32: sparc64 gcc + -m32 (sparcv8plus); -m32 in CC.
+          #  SH3, C-SKY: no Debian multilib / cross-gcc; skipped.
+          #  alpha libc package is libc6.1-dev (DEC SONAME quirk).
           - { id: linux-alpha,   apt: "gcc-alpha-linux-gnu libc6.1-dev-alpha-cross",                                                  cc: "alpha-linux-gnu-gcc",        host: alpha-linux-gnu,   lto: 1 }
           - { id: linux-sparc64, apt: "gcc-sparc64-linux-gnu libc6-dev-sparc64-cross",                                                cc: "sparc64-linux-gnu-gcc",      host: sparc64-linux-gnu, lto: 1 }
           - { id: linux-sparc,   apt: "gcc-sparc64-linux-gnu gcc-multilib-sparc64-linux-gnu",                                          cc: "sparc64-linux-gnu-gcc -m32", host: sparc-linux-gnu,   lto: 1 }
@@ -235,24 +235,24 @@ jobs:
           - { id: linux-arc,     apt: "gcc-arc-linux-gnu libc6-dev-arc-cross",                                                        cc: "arc-linux-gnu-gcc",          host: arc-linux-gnu,     lto: 1 }
           - { id: linux-sh4,     apt: "gcc-sh4-linux-gnu libc6-dev-sh4-cross",                                                        cc: "sh4-linux-gnu-gcc",          host: sh4-linux-gnu,     lto: 1 }
     steps:
-      - name: install cross toolchain
+      - name: Install cross toolchain
         env:
           APT: ${{ matrix.target.apt }}
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends $APT
 
-      - name: download tarball
+      - name: Download tarball
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack
+      - name: Unpack
         run: |
           tar xzf fastent-*.tar.gz
           ln -s fastent-*/ fastent-src
 
-      - name: configure + build
+      - name: Configure + build
         env:
           CCBIN: ${{ matrix.target.cc }}
           HOSTT: ${{ matrix.target.host }}
@@ -268,7 +268,7 @@ jobs:
             $cfg_extra
           make -j"$(nproc)"
 
-      - name: report binary
+      - name: Report binary
         env:
           ID: ${{ matrix.target.id }}
         run: |
@@ -276,7 +276,7 @@ jobs:
           file ./fastent
           ls -la ./fastent
 
-      - name: package binary
+      - name: Package binary
         env:
           ID: ${{ matrix.target.id }}
         run: |
@@ -288,20 +288,20 @@ jobs:
              fastent-src/fastent.1 "dist/$name/"
           (cd dist && tar -czf "${name}.tar.gz" "$name")
 
-      - name: upload binary artifact
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v7
         with:
           name: fastent-${{ matrix.target.id }}
           path: dist/fastent-*-${{ matrix.target.id }}.tar.gz
           if-no-files-found: error
 
-  # Win95: Debian i686-w64-mingw32 (msvcrt CRT, not zig's UCRT).
+  #  Win95: Debian i686-w64-mingw32 (msvcrt CRT, not zig's UCRT).
   cross-binaries-win95:
     name: gcc-mingw / windows-i686-win95
     needs: dist
     runs-on: ubuntu-latest
     steps:
-      - name: install mingw32 cross + wine
+      - name: Install mingw32 cross + wine
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update -qq
@@ -309,17 +309,17 @@ jobs:
             gcc-mingw-w64-i686 binutils-mingw-w64-i686 \
             wine wine32:i386
 
-      - name: download tarball
+      - name: Download tarball
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack
+      - name: Unpack
         run: |
           tar xzf fastent-*.tar.gz
           ln -s fastent-*/ fastent-src
 
-      - name: configure + build
+      - name: Configure + build
         run: |
           mkdir build && cd build
           ../fastent-src/configure \
@@ -330,7 +330,7 @@ jobs:
             LDFLAGS="-static -s"
           make -j"$(nproc)"
 
-      - name: verify PE header advertises Windows 4.00
+      - name: Verify PE header advertises Windows 4.00
         run: |
           cd build
           file ./fastent.exe
@@ -341,13 +341,13 @@ jobs:
           test "$osmaj" = "4" || { echo "expected OS major version 4, got $osmaj" >&2; exit 1; }
           test "$submaj" = "4" || { echo "expected subsystem major version 4, got $submaj" >&2; exit 1; }
 
-      - name: verify imports stay on the Win95 surface
+      - name: Verify imports stay on the Win95 surface
         run: |
           cd build
           imports=$(i686-w64-mingw32-objdump -p ./fastent.exe \
                     | awk '/DLL Name:/ {print tolower($3)}' | sort -u)
           echo "imports: $imports"
-          # Expect only kernel32 + msvcrt.
+          #  Expect only kernel32 + msvcrt.
           for d in $imports; do
             case "$d" in
               kernel32.dll|msvcrt.dll) ;;
@@ -355,21 +355,21 @@ jobs:
             esac
           done
 
-      - name: smoke test under wine
+      - name: Sanity check under wine
         env:
           WINEDEBUG: -all
-          # Skip Mono/Gecko first-run prompts.
+          #  Skip Mono/Gecko first-run prompts.
           WINEDLLOVERRIDES: "mscoree=;mshtml="
         run: |
           cd build
           wineboot --init 2>/dev/null || true
-          dd if=/dev/urandom bs=4096 count=4 status=none > smoke.bin
+          dd if=/dev/urandom bs=4096 count=4 status=none > sanity.bin
           wine ./fastent.exe --version
-          wine ./fastent.exe -t  smoke.bin
-          wine ./fastent.exe -tb smoke.bin
-          wine ./fastent.exe -tf smoke.bin
+          wine ./fastent.exe -t  sanity.bin
+          wine ./fastent.exe -tb sanity.bin
+          wine ./fastent.exe -tf sanity.bin
 
-      - name: package binary
+      - name: Package binary
         run: |
           ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
           name="fastent-${ver}-windows-i686-win95"
@@ -379,14 +379,14 @@ jobs:
              fastent-src/fastent.1 "dist/$name/"
           (cd dist && zip -9 -r "${name}.zip" "$name")
 
-      - name: upload artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: fastent-windows-i686-win95
           path: dist/fastent-*-windows-i686-win95.zip
           if-no-files-found: error
 
-  # MS-DOS via DJGPP + CWSDPMI; smoke-tested under DOSBox-X.
+  #  MS-DOS via DJGPP + CWSDPMI; sanity-checked under DOSBox-X.
   cross-binaries-dos:
     name: djgpp / dos-i386
     needs: dist
@@ -395,39 +395,39 @@ jobs:
       DJGPP_RELEASE: "v3.4"
       DJGPP_GCC: "1220"
     steps:
-      - name: install DJGPP cross-toolchain
+      - name: Install DJGPP cross-toolchain
         run: |
           curl -fL -o /tmp/djgpp.tar.bz2 \
             "https://github.com/andrewwutw/build-djgpp/releases/download/${DJGPP_RELEASE}/djgpp-linux64-gcc${DJGPP_GCC}.tar.bz2"
           tar -xjf /tmp/djgpp.tar.bz2 -C "$HOME"
           echo "$HOME/djgpp/bin" >> $GITHUB_PATH
-          # Symlink exe2coff into the bin without shadowing host as/ld.
+          #  Symlink exe2coff into the bin without shadowing host as/ld.
           exe2coff=$(find "$HOME/djgpp" -name exe2coff -type f -print -quit)
           test -n "$exe2coff" || { echo "exe2coff missing from DJGPP tarball" >&2; exit 1; }
           ln -sf "$exe2coff" "$HOME/djgpp/bin/exe2coff"
 
-      - name: install CWSDPMI (CWSDSTUB.EXE bundled into the final exe)
+      - name: Install CWSDPMI (CWSDSTUB.EXE bundled into the final exe)
         run: |
           curl -fL -o /tmp/csdpmi.zip http://www.delorie.com/pub/djgpp/current/v2misc/csdpmi7b.zip
           unzip -j -d "$HOME/csdpmi" /tmp/csdpmi.zip 'bin/CWSDSTUB.EXE'
           echo "CWSDSTUB=$HOME/csdpmi/CWSDSTUB.EXE" >> $GITHUB_ENV
 
-      - name: install DOSBox-X (for headless smoke test)
+      - name: Install DOSBox-X (for headless sanity check)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends dosbox-x
 
-      - name: download tarball
+      - name: Download tarball
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack
+      - name: Unpack
         run: |
           tar xzf fastent-*.tar.gz
           ln -s fastent-*/ fastent-src
 
-      - name: configure + build (single-threaded, no SIMD)
+      - name: Configure + build (single-threaded, no SIMD)
         run: |
           mkdir build && cd build
           ../fastent-src/configure \
@@ -435,19 +435,19 @@ jobs:
             CC=i586-pc-msdosdjgpp-gcc
           make -j"$(nproc)"
 
-      - name: verify DOS binary format
+      - name: Verify DOS binary format
         run: |
           cd build
           file ./fastent.exe
           file ./fastent.exe | grep -Eq 'MS-DOS executable|COFF'
 
-      - name: smoke test under DOSBox-X
+      - name: Sanity check under DOSBox-X
         run: |
           cd build
-          dd if=/dev/urandom bs=4096 count=4 status=none > SMOKE.BIN
+          dd if=/dev/urandom bs=4096 count=4 status=none > SANITY.BIN
           tmp=$(mktemp -d)
-          # DJGPP @file syntax dodges the 126-byte PSP limit.
-          printf %s '-t SMOKE.BIN' > "$tmp/args.rsp"
+          #  DJGPP @file syntax dodges the 126-byte PSP limit.
+          printf %s '-t SANITY.BIN' > "$tmp/args.rsp"
           sed -e "s|@PWD@|$PWD|g" -e "s|@OUT@|$tmp|g" \
             ../fastent-src/contrib/dos/dosbox-x.conf > "$tmp/dosbox-x.conf"
           SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
@@ -457,7 +457,7 @@ jobs:
           ec=$(tr -d ' \t\r\n' < "$tmp/ec.txt" 2>/dev/null || echo FAIL)
           test "$ec" = "OK" || { echo "DOS exec returned $ec"; exit 1; }
 
-      - name: package binary
+      - name: Package binary
         run: |
           ver=$(ls -d fastent-*/ | head -1 | sed 's,/,,;s/^fastent-//')
           name="fastent-${ver}-dos-i386"
@@ -467,18 +467,18 @@ jobs:
              fastent-src/fastent.1 "dist/$name/"
           (cd dist && zip -9 -r "${name}.zip" "$name")
 
-      - name: upload artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: fastent-dos-i386
           path: dist/fastent-*-dos-i386.zip
           if-no-files-found: error
 
-  # WebAssembly: emscripten with -sNODERAWFS, smoke-tested under node.
-  # wasm32 and wasm64 (-sMEMORY64); -msimd128 enables 128-bit SIMD
-  # codegen.  -sSINGLE_FILE folds the .wasm into the launcher .js as
-  # a self-contained artifact.  wasm64 needs node's experimental
-  # memory64 flag at run time.
+  #  WebAssembly: emscripten with -sNODERAWFS, sanity-checked under node.
+  #  wasm32 and wasm64 (-sMEMORY64); -msimd128 enables 128-bit SIMD
+  #  codegen.  -sSINGLE_FILE folds the .wasm into the launcher .js as
+  #  a self-contained artifact.  wasm64 needs node's experimental
+  #  memory64 flag at run time.
   cross-binaries-wasm:
     name: emscripten / ${{ matrix.target.id }}
     needs: dist
@@ -490,27 +490,27 @@ jobs:
           - { id: wasm32, em_extra: ""           }
           - { id: wasm64, em_extra: "-sMEMORY64" }
     steps:
-      - name: install emscripten
+      - name: Install emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
           version: '3.1.74'
 
-      - name: install node 24 (V8 with table64 / memory64 support)
+      - name: Install node 24 (V8 with table64 / memory64 support)
         uses: actions/setup-node@v4
         with:
           node-version: '24'
 
-      - name: download tarball
+      - name: Download tarball
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack
+      - name: Unpack
         run: |
           tar xzf fastent-*.tar.gz
           ln -s fastent-*/ fastent-src
 
-      - name: configure + build
+      - name: Configure + build
         env:
           EMX: ${{ matrix.target.em_extra }}
         run: |
@@ -523,17 +523,17 @@ jobs:
             LDFLAGS="$fl"
           emmake make -j"$(nproc)"
 
-      - name: smoke test under node
+      - name: Sanity check under node
         run: |
           cd build
           ls -la fastent*
-          dd if=/dev/urandom bs=4096 count=4 status=none > smoke.bin
+          dd if=/dev/urandom bs=4096 count=4 status=none > sanity.bin
           node ./fastent --version
-          node ./fastent -t  smoke.bin
-          node ./fastent -tb smoke.bin
-          node ./fastent -tf smoke.bin
+          node ./fastent -t  sanity.bin
+          node ./fastent -tb sanity.bin
+          node ./fastent -tf sanity.bin
 
-      - name: package binary
+      - name: Package binary
         env:
           ID: ${{ matrix.target.id }}
         run: |
@@ -545,111 +545,111 @@ jobs:
              fastent-src/fastent.1 "dist/$name/"
           (cd dist && tar -czf "${name}.tar.gz" "$name")
 
-      - name: upload binary artifact
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v7
         with:
           name: fastent-wasi-${{ matrix.target.id }}
           path: dist/fastent-*-wasi-${{ matrix.target.id }}.tar.gz
           if-no-files-found: error
 
-  # TinyCC: lets the scalar core compile under a minimal C compiler.
-  # SIMD probes auto-fail (no -mavx etc.), threads disabled.
+  #  TinyCC: lets the scalar core compile under a minimal C compiler.
+  #  SIMD probes auto-fail (no -mavx etc.), threads disabled.
   build-tcc:
     name: tcc / linux-x86_64
     needs: dist
     runs-on: ubuntu-latest
     steps:
-      - name: install tcc
+      - name: Install tcc
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends tcc python3
 
-      - name: download tarball
+      - name: Download tarball
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack
+      - name: Unpack
         run: |
           tar xzf fastent-*.tar.gz
           ln -s fastent-*/ fastent-src
 
-      - name: configure + build
+      - name: Configure + build
         run: |
           mkdir build && cd build
           ../fastent-src/configure CC=tcc --disable-threads
           make -j"$(nproc)"
 
-      - name: smoke
+      - name: Sanity check
         run: |
           cd build
           file ./fastent
           ./fastent --version
-          dd if=/dev/urandom bs=4096 count=4 status=none > /tmp/smoke.bin
-          ./fastent -t  /tmp/smoke.bin
-          ./fastent -tb /tmp/smoke.bin
-          ./fastent -tf /tmp/smoke.bin
-          ./fastent --json /tmp/smoke.bin | python3 -c \
+          dd if=/dev/urandom bs=4096 count=4 status=none > /tmp/sanity.bin
+          ./fastent -t  /tmp/sanity.bin
+          ./fastent -tb /tmp/sanity.bin
+          ./fastent -tf /tmp/sanity.bin
+          ./fastent --json /tmp/sanity.bin | python3 -c \
             "import json,sys; json.loads(sys.stdin.read())"
 
-      - name: make check
+      - name: Make check
         run: |
           cd build
           make check
 
-  # MSVC (cl.exe): native Windows runner, scalar + full x86 SIMD
-  # (SSSE3/SSE4.1/AVX2/AVX-512/BITALG) + Win32 threads. configure.ac's
-  # -m SIMD probes reject under cl, so this uses the dedicated
-  # build/msvc/Makefile.nmake instead of autotools.
+  #  MSVC (cl.exe): native Windows runner, scalar + full x86 SIMD
+  #  (SSSE3/SSE4.1/AVX2/AVX-512/BITALG) + Win32 threads. configure.ac's
+  #  -m SIMD probes reject under cl, so this uses the dedicated
+  #  build/msvc/Makefile.nmake instead of autotools.
   build-msvc:
     name: msvc / windows-x86_64
     needs: dist
     runs-on: windows-latest
     steps:
-      - name: download tarball
+      - name: Download tarball
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack
+      - name: Unpack
         shell: bash
         run: |
           tar xzf fastent-*.tar.gz
           src=$(ls -d fastent-*/ | head -1 | sed 's,/$,,')
           echo "SRCDIR=$src" >> "$GITHUB_ENV"
 
-      - name: setup MSVC
+      - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
-      - name: build (nmake + cl)
+      - name: Build (nmake + cl)
         shell: cmd
         run: |
           cd %SRCDIR%
           nmake /f build\msvc\Makefile.nmake
           dir fastent.exe
 
-      - name: smoke test
+      - name: Sanity check
         shell: bash
         run: |
           cd "$SRCDIR"
           ./fastent.exe --version
-          dd if=/dev/urandom bs=4096 count=8 status=none > smoke.bin
-          ./fastent.exe -t  smoke.bin
-          ./fastent.exe -tb smoke.bin
-          ./fastent.exe -tf smoke.bin
-          ./fastent.exe --json smoke.bin | python -c \
+          dd if=/dev/urandom bs=4096 count=8 status=none > sanity.bin
+          ./fastent.exe -t  sanity.bin
+          ./fastent.exe -tb sanity.bin
+          ./fastent.exe -tf sanity.bin
+          ./fastent.exe --json sanity.bin | python -c \
             "import json,sys; json.loads(sys.stdin.read())"
 
-      - name: test suite (best effort under Git Bash)
+      - name: Test suite (best effort under Git Bash)
         shell: bash
         continue-on-error: true
         run: |
           cd "$SRCDIR"
           bash tests/run-tests.sh ./fastent.exe tests/fixtures
 
-      - name: package binary
+      - name: Package binary
         shell: bash
         run: |
           ver=$(echo "$SRCDIR" | sed 's/^fastent-//')
@@ -660,7 +660,7 @@ jobs:
              "$SRCDIR/fastent.1" "dist/$name/"
           (cd dist && 7z a "${name}.zip" "$name" >/dev/null)
 
-      - name: upload binary artifact
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v7
         with:
           name: fastent-windows-x86_64-msvc

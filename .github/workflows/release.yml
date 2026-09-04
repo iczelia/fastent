@@ -14,15 +14,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-      - name: install build deps + compressors
+      - name: Install build deps + compressors
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             autoconf-archive libtool-bin build-essential \
             xz-utils bzip2 bzip3 zip zstd
 
-      - name: build + install autoconf 2.73 and automake 1.18.1 from source
+      - name: Build + install autoconf 2.73 and automake 1.18.1 from source
         run: |
           cd /tmp
           curl -fsSL https://ftp.gnu.org/gnu/autoconf/autoconf-2.73.tar.gz | tar xz
@@ -32,7 +34,13 @@ jobs:
           cd automake-1.18.1 && ./configure --prefix=/usr/local && make && sudo make install
           hash -r
 
-      - name: bootstrap + configure + make dist
+      - name: Regenerate the ChangeLog from git history
+        run: |
+          contrib/gitlog-to-changelog --format='%s%n%n%b%n' > ChangeLog.tmp
+          mv ChangeLog.tmp ChangeLog
+          head -20 ChangeLog
+
+      - name: Build the source packages
         run: |
           ./bootstrap
           ./configure
@@ -42,7 +50,7 @@ jobs:
           gzip -dk fastent-${ver}.tar.gz
           zstd -k fastent-${ver}.tar
 
-      - name: publish source release
+      - name: Publish source release
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -56,7 +64,7 @@ jobs:
             fastent-${{ env.FE_VER }}.tar.zst
             fastent-${{ env.FE_VER }}.zip
 
-      - name: upload source artifact for binary jobs
+      - name: Upload source artifact for binary jobs
         uses: actions/upload-artifact@v7
         with:
           name: fastent-dist
@@ -91,22 +99,22 @@ jobs:
           - { id: macos-x86_64,      zig: x86_64-macos-none,         host: x86_64-apple-darwin,               lto: 1, ldflags: "-s",         bin: fastent     }
           - { id: macos-aarch64,     zig: aarch64-macos-none,        host: aarch64-apple-darwin,              lto: 1, ldflags: "-s",         bin: fastent     }
     steps:
-      - name: install zig
+      - name: Install zig
         uses: mlugg/setup-zig@v2
         with:
           version: 0.14.0
 
-      - name: download source
+      - name: Download source
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack
+      - name: Unpack
         run: |
           tar xzf fastent-*.tar.gz
           ln -s fastent-*/ fastent-src
 
-      - name: configure + build
+      - name: Configure + build
         env:
           ZIGT: ${{ matrix.target.zig }}
           HOSTT: ${{ matrix.target.host }}
@@ -126,13 +134,13 @@ jobs:
             CFLAGS="-O2"
           make -j"$(nproc)"
 
-      - name: stage binary
+      - name: Stage binary
         env:
           BIN: ${{ matrix.target.bin }}
           ID: ${{ matrix.target.id }}
         run: bash fastent-src/build/ci/stage-binary.sh "build/$BIN" "$ID"
 
-      - name: upload staged binary
+      - name: Upload staged binary
         uses: actions/upload-artifact@v7
         with:
           name: bin-${{ matrix.target.id }}
@@ -155,24 +163,24 @@ jobs:
           - { id: linux-arc,     apt: "gcc-arc-linux-gnu libc6-dev-arc-cross",                        cc: "arc-linux-gnu-gcc",          host: arc-linux-gnu,     lto: 1 }
           - { id: linux-sh4,     apt: "gcc-sh4-linux-gnu libc6-dev-sh4-cross",                        cc: "sh4-linux-gnu-gcc",          host: sh4-linux-gnu,     lto: 1 }
     steps:
-      - name: install cross toolchain
+      - name: Install cross toolchain
         env:
           APT: ${{ matrix.target.apt }}
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends $APT
 
-      - name: download source
+      - name: Download source
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack
+      - name: Unpack
         run: |
           tar xzf fastent-*.tar.gz
           ln -s fastent-*/ fastent-src
 
-      - name: configure + build
+      - name: Configure + build
         env:
           CCBIN: ${{ matrix.target.cc }}
           HOSTT: ${{ matrix.target.host }}
@@ -189,12 +197,12 @@ jobs:
             CFLAGS="-O2"
           make -j"$(nproc)"
 
-      - name: stage binary
+      - name: Stage binary
         env:
           ID: ${{ matrix.target.id }}
         run: bash fastent-src/build/ci/stage-binary.sh build/fastent "$ID"
 
-      - name: upload staged binary
+      - name: Upload staged binary
         uses: actions/upload-artifact@v7
         with:
           name: bin-${{ matrix.target.id }}
@@ -206,23 +214,23 @@ jobs:
     needs: source-release
     runs-on: ubuntu-latest
     steps:
-      - name: install mingw32 cross
+      - name: Install mingw32 cross
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             gcc-mingw-w64-i686 binutils-mingw-w64-i686
 
-      - name: download source
+      - name: Download source
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack
+      - name: Unpack
         run: |
           tar xzf fastent-*.tar.gz
           ln -s fastent-*/ fastent-src
 
-      - name: configure + build
+      - name: Configure + build
         run: |
           mkdir build && cd build
           ../fastent-src/configure \
@@ -234,10 +242,10 @@ jobs:
             CFLAGS="-O2"
           make -j"$(nproc)"
 
-      - name: stage binary
+      - name: Stage binary
         run: bash fastent-src/build/ci/stage-binary.sh build/fastent.exe windows-i686-win95
 
-      - name: upload staged binary
+      - name: Upload staged binary
         uses: actions/upload-artifact@v7
         with:
           name: bin-windows-i686-win95
@@ -255,22 +263,22 @@ jobs:
           - { id: wasm32, em_extra: ""           }
           - { id: wasm64, em_extra: "-sMEMORY64" }
     steps:
-      - name: install emscripten
+      - name: Install emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
           version: '3.1.74'
 
-      - name: download source
+      - name: Download source
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack
+      - name: Unpack
         run: |
           tar xzf fastent-*.tar.gz
           ln -s fastent-*/ fastent-src
 
-      - name: configure + build
+      - name: Configure + build
         env:
           EMX: ${{ matrix.target.em_extra }}
         run: |
@@ -283,12 +291,12 @@ jobs:
             LDFLAGS="$fl"
           emmake make -j"$(nproc)"
 
-      - name: stage binary
+      - name: Stage binary
         env:
           ID: ${{ matrix.target.id }}
         run: bash fastent-src/build/ci/stage-binary.sh build/fastent "wasi-$ID"
 
-      - name: upload staged binary
+      - name: Upload staged binary
         uses: actions/upload-artifact@v7
         with:
           name: bin-wasi-${{ matrix.target.id }}
@@ -303,7 +311,7 @@ jobs:
       DJGPP_RELEASE: "v3.4"
       DJGPP_GCC: "1220"
     steps:
-      - name: install DJGPP cross-toolchain
+      - name: Install DJGPP cross-toolchain
         run: |
           curl -fL -o /tmp/djgpp.tar.bz2 \
             "https://github.com/andrewwutw/build-djgpp/releases/download/${DJGPP_RELEASE}/djgpp-linux64-gcc${DJGPP_GCC}.tar.bz2"
@@ -313,7 +321,7 @@ jobs:
           test -n "$exe2coff" || { echo "exe2coff missing" >&2; exit 1; }
           ln -sf "$exe2coff" "$HOME/djgpp/bin/exe2coff"
 
-      - name: install CWSDPMI
+      - name: Install CWSDPMI
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends unzip
@@ -321,17 +329,17 @@ jobs:
           unzip -j -d "$HOME/csdpmi" /tmp/csdpmi.zip 'bin/CWSDSTUB.EXE'
           echo "CWSDSTUB=$HOME/csdpmi/CWSDSTUB.EXE" >> $GITHUB_ENV
 
-      - name: download source
+      - name: Download source
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack
+      - name: Unpack
         run: |
           tar xzf fastent-*.tar.gz
           ln -s fastent-*/ fastent-src
 
-      - name: configure + build
+      - name: Configure + build
         run: |
           mkdir build && cd build
           ../fastent-src/configure \
@@ -340,10 +348,10 @@ jobs:
             CFLAGS="-O2" LDFLAGS="-s"
           make -j"$(nproc)"
 
-      - name: stage binary
+      - name: Stage binary
         run: bash fastent-src/build/ci/stage-binary.sh build/fastent.exe dos-i386
 
-      - name: upload staged binary
+      - name: Upload staged binary
         uses: actions/upload-artifact@v7
         with:
           name: bin-dos-i386
@@ -355,27 +363,27 @@ jobs:
     needs: [binaries-zig, binaries-gcc, binary-win95, binaries-wasm, binary-dos]
     runs-on: ubuntu-latest
     steps:
-      - name: download source
+      - name: Download source
         uses: actions/download-artifact@v7
         with:
           name: fastent-dist
 
-      - name: unpack source
+      - name: Unpack source
         run: |
           tar xzf fastent-*.tar.gz
           ln -s fastent-*/ fastent-src
 
-      - name: download all staged binaries
+      - name: Download all staged binaries
         uses: actions/download-artifact@v7
         with:
           pattern: bin-*
           merge-multiple: true
           path: staged
 
-      - name: bundle per-OS archives
+      - name: Bundle per-OS archives
         run: bash fastent-src/build/ci/bundle-release.sh
 
-      - name: publish binaries
+      - name: Publish binaries
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

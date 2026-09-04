@@ -1,21 +1,16 @@
-/*  fastent: the -eee LZ77F estimator.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    A count-only LZ77F match finder (acceleration 1): never emits a
-    byte, no output buffer, no match copies.  Produces the exact
-    count-only encoded size and three raw tables (per-offset,
-    per-match-length, LZ77-unmatched byte histogram).  Compressibility,
-    literal order-0 skew, match coverage and offset / length
-    concentration are derived at finalize.
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
 
-    The parse is keyed to a fixed 4 MiB grid on the ABSOLUTE file
-    offset: a fresh hash table per block makes B and every table
-    exactly additive, so the integer sum-merge is order-independent
-    and bit-identical for any thread count, driver, or host.  Drift
-    versus a whole-file table-carrying serial parse is <= ~0.055%
-    (verdict-neutral): a fresh table only perturbs the first few
-    matches at each block start.
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "lzest.h"
 #include "analyze.h"
@@ -36,17 +31,18 @@ static inline sz lz_count_eq(const u8 * a, const u8 * b, const u8 * lim) {
   const u8 * a0 = a;
   while (a + 8 <= lim) {
     u64 d = lz_rd64(a) ^ lz_rd64(b);
-    if (d) return (sz)(a - a0) + (FASTENT_CTZ64(d) >> 3);
+    if (d) return (sz) (a - a0) + (FASTENT_CTZ64(d) >> 3);
     a += 8;  b += 8;
   }
   while (a < lim && *a == *b) { a++;  b++; }
-  return (sz)(a - a0);
+  return (sz) (a - a0);
 }
 
 /*  Fold the u16 offset block into the u64 parent and zero it; called
     every FASTENT_LZ_OFFFLUSH matches so a u16 cell cannot wrap.  */
 static void lz_off_flush(fastent_lz_acc * a) {
-  Fi(65536, a->off_par[i] += a->off_blk[i];  a->off_blk[i] = 0)
+  i32 i;
+  Fi(65536, a->off_par[i] += a->off_blk[i];  a->off_blk[i] = 0);
   a->since_flush = 0;
 }
 
@@ -54,13 +50,15 @@ static void lz_off_flush(fastent_lz_acc * a) {
     FASTENT_LZ_GRID; src has >=32 slack bytes for count_eq's word
     over-read, the partial tail takes the scalar loop (no over-read). */
 static void lz_parse_block(fastent_lz_acc * a, const u8 * src, sz n) {
-  u32 * FASTENT_RESTRICT tbl = a->tbl;
-  memset(tbl, 0, (sz) FASTENT_LZ_HSZ * sizeof(u32));
+  u32 * RESTRICT tbl = a->tbl;
+  const u8 * p;
+  i32 i;
+  memset(tbl, 0, (sz) FASTENT_LZ_HSZ * sizeof (u32));
 
-  if (n < (sz)(FASTENT_LZ_MFLIMIT + 1)) {
+  if (n < (sz) (FASTENT_LZ_MFLIMIT + 1)) {
     a->outsz += n + 1 + (n + 254) / 255;
     a->nlit_run += 1;  a->lit_bytes += n;
-    Fi((int) n, a->lit_byte[src[i]]++)
+    Fi((int) n, a->lit_byte[src[i]]++);
     return;
   }
 
@@ -69,7 +67,7 @@ static void lz_parse_block(fastent_lz_acc * a, const u8 * src, sz n) {
   const u8 * const mflimit = iend - FASTENT_LZ_MFLIMIT;
   const u8 * const matchlimit = iend - FASTENT_LZ_LASTLIT;
 
-  tbl[lz_hash4(lz_rd32(ip))] = (u32)(ip - src);
+  tbl[lz_hash4(lz_rd32(ip))] = (u32) (ip - src);
   ip++;
   u32 forwardH = lz_hash4(lz_rd32(ip));
 
@@ -78,7 +76,7 @@ static void lz_parse_block(fastent_lz_acc * a, const u8 * src, sz n) {
     const u8 * forwardIp = ip;
     int step = 1, searchMatchNb = 1 << FASTENT_LZ_SKIP;
     for (;;) {
-      u32 h = forwardH, cur = (u32)(forwardIp - src), mi = tbl[h];
+      u32 h = forwardH, cur = (u32) (forwardIp - src), mi = tbl[h];
       ip = forwardIp;
       forwardIp += step;
       step = (searchMatchNb++ >> FASTENT_LZ_SKIP);
@@ -87,22 +85,22 @@ static void lz_parse_block(fastent_lz_acc * a, const u8 * src, sz n) {
       tbl[h] = cur;
       /*  Prefetch the next probe's match bytes so its random miss
           overlaps this iter's rd32(match).  Pure hint, bit-exact.  */
-      FASTENT_PREFETCH(src + tbl[forwardH]);
+      PREFETCH(src + tbl[forwardH]);
       match = src + mi;
       if (mi + FASTENT_LZ_DISTMAX < cur) continue;     /*  out of win  */
       if (lz_rd32(match) == lz_rd32(ip)) break;        /*  4-byte key  */
     }
 
     {                                            /*  literal run        */
-      sz litlen = (sz)(ip - anchor);
+      sz litlen = (sz) (ip - anchor);
       a->outsz += 1;
       if (litlen >= 15) a->outsz += 1 + (litlen - 15) / 255;
       a->outsz += litlen;
       a->lit_bytes += litlen;  a->nlit_run++;
-      for (const u8 * p = anchor; p < ip; p++) a->lit_byte[*p]++;
+      for (p = anchor; p < ip; p++) a->lit_byte[*p]++;
     }
     {                                            /*  match              */
-      u32 offset = (u32)(ip - match);
+      u32 offset = (u32) (ip - match);
       sz mlen = lz_count_eq(ip + FASTENT_LZ_MINMATCH,
                             match + FASTENT_LZ_MINMATCH, matchlimit);
       sz total = mlen + FASTENT_LZ_MINMATCH;
@@ -116,18 +114,18 @@ static void lz_parse_block(fastent_lz_acc * a, const u8 * src, sz n) {
     }
     anchor = ip;
     if (ip >= mflimit) goto last_literals;
-    tbl[lz_hash4(lz_rd32(ip - 2))] = (u32)(ip - 2 - src);
+    tbl[lz_hash4(lz_rd32(ip - 2))] = (u32) (ip - 2 - src);
     forwardH = lz_hash4(lz_rd32(ip));
   }
 
 last_literals:
   {
-    sz litlen = (sz)(iend - anchor);
+    sz litlen = (sz) (iend - anchor);
     a->outsz += 1;
     if (litlen >= 15) a->outsz += 1 + (litlen - 15) / 255;
     a->outsz += litlen;
     a->lit_bytes += litlen;  a->nlit_run++;
-    for (const u8 * p = anchor; p < iend; p++) a->lit_byte[*p]++;
+    for (p = anchor; p < iend; p++) a->lit_byte[*p]++;
   }
   lz_off_flush(a);
 }
@@ -137,7 +135,7 @@ last_literals:
 static int lz_ensure(fastent_lz_acc * a) {
   if (a->oom) return -1;
   if (!a->tbl) {
-    a->tbl = (u32 *) malloc((sz) FASTENT_LZ_HSZ * sizeof(u32));
+    a->tbl = (u32 *) malloc((sz) FASTENT_LZ_HSZ * sizeof (u32));
     if (!a->tbl) { a->oom = 1;  return -1; }
   }
   if (!a->blk) {
@@ -148,7 +146,7 @@ static int lz_ensure(fastent_lz_acc * a) {
 }
 
 void fastent_lz_acc_init(fastent_lz_acc * a, u64 abs_base) {
-  memset(a, 0, sizeof(*a));
+  memset(a, 0, sizeof (*a));
   a->abs_base = abs_base;
   a->abs_pos  = abs_base;
   a->blk_off  = abs_base;
@@ -165,14 +163,14 @@ void fastent_lz_acc_reset(fastent_lz_acc * a, u64 abs_base) {
 /*  Buffer len bytes (from absolute a->abs_pos) into the current grid
     block, parsing and resetting at each absolute 4 MiB grid line.  */
 int fastent_lz_acc_feed(fastent_lz_acc * a, const u8 * buf, sz len) {
+  sz pos = 0;
   if (len == 0) return 0;
   if (lz_ensure(a) != 0) return -1;
-  sz pos = 0;
   while (pos < len) {
     /*  Bytes left until the next absolute grid boundary.  */
     u64 abs = a->abs_pos;
     u64 next_grid = (abs / FASTENT_LZ_GRID + 1) * (u64) FASTENT_LZ_GRID;
-    sz  room = (sz)(next_grid - abs);
+    sz  room = (sz) (next_grid - abs);
     sz  take = len - pos;
     if (take > room) take = room;
     memcpy(a->blk + a->blk_len, buf + pos, take);
@@ -202,15 +200,16 @@ int fastent_lz_acc_flush(fastent_lz_acc * a) {
 }
 
 void fastent_lz_acc_merge(fastent_lz_acc * dst, const fastent_lz_acc * src) {
+  i32 i;
   dst->outsz       += src->outsz;
   dst->nmatch      += src->nmatch;
   dst->nlit_run    += src->nlit_run;
   dst->lit_bytes   += src->lit_bytes;
   dst->match_bytes += src->match_bytes;
   if (src->oom) dst->oom = 1;
-  Fi(65536, dst->off_par[i] += src->off_par[i])
+  Fi(65536, dst->off_par[i] += src->off_par[i]);
   Fi(256, dst->mlen_full[i] += src->mlen_full[i];
-          dst->lit_byte[i]  += src->lit_byte[i])
+         dst->lit_byte[i]  += src->lit_byte[i]);
 }
 
 void fastent_lz_acc_free(fastent_lz_acc * a) {
@@ -220,7 +219,7 @@ void fastent_lz_acc_free(fastent_lz_acc * a) {
 
 struct fastent_lz77f_tables * fastent_lz77f_tables_alloc(void) {
   return (struct fastent_lz77f_tables *)
-         calloc(1, sizeof(struct fastent_lz77f_tables));
+         calloc(1, sizeof (struct fastent_lz77f_tables));
 }
 
 void fastent_lz77f_tables_free(struct fastent_lz77f_tables * t) {
@@ -239,16 +238,18 @@ static u64 lz_outsz_rand(u64 n) {
     fastent_entropy_term, bit-identical across hosts.  */
 static f64 lz_entropy_bits(const u64 * cnt, int n) {
   u64 tot = 0;
-  Fi(n, tot += cnt[i])
+  i32 i;
+  Fi(n, tot += cnt[i]);
   if (tot == 0) return 0.0;
   const f64 M = (f64) tot;
   f64 h = 0.0;
-  Fi(n, if (cnt[i]) h += fastent_entropy_term((f64) cnt[i] / M))
+  Fi(n, if (cnt[i]) h += fastent_entropy_term((f64) cnt[i] / M));
   return h;
 }
 
 void fastent_lz_finalize(
     const fastent_lz_acc * a, u64 n, struct fastent_result * out) {
+  i32 i;
   /*  Snapshot off_par with the pending u16 block folded in (a merged
       acc has since_flush==0; fold defensively anyway).  */
   u64 nmatch    = a->nmatch;
@@ -267,7 +268,7 @@ void fastent_lz_finalize(
   /*  S1: compressibility excess vs the incompressible baseline.  */
   {
     u64 rnd = lz_outsz_rand(n);
-    f64 ex  = (rnd > B) ? (f64)(rnd - B) / (f64) n : 0.0;
+    f64 ex  = (rnd > B) ? (f64) (rnd - B) / (f64) n : 0.0;
     out->lz_cr_excess = ex;
   }
 
@@ -296,7 +297,7 @@ void fastent_lz_finalize(
   /*  Mean match length minus MINMATCH; nmatch < 2 -> 0.0 limit.  */
   if (nmatch >= 2) {
     u64 cnt = 0, sum = 0;
-    Fi(256, cnt += a->mlen_full[i];  sum += (u64) i * a->mlen_full[i])
+    Fi(256, cnt += a->mlen_full[i];  sum += (u64) i * a->mlen_full[i]);
     f64 meanlen = cnt ? (f64) sum / (f64) cnt : 0.0;
     out->lz_mlen_excess = meanlen - (f64) FASTENT_LZ_MINMATCH;
   }
@@ -305,13 +306,13 @@ void fastent_lz_finalize(
       companion (separate from the compressibility headline).  */
   {
     u64 tot = 0;
-    Fi(256, tot += a->lit_byte[i])
+    Fi(256, tot += a->lit_byte[i]);
     if (tot > 0) {
       const f64 ek = (f64) tot / 256.0;
       f64 chi = 0.0;
       Fi(256,
-         const f64 d = (f64) a->lit_byte[i] - ek;
-         chi += (d * d) / ek)
+        const f64 d = (f64) a->lit_byte[i] - ek;
+        chi += (d * d) / ek);
       out->lz_lit_chi   = chi;
       out->lz_lit_chi_p = fastent_chisq_tail_df(chi, 255);
     } else {
@@ -341,8 +342,8 @@ void fastent_lz_finalize(
   }
 
   if (out->lz) {
-    memcpy(out->lz->off_par,   a->off_par,   sizeof(out->lz->off_par));
-    memcpy(out->lz->mlen_full, a->mlen_full, sizeof(out->lz->mlen_full));
-    memcpy(out->lz->lit_byte,  a->lit_byte,  sizeof(out->lz->lit_byte));
+    memcpy(out->lz->off_par,   a->off_par,   sizeof (out->lz->off_par));
+    memcpy(out->lz->mlen_full, a->mlen_full, sizeof (out->lz->mlen_full));
+    memcpy(out->lz->lit_byte,  a->lit_byte,  sizeof (out->lz->lit_byte));
   }
 }

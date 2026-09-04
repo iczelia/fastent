@@ -1,10 +1,8 @@
-/*  fastent: chi-square upper tail probability.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.
-
-    This program is free software: you can redistribute it and/or modify
+    This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, version 3 of the License.
+    the Free Software Foundation, version 3.
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -12,29 +10,7 @@
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with this program. If not, see <http://www.gnu.org/licenses/>.
-
-    Portable double-double implementation. df=1 and df=255 both have
-    half-integer shape a, collapsing the regularised incomplete gamma
-    to a closed form needing only erfc and a finite polynomial sum;
-    erfc/lgamma are computed in DD rather than via libm.  Libm use is
-    limited to fma, sqrt, round, ldexp (correctly rounded or trivial
-    bit ops).
-
-      df = 1   :  Q(0.5, z) as the regularised incomplete gamma via
-                  lower-tail Taylor series (z < 1.5) or Lentz CF
-                  (z >= 1.5), in DD.
-
-      df = 255 :  Half-integer closed form
-                    Q(127.5, z) = Q(0.5, z) + 2 * e^-z * U(z)
-                    U(z)        = sum_{k=0..126} T_k
-                    T_0         = sqrt(z/pi)
-                    T_{k+1}     = T_k * 2z/(2k+3)
-                  from integrating Gamma(a, z) by parts down to
-                  Gamma(1/2, z) = sqrt(pi)*erfc(sqrt(z)).  e^-z is
-                  factored out of the recurrence so the loop stays in
-                  normal range; the final multiply carries any
-                  subnormal precision loss.  */
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"   /*  Must precede <math.h> on DJGPP.  */
 #include <math.h>
@@ -135,10 +111,7 @@ static inline dd_t dd_sqrt_d(f64 x) {
   return fast_two_sum(y, delta);
 }
 
-/*  DD exp: reduce x=k*ln2+r, |r|<=ln2/2, Taylor on r, 2^k via ldexp.
-    The _scaled variant defers the ldexp so a caller scaling e^x keeps
-    precision; needed for the byte-mode tail near z=745 where e^-z is
-    subnormal but Q is normal.  */
+/*  DD exp: reduce x=k*ln2+r, |r|<=ln2/2, Taylor on r, 2^k via ldexp.  */
 
 static const dd_t LN2_DD = {
   0.6931471805599453,        /*  ln(2) high  */
@@ -147,19 +120,24 @@ static const dd_t LN2_DD = {
 static const f64 INV_LN2 = 1.4426950408889634;
 
 static dd_t dd_exp_d_scaled(f64 x, int * k_out) {
+  f64 k_d;
+  int i, k;
+  dd_t kln2, r, res, term;
+
   if (x < -1500.0) { *k_out = -1500; return dd_of(0.0); }
   if (x >  1500.0) { *k_out =  1500; return dd_of((f64) INFINITY); }
-  f64 k_d = round(x * INV_LN2);
-  int k   = (int) k_d;
-  dd_t kln2 = dd_mul_d(LN2_DD, k_d);
-  dd_t r    = two_sum(x, -kln2.hi);
+  k_d = round(x * INV_LN2);
+  k = (int) k_d;
+  kln2 = dd_mul_d(LN2_DD, k_d);
+  r = two_sum(x, -kln2.hi);
   r.lo -= kln2.lo;
   r = fast_two_sum(r.hi, r.lo);
-  dd_t res  = dd_of(1.0);
-  dd_t term = dd_of(1.0);
-  Fi0(19, 1,
-      term = dd_div_d(dd_mul(term, r), (f64) i);
-      res  = dd_add(res, term))
+  res = dd_of(1.0);
+  term = dd_of(1.0);
+  for (i = 1; i < 19; i++) {
+    term = dd_div_d(dd_mul(term, r), (f64) i);
+    res = dd_add(res, term);
+  }
   *k_out = k;
   return res;
 }
@@ -198,13 +176,15 @@ static dd_t pref_05_dd(f64 z) {
     range, so the 1 - P subtraction does not cancel.  */
 static dd_t Q_05_series_dd(f64 z) {
   dd_t pref = pref_05_dd(z);
+  int i;
   /*  term_0 = 1 / 0.5 = 2; term_{n+1} = term_n * z / (n + 1.5).  */
   dd_t term = dd_of(2.0);
   dd_t sum  = term;
-  Fi0(256, 0,
-      term = dd_div_d(dd_mul_d(term, z), (f64) i + 1.5);
-      sum  = dd_add(sum, term);
-      if (i >= 4 && fabs(term.hi) < fabs(sum.hi) * 1e-33) break)
+  for (i = 0; i < 256; i++) {
+    term = dd_div_d(dd_mul_d(term, z), (f64) i + 1.5);
+    sum = dd_add(sum, term);
+    if (i >= 4 && fabs(term.hi) < fabs(sum.hi) * 1e-33) break;
+  }
   dd_t P = dd_mul(pref, sum);
   return dd_sub(dd_of(1.0), P);
 }
@@ -216,19 +196,22 @@ static dd_t gamma_cf_dd(f64 z, f64 a) {
   dd_t d = dd_div(dd_of(1.0), b);
   dd_t h = d;
   dd_t c = dd_of(1.0 / 1e-300);
-  Fi0(4096, 1,
-      f64 an = -(f64) i * ((f64) i - a);
-      b = dd_add_d(b, 2.0);
-      d = dd_add(dd_mul_d(d, an), b);
-      if (fabs(d.hi) < 1e-300) d = dd_of(1e-300);
-      dd_t an_over_c = dd_div(dd_of(an), c);
-      c = dd_add(b, an_over_c);
-      if (fabs(c.hi) < 1e-300) c = dd_of(1e-300);
-      d = dd_div(dd_of(1.0), d);
-      dd_t delta = dd_mul(d, c);
-      h = dd_mul(h, delta);
-      dd_t dm1 = dd_sub(delta, dd_of(1.0));
-      if (fabs(dm1.hi) < 1e-32) break)
+  int i;
+  for (i = 1; i < 4096; i++) {
+    f64 an = -(f64) i * ((f64) i - a);
+    dd_t an_over_c, delta, dm1;
+    b = dd_add_d(b, 2.0);
+    d = dd_add(dd_mul_d(d, an), b);
+    if (fabs(d.hi) < 1e-300) d = dd_of(1e-300);
+    an_over_c = dd_div(dd_of(an), c);
+    c = dd_add(b, an_over_c);
+    if (fabs(c.hi) < 1e-300) c = dd_of(1e-300);
+    d = dd_div(dd_of(1.0), d);
+    delta = dd_mul(d, c);
+    h = dd_mul(h, delta);
+    dm1 = dd_sub(delta, dd_of(1.0));
+    if (fabs(dm1.hi) < 1e-32) break;
+  }
   return h;
 }
 
@@ -241,12 +224,11 @@ static dd_t Q_05_dd(f64 z) {
   return dd_mul(pref, h);
 }
 
-/*  Q(m+1/2, z) by-parts closed form: Q(0.5,z) + 2 e^-z U(z), U =
-    sum_{k<m} T_k, T_0 = sqrt(z/pi), T_{k+1} = T_k 2z/(2k+3).
-    m=(df-1)/2 for odd df (127, 7 poker, 0=>Q(0.5,z)).  e^-z applied
-    scaled so the deep subnormal tail (z~745) keeps precision.  */
+/*  Q(m+1/2, z) by-parts closed form: Q(0.5,z) + 2 e^-z U(z), U = sum_{k<m}
+    T_k, T_0 = sqrt(z/pi), T_{k+1} = T_k 2z/(2k+3).  */
 
 static dd_t Q_halfint_dd(f64 z, int m) {
+  int i;
   if (z <= 0.0)   return dd_of(1.0);
   if (z >= 750.0) return dd_of(0.0);
   if (m <= 0)     return Q_05_dd(z);
@@ -261,10 +243,11 @@ static dd_t Q_halfint_dd(f64 z, int m) {
 
   /*  U = sum_{k=0..m-1} T_k.  All values normal-range.  */
   dd_t U = T;
-  Fi0(m - 1, 0,
-      T = dd_mul_d(T, 2.0 * z);
-      T = dd_div_d(T, (f64)(2 * i + 3));
-      U = dd_add(U, T))
+  for (i = 0; i < m - 1; i++) {
+    T = dd_mul_d(T, 2.0 * z);
+    T = dd_div_d(T, (f64) (2 * i + 3));
+    U = dd_add(U, T);
+  }
 
   /*  Multiply by 2 * e^-z, keeping the 2^k scale separate until
       after the U * mantissa product lands in normal range.  */

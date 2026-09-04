@@ -1,10 +1,8 @@
-/*  fastent: high-throughput pseudorandom byte-stream entropy tester.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.
-
-    This program is free software: you can redistribute it and/or modify
+    This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, version 3 of the License.
+    the Free Software Foundation, version 3.
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -33,31 +31,41 @@
 #include "port-thread.h"
 
 int main(int argc, char ** argv) {
-  /*  Machine-readable output (terse/recursive CSV, JSON) must use
-      C-locale decimal points regardless of the environment locale.  */
+  fastent_options o;
+  fastent_source src;
+  fastent_chunk_state st;
+  fastent_result result;
+  fastent_io_mode io_mode;
+  fastent_analyze_fn fn_byte, fn_bits, fn_byte_fold, fn_bits_fold;
+  fastent_lz_acc * lz = NULL;
+  fastent_bm_acc * bm = NULL;
+  fastent_maurer_acc * ma = NULL;
+  fastent_mrank_acc * mr = NULL;
+  fastent_perment_acc * pe = NULL;
+  int rc, lzp_active, bmm_active;
+
+  /*  Machine output always uses decimal points.  */
   setlocale(LC_NUMERIC, "C");
   fastent_os_init_console();
   if (fastent_os_argv_utf8(&argc, &argv) != 0) {
-    fprintf(stderr, "fastent: failed to decode command line\n");
+    fastent_message("cannot decode the command line");
     return 2;
   }
 
-  fastent_options o;
-  int rc = fastent_parse_args(argc, argv, &o);
+  rc = fastent_parse_args(argc, argv, &o);
   if (rc != 0) return rc < 0 ? 1 : rc;
 
   if (!o.path) fastent_os_set_stdin_binary();
 
   if (o.recursive && !o.path) {
-    fprintf(stderr, "fastent: -r requires a directory path\n");
+    fastent_message("-r needs a directory");
     free((void *) o.path);
     return 1;
   }
 
-  /*  rpath needed to open files; recursive mode also needs to walk
-      directories so it stays at rpath for the lifetime of the run.  */
+  /*  Recursive mode retains directory access.  */
   if (fastent_os_pledge(o.path ? "stdio rpath" : "stdio") == -1) {
-    perror("pledge");
+    fastent_message("pledge: %s", strerror(errno));
     free((void *) o.path);
     return 2;
   }
@@ -70,17 +78,17 @@ int main(int argc, char ** argv) {
   if (o.threads > 1) fastent_set_num_threads(o.threads);
 #endif
 
-  fastent_analyze_fn fn_byte      = fastent_pick_variant(NULL);
-  fastent_analyze_fn fn_bits      = fastent_pick_bits_variant(NULL);
-  fastent_analyze_fn fn_byte_fold = fastent_pick_fold_byte_variant(NULL);
-  fastent_analyze_fn fn_bits_fold = fastent_pick_fold_bits_variant(NULL);
+  fn_byte      = fastent_pick_variant(NULL);
+  fn_bits      = fastent_pick_bits_variant(NULL);
+  fn_byte_fold = fastent_pick_fold_byte_variant(NULL);
+  fn_bits_fold = fastent_pick_fold_bits_variant(NULL);
 
   if (o.recursive) {
     fastent_recursive_row * rows = NULL;
     sz n = 0;
     if (fastent_run_recursive(o.path, &o, fn_byte, fn_bits,
                               fn_byte_fold, fn_bits_fold, &rows, &n) != 0) {
-      fprintf(stderr, "fastent: %s: %s\n", o.path, strerror(errno));
+      fastent_message("cannot walk %s: %s", o.path, strerror(errno));
       free((void *) o.path);
       return 2;
     }
@@ -92,40 +100,34 @@ int main(int argc, char ** argv) {
     return 0;
   }
 
-  fastent_source src;
-  fastent_io_mode io_mode = (fastent_io_mode) o.io_mode;
+  io_mode = (fastent_io_mode) o.io_mode;
   if (fastent_src_open(&src, o.path, io_mode) != 0) {
-    if (o.path) {
-      fprintf(stderr, "cannot open file %s: %s\n", o.path, strerror(errno));
-    } else {
-      perror("stdin");
-    }
+    if (o.path) fastent_message("cannot open %s: %s", o.path, strerror(errno));
+    else fastent_message("cannot open stdin: %s", strerror(errno));
     free((void *) o.path);
     return 2;
   }
 
   if (o.path && fastent_os_pledge("stdio") == -1) {
-    perror("pledge");
+    fastent_message("pledge: %s", strerror(errno));
     free((void *) o.path);
     return 2;
   }
 
   if (o.fips140) {
     fastent_fips_report rep;
+    int ok;
     if (src.kind == FASTENT_SRC_MMAP) {
-      /*  mmap: pass the map directly (block-parallel under -j).  */
       fastent_fips140_run((const u8 *) src.map, (sz) src.size,
                           o.threads, &rep);
     } else {
-      /*  Stream/pipe/uring: a bounded read loop feeds the streaming
-          FIPS driver, O(1) memory.  Verdicts and leftover are
-          byte-identical to the mmap/slurp path.  */
       fastent_fips_stream fs;
       fastent_fips140_stream_init(&fs, &rep);
       for (;;) {
         sz n = fastent_src_read(&src);
         if (n == (sz) -1) {
-          perror("read");  fastent_fips140_stream_finish(&fs);
+          fastent_message("read error: %s", strerror(errno));
+          fastent_fips140_stream_finish(&fs);
           fastent_src_close(&src);  free((void *) o.path);  return 2;
         }
         if (n == 0) break;
@@ -133,46 +135,31 @@ int main(int argc, char ** argv) {
       }
       fastent_fips140_stream_finish(&fs);
     }
-    int ok = fastent_fips140_print(&rep, stdout);
+    ok = fastent_fips140_print(&rep, stdout);
     fastent_src_close(&src);
     free((void *) o.path);
     return ok ? 0 : 1;
   }
 
-  fastent_chunk_state st;
   fastent_chunk_state_init(&st);
   if (o.extended >= 2 && !o.binary) {
     st.bigram = fastent_bigram_alloc();
     st.dg_u32 = fastent_dg_u32_alloc();
     if (!st.bigram || !st.dg_u32) {
-      fprintf(stderr, "out of memory\n");
+      fastent_message("out of memory");
       free((void *) o.path);
       return 2;
     }
   }
 
-  /*  -e reads the bytes twice (SIMD order-0/-ee scan + absolute-grid
-      LZ77F parse), and also runs perment on the same grid.  mmap feeds
-      every acc directly; a stream tees each chunk, O(chunk + grid
-      block) and bit-identical to mmap/-j1.  -eee additionally drives
-      the BM / Maurer / matrix-rank accs.  Heap, not stack: each acc
-      carries a 4 MiB grid buffer (small wasm / DJGPP stacks).  */
-  fastent_lz_acc * lz = NULL;
-  fastent_bm_acc * bm = NULL;
-  fastent_maurer_acc * ma = NULL;
-  fastent_mrank_acc * mr = NULL;
-  fastent_perment_acc * pe = NULL;
-  /*  Grid estimators are bucketed by measured single-thread throughput.
-      LZ77F (~2 GiB/s) and Bandt-Pompe permutation entropy (~1 GiB/s)
-      ride -e; Berlekamp-Massey, Maurer and matrix-rank (~50-350 MiB/s)
-      stay at -eee.  Allocations split accordingly.  */
-  int lzp_active = (o.extended >= 1);
-  int bmm_active = (o.extended >= 3);
+  /*  Extended estimators use the shared absolute grid.  */
+  lzp_active = o.extended >= 1;
+  bmm_active = o.extended >= 3;
   if (lzp_active) {
     lz = (fastent_lz_acc *) malloc(sizeof *lz);
     pe = (fastent_perment_acc *) malloc(sizeof *pe);
     if (!lz || !pe) {
-      fprintf(stderr, "out of memory\n");
+      fastent_message("out of memory");
       free(lz);  free(pe);
       fastent_src_close(&src);  fastent_bigram_free(st.bigram);
       fastent_dg_u32_free(st.dg_u32);  free((void *) o.path);
@@ -186,7 +173,7 @@ int main(int argc, char ** argv) {
     ma = (fastent_maurer_acc *) malloc(sizeof *ma);
     mr = (fastent_mrank_acc *) malloc(sizeof *mr);
     if (!bm || !ma || !mr) {
-      fprintf(stderr, "out of memory\n");
+      fastent_message("out of memory");
       free(bm);  free(ma);  free(mr);
       if (lzp_active) {
         fastent_lz_acc_free(lz);  free(lz);
@@ -226,18 +213,13 @@ int main(int argc, char ** argv) {
                        &src);
   }
 
-  fastent_result result;
   fastent_finalize(&st, o.binary, &result);
 
-  /*  Grid finalize.  LZ77F + perment finalise at -e; BM, Maurer, mrank
-      finalise at -eee.  Sentinel fields stay NaN/0 when each gate is
-      off.  result.lz (the 528 KiB LZ77F raw tables) is allocated under
-      -e since LZ77F itself runs there.  */
   if (lzp_active) {
     result.lz = fastent_lz77f_tables_alloc();
     if (lz->oom || pe->oom || !result.lz
         || (bmm_active && (bm->oom || ma->oom || mr->oom))) {
-      fprintf(stderr, "out of memory\n");
+      fastent_message("out of memory");
       fastent_lz_acc_free(lz);  free(lz);
       fastent_perment_acc_free(pe);  free(pe);
       if (bmm_active) {

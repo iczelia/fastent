@@ -1,9 +1,22 @@
+##  Copyright (C) 2023-2026 Kamila Szewczyk
+##
+##  This program is free software; you can redistribute it and/or modify
+##  it under the terms of the GNU General Public License as published by
+##  the Free Software Foundation, version 3.
+##
+##  This program is distributed in the hope that it will be useful,
+##  but WITHOUT ANY WARRANTY; without even the implied warranty of
+##  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+##  GNU General Public License for more details.
+##
+##  You should have received a copy of the GNU General Public License
+##  along with this program. If not, see <http://www.gnu.org/licenses/>.
+
 ACLOCAL_AMFLAGS = -I m4
 
 AM_CFLAGS = -std=c99 -Wall -Wextra
 
-# config.h lives in the build root; the sources include each other
-# across src/, src/kernel/ and src/platform/ with quoted includes.
+##  Program include paths.
 AM_CPPFLAGS = -I$(top_builddir) \
               -I$(top_srcdir)/src \
               -I$(top_srcdir)/src/kernel \
@@ -25,7 +38,7 @@ noinst_HEADERS = src/kernel/analyze.h src/kernel/analyze-impl.h \
                  src/platform/port-term.h src/platform/port-os.h \
                  src/platform/port-thread.h src/platform/port-walk.h
 
-fastent_SOURCES = src/fastent.c src/cli.c src/runner.c \
+fastent_SOURCES = src/fastent.c src/common.c src/cli.c src/runner.c \
                   src/kernel/analyze.c src/kernel/analyze-scalar.c \
                   src/kernel/digram.c src/kernel/chisq.c \
                   src/kernel/lzest.c src/kernel/bm.c src/kernel/maurer.c \
@@ -139,6 +152,7 @@ endif
 dist_man_MANS = fastent.1
 
 EXTRA_DIST = README.md NEWS ChangeLog AUTHORS COPYING bootstrap .clangd \
+             contrib/gitlog-to-changelog \
              scripts/gen_log2_tables.py scripts/gen_compile_commands.py \
              build/msvc/Makefile.nmake \
              build/ci/stage-binary.sh build/ci/bundle-release.sh \
@@ -170,7 +184,7 @@ bench-clean:
 	-rm -rf "$${CACHE_DIR:-/tmp/fastent-bench}"
 	-rm -f "$(builddir)/tests/bench-gen"
 
-# Bundle CWSDPMI into the .exe; self-contained on bare DOS.
+##  Bundle CWSDPMI into the DOS executable.
 if FASTENT_DOS
 all-local: fastent-dos-stub-stamp
 fastent-dos-stub-stamp: fastent$(EXEEXT)

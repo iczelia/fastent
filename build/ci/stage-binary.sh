@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
-# Stage one built binary for the family bundle job.
+#  Copyright (C) 2023-2026 Kamila Szewczyk
 #
-#   build/ci/stage-binary.sh <built-binary-path> <platform-id>
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, version 3.
 #
-# Copies the binary into staged/ under its platform-unique name
-# (fastent-<id>[.exe|.js]).  bundle-release.sh later groups every
-# staged binary by OS family into one archive set per family.
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+#  Stage one release binary.
+#
+#    build/ci/stage-binary.sh BINARY PLATFORM_ID
 set -euo pipefail
 
 bin=$1

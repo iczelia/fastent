@@ -1,6 +1,16 @@
-/*  fastent: terse CSV output.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "output.h"
@@ -24,15 +34,18 @@ static void tint_(f64 x) {
 
 static void print_counts_(const fastent_result * r, int binary) {
   const i32 bins = binary ? 2 : 256;
+  i32 i;
   printf("2,Value,Occurrences,Fraction\n");
   Fi(bins,
-     if (r->hist[i] == 0) continue;
-     printf("3,%d,%" PRIu64 ",%f\n", i,
-            (u64) r->hist[i],
-            (f64) r->hist[i] / (f64) r->total_samples))
+    if (r->hist[i] == 0) continue;
+    printf("3,%d,%" PRIu64 ",%f\n", i,
+           (u64) r->hist[i],
+           (f64) r->hist[i] / (f64) r->total_samples));
 }
 
 void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
+  const char * f = o->full_precision ? "%.17g" : "%f";
+  i32 i;
   printf("0,File-%ss,Entropy,Chi-square,P-Exceed,Mean,Monte-Carlo-Pi,"
          "Serial-Correlation", o->binary ? "bit" : "byte");
   if (o->extended)
@@ -55,7 +68,6 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
            "MRank-Dev,MRank-Chi,MRank-Matrices,MRank-Underpowered");
   putchar('\n');
 
-  const char * f = o->full_precision ? "%.17g" : "%f";
   printf("1,%" PRIu64 ",", (u64) r->total_samples);
   tnum_(f, r->entropy);          putchar(',');
   tnum_(f, r->chi_square);       putchar(',');
@@ -76,7 +88,7 @@ void fastent_print_terse(const fastent_result * r, const fastent_options * o) {
     printf(",%u,%d,%" PRIu64 ",%d,%" PRIu64,
            r->distinct, r->mode_value, (u64) r->mode_count,
            r->rarest_value, (u64) r->rarest_count);
-    Fi(8, putchar(','); tnum_(f, r->bit_freq[i]))
+    Fi(8, putchar(','); tnum_(f, r->bit_freq[i]));
     putchar(','); tnum_(f, r->bit_bias_max);
     printf(",%d", r->bit_bias_worst);
     putchar(','); tnum_(f, r->conditional_entropy);

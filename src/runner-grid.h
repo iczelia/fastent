@@ -1,16 +1,18 @@
-/*  fastent: grid-driver template.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
 
-/*  Included from runner.c once per estimator.  The caller defines
-    FASTENT_GRID_EST to the estimator token (lz / bm / maurer); the
-    accumulator is fastent_<EST>_acc with the standard
-    _init / _feed / _flush / _merge / _free API.  The LZ77F,
-    linear-complexity and Maurer drivers are otherwise token-identical:
-    each decomposes the input on the same absolute 4 MiB grid
-    (lzest.h), scores every block whole with fresh per-block state, and
-    combines order-independent so -j1 == -jN == ref.  This file is the
-    single source for all three; runner.c #includes it three times.  */
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
+
+/*  Included from runner.c once per estimator.  */
 
 #ifndef FASTENT_GRID_EST
 #error "runner-grid.h requires FASTENT_GRID_EST"
@@ -34,19 +36,17 @@ typedef struct {
   volatile int    oom;
 } FASTENT_G_FN(_mmap_ctx);
 
-/*  Worker w scores grid blocks w, w+T, w+2T, ...  No cross-block
-    state (fresh per block), abs_base reset per block.  Heap, not
-    stack: the acc carries a 4 MiB grid buffer (and, for LZ77F, the
-    hash table).  One struct reused across this worker's blocks.  */
+/*  Worker w scores grid blocks w, w+T, w+2T, ...  */
 static void FASTENT_G_FN(_mmap_worker_)(sz w, void * vctx) {
   FASTENT_G_FN(_mmap_ctx) * c = (FASTENT_G_FN(_mmap_ctx) *) vctx;
   FASTENT_G_ACC * a = &c->accs[w];
   FASTENT_G_ACC * blk = (FASTENT_G_ACC *) malloc(sizeof *blk);
+  u64 g;
   if (!blk) { c->oom = 1;  return; }
   /*  One acc reused across this worker's blocks: init once, reset per
       block (keeps the lazily-grown scratch), free once.  */
   FASTENT_G_ACCFN(_acc_init)(blk, 0);
-  for (u64 g = (u64) w; g < c->nblk; g += (u64) c->nthreads) {
+  for (g = (u64) w; g < c->nblk; g += (u64) c->nthreads) {
     u64 off = g * FASTENT_LZ_GRID_U64;
     u64 len = c->size - off;
     if (len > FASTENT_LZ_GRID_U64) len = FASTENT_LZ_GRID_U64;
@@ -66,6 +66,7 @@ static void FASTENT_G_FN(_mmap_worker_)(sz w, void * vctx) {
 static int FASTENT_G_FN(_run_resident_)(
     FASTENT_G_ACC * acc, const fastent_options * o, const u8 * data,
     u64 size) {
+  i32 k;
   if (size == 0) return 0;
 
 #ifdef FASTENT_HAVE_THREADS
@@ -75,9 +76,9 @@ static int FASTENT_G_FN(_run_resident_)(
     if ((u64) N > nblk) N = (i32) nblk;
     fastent_set_num_threads(N);
     FASTENT_G_ACC * accs =
-      (FASTENT_G_ACC *) calloc((sz) N, sizeof(*accs));
+      (FASTENT_G_ACC *) calloc((sz) N, sizeof (*accs));
     if (!accs) return -1;
-    Fk(N, FASTENT_G_ACCFN(_acc_init)(&accs[k], 0))
+    Fk(N, FASTENT_G_ACCFN(_acc_init)(&accs[k], 0));
     FASTENT_G_FN(_mmap_ctx) c;
     c.data = data;  c.size = size;  c.nblk = nblk;
     c.accs = accs;  c.nthreads = N;  c.oom = 0;
@@ -86,7 +87,7 @@ static int FASTENT_G_FN(_run_resident_)(
     /*  Fixed worker-index merge order (sum is order-independent; the
         fixed order keeps the reduction itself deterministic).  */
     Fk(N, FASTENT_G_ACCFN(_acc_merge)(acc, &accs[k]);
-          FASTENT_G_ACCFN(_acc_free)(&accs[k]))
+         FASTENT_G_ACCFN(_acc_free)(&accs[k]));
     free(accs);
     if (acc->oom) rc = -1;
     return rc;
@@ -125,9 +126,7 @@ static void FASTENT_G_FN(_uring_worker_)(sz k, void * vctx) {
   for (;;) {
     const u8 * blk = NULL;
     sz n = fastent_uring_slab_next(r, &blk);
-    if (n == (sz) -1) {
-      c->failed = 1;  fastent_uring_slab_close(r);  return;
-    }
+    if (n == (sz) -1) { c->failed = 1;  fastent_uring_slab_close(r);  return; }
     if (n == 0) break;
     if (FASTENT_G_ACCFN(_acc_feed)(a, blk, n) != 0) {
       c->oom = 1;  fastent_uring_slab_close(r);  return;
@@ -142,6 +141,7 @@ static void FASTENT_G_FN(_uring_worker_)(sz k, void * vctx) {
 static int FASTENT_G_FN(_run_uring_)(
     FASTENT_G_ACC * acc, const fastent_options * o, fastent_source * src) {
   u64 size = src->size;
+  i32 k;
   if (size == 0) return 0;
   i32 N = o->threads;
   if (N < 1) N = 1;
@@ -149,17 +149,18 @@ static int FASTENT_G_FN(_run_uring_)(
   if ((u64) N > nblk) N = (i32) nblk;
   fastent_set_num_threads(N);
 
-  u64 * bounds = (u64 *) malloc((sz)(N + 1) * sizeof(u64));
+  u64 * bounds = (u64 *) malloc((sz) (N + 1) * sizeof (u64));
   FASTENT_G_ACC * accs =
-    (FASTENT_G_ACC *) calloc((sz) N, sizeof(*accs));
+    (FASTENT_G_ACC *) calloc((sz) N, sizeof (*accs));
   if (!bounds || !accs) { free(bounds);  free(accs);  return 0; }
   bounds[0] = 0;  bounds[N] = size;
-  Fk0(N, 1,
-      u64 blk = (u64)((f64) nblk * (f64) k / (f64) N);
-      u64 b = blk * FASTENT_LZ_GRID_U64;
-      if (b > size) b = size;
-      bounds[k] = b)
-  Fk(N, FASTENT_G_ACCFN(_acc_init)(&accs[k], bounds[k]))
+  for (k = 1; k < N; k++) {
+    u64 blk = (u64) ((f64) nblk * (f64) k / (f64) N);
+    u64 b = blk * FASTENT_LZ_GRID_U64;
+    if (b > size) b = size;
+    bounds[k] = b;
+  }
+  Fk(N, FASTENT_G_ACCFN(_acc_init)(&accs[k], bounds[k]));
 
   FASTENT_G_FN(_uring_ctx) c;
   c.fd = src->fd;  c.path = o->path;  c.bounds = bounds;
@@ -170,10 +171,10 @@ static int FASTENT_G_FN(_run_uring_)(
   if (c.failed) {
     rc = -1;                              /*  graceful fallback  */
   } else {
-    Fk(N, FASTENT_G_ACCFN(_acc_merge)(acc, &accs[k]))
+    Fk(N, FASTENT_G_ACCFN(_acc_merge)(acc, &accs[k]));
     rc = (c.oom || acc->oom) ? -2 : 0;
   }
-  Fk(N, FASTENT_G_ACCFN(_acc_free)(&accs[k]))
+  Fk(N, FASTENT_G_ACCFN(_acc_free)(&accs[k]));
   free(accs);  free(bounds);
   return rc;
 }
@@ -199,11 +200,9 @@ void FASTENT_G_CAT(fastent_run_, FASTENT_GRID_EST)(
         It buffers whole grid blocks, so the parse matches the ref.  */
     for (;;) {
       sz n = fastent_src_read(src);
-      if (n == (sz) -1) { perror("read");  exit(2); }
+      if (n == (sz) -1) { fastent_message("read error: %s", strerror(errno));  exit(2); }
       if (n == 0) break;
-      if (FASTENT_G_ACCFN(_acc_feed)(acc, src->stream_buf, n) != 0) {
-        acc->oom = 1;  return;
-      }
+      if (FASTENT_G_ACCFN(_acc_feed)(acc, src->stream_buf, n) != 0) { acc->oom = 1;  return; }
     }
     if (FASTENT_G_ACCFN(_acc_flush)(acc) != 0) acc->oom = 1;
   }

@@ -1,23 +1,16 @@
-/*  fastent: the -ee level-2 extra pass.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    One scalar pass over the same bytes the SIMD analyser already
-    consumed (order-0 keeps full SIMD throughput), folding every
-    per-symbol level-2 reduction into a single scan:
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
 
-      digram     : order-0 histogram of the 16-bit key (prev<<8)|cur
-                   over FASTENT_BG_NB round-robin shadow tables, so
-                   the store-to-load-forward dependency does not
-                   serialise; the planes are summed at finalize.  Bit
-                   mode uses the 2x2 bit_bigram.
-      longest run: longest identical-symbol run (bytes or bits).
-      runs       : number of 0/1 runs                (bit mode).
-      cusum_max  : extent of the +-1 bit walk         (bit mode).
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-    Streams call it per chunk; with -j each worker scans its slab and
-    run_mmap_mt_ merges the per-slab reductions with a boundary
-    stitch, so the result is bit-identical for any thread count.
-
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "analyze.h"
 
@@ -40,14 +33,9 @@ static fastent_fold_fn dg_fold_fn_(void) {
 }
 
 /*  Longest-run helpers are shared (fastent_lr_one / fastent_lr_run in
-    analyze.c).  The bit-mode scan below uses fastent_lr_run; the byte
-    digram + run kernel is templatized per ISA (analyze-impl.h) and
-    dispatched via dg_byte_fn_().  */
+    analyze.c).  */
 
-/*  Cached byte digram + longest-run kernel.  Process-stable pick so
-    the lazy-init race stores the same pointer (as dg_fold_fn_).  The
-    always-built scalar variant is the reference; the chosen SIMD
-    variant reproduces its counters bit-for-bit.  */
+/*  Cached byte digram + longest-run kernel.  */
 static fastent_digram_byte_fn dg_byte_fn_(void) {
   static fastent_digram_byte_fn df = NULL;
   fastent_digram_byte_fn f = df;
@@ -59,10 +47,7 @@ static fastent_digram_byte_fn dg_byte_fn_(void) {
 #define FASTENT_DG_BITS_WORDS (FASTENT_DG_BITS_CHUNK / 8u)
 
 
-/*  Cached per-ISA bit -ee fused block kernel.  Process-stable pick so
-    the lazy-init race stores the same pointer (as dg_byte_fn_).  The
-    always-built scalar variant is the reference; the chosen SIMD
-    variant reproduces its counters bit-for-bit.  */
+/*  Cached per-ISA bit -ee fused block kernel.  */
 #ifndef FASTENT_DG_BITS_REF
 static fastent_digram_bits_fn dg_bits_fn_(void) {
   static fastent_digram_bits_fn bf = NULL;
@@ -77,20 +62,20 @@ static fastent_digram_bits_fn dg_bits_fn_(void) {
     fastent_lr_run loop.  Compiled only for the differential gate; the
     default build dispatches to the templated per-ISA kernel.  */
 static void digram_bits_blk_(
-    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz cl,
+    fastent_chunk_state * st, const u8 * RESTRICT buf, sz cl,
     const i32 * cs_mn, const i32 * cs_mx, const i32 * cs_net) {
   u64 W[FASTENT_DG_BITS_WORDS];
   const sz M  = cl * 8;
   const sz NW = (M + 63) / 64;
   sz w, i;
 
-  memset(W, 0, NW * sizeof(u64));
+  memset(W, 0, NW * sizeof (u64));
   for (i = 0; i < cl; i++)
-    W[i >> 3] |= (u64) fastent_bitrev8_(buf[i]) << ((u32)(i & 7) * 8u);
+    W[i >> 3] |= (u64) fastent_bitrev8_(buf[i]) << ((u32) (i & 7) * 8u);
 
-  const u32 b0    = (u32)(W[0] & 1u);
+  const u32 b0    = (u32) (W[0] & 1u);
   const sz  lbpos = M - 1;
-  const u32 lbit  = (u32)((W[lbpos >> 6] >> (lbpos & 63)) & 1u);
+  const u32 lbit  = (u32) ((W[lbpos >> 6] >> (lbpos & 63)) & 1u);
 
   u64 n11 = 0, ntr = 0, n10 = 0;
   for (w = 0; w < NW; w++) {
@@ -103,7 +88,7 @@ static void digram_bits_blk_(
   }
   ntr -= lbit;  n10 -= lbit;
   const u64 n01 = ntr - n10;
-  const u64 n00 = (u64)(M - 1) - ntr - n11;
+  const u64 n00 = (u64) (M - 1) - ntr - n11;
 
   if (st->dg_have) st->bit_bigram[st->dg_prev & 1u][b0]++;
   st->bit_bigram[0][0] += n00;  st->bit_bigram[0][1] += n01;
@@ -133,7 +118,7 @@ static void digram_bits_blk_(
 
   {
     const sz  wl = lbpos >> 6;
-    const u32 bl = (u32)(lbpos & 63);
+    const u32 bl = (u32) (lbpos & 63);
     const u64 lmask = bl ? ((1ull << bl) - 1ull) : 0ull;
     i64 lastp = -1;
     u32 sym = b0;
@@ -144,23 +129,22 @@ static void digram_bits_blk_(
       if (w == wl) tw &= lmask;
       while (tw) {
         const i64 p = (i64) w * 64 + (i64) FASTENT_CTZ64(tw);
-        fastent_lr_run(st, sym, (u64)(p - lastp));
+        fastent_lr_run(st, sym, (u64) (p - lastp));
         lastp = p;  sym ^= 1u;
         tw &= tw - 1;
       }
     }
-    fastent_lr_run(st, sym, (u64)((i64) lbpos - lastp));
+    fastent_lr_run(st, sym, (u64) ((i64) lbpos - lastp));
   }
 }
 #endif
 
 
-/*  Bit mode: every adjacent bit pair (MSB->LSB, across byte and
-    chunk boundaries via the carried previous bit) feeds the 2x2
-    bigram, longest run, 0/1 run count and the +-1 cusum walk.
-    Word-parallel; dg_prev holds the previous bit (0/1).  */
+/*  Bit mode: every adjacent bit pair (MSB->LSB, across byte and chunk
+    boundaries via the carried previous bit) feeds the 2x2 bigram, longest
+    run, 0/1 run count and the +-1 cusum walk.  */
 static void digram_bits_(
-    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
+    fastent_chunk_state * st, const u8 * RESTRICT buf, sz len) {
   i32 cs_mn[256], cs_mx[256], cs_net[256];
   i32 v, k;
   for (v = 0; v < 256; v++) {
@@ -195,18 +179,15 @@ static void digram_bits_(
   }
 }
 
-/*  Byte scan with deterministic u32->u64 drains.  Drain fires when
-    dg_chunk_bytes would cross FASTENT_DG_U32_CHUNK; split calls are
-    bit-identical to one (dg_prev/lr carry), so the drain point depends
-    only on byte count (any -j).  Draining first keeps cells < 2^31.  */
+/*  Byte scan with deterministic u32->u64 drains.  */
 static void digram_bytes_drained_(
-    fastent_chunk_state * st, const u8 * FASTENT_RESTRICT buf, sz len) {
+    fastent_chunk_state * st, const u8 * RESTRICT buf, sz len) {
   fastent_digram_byte_fn fn = dg_byte_fn_();
   sz off = 0;
   while (off < len) {
     if (st->dg_chunk_bytes >= FASTENT_DG_U32_CHUNK)
       fastent_dg_drain(st);
-    sz room = (sz)(FASTENT_DG_U32_CHUNK - st->dg_chunk_bytes);
+    sz room = (sz) (FASTENT_DG_U32_CHUNK - st->dg_chunk_bytes);
     sz n = len - off;
     if (n > room) n = room;
     fn(st, buf + off, n);
@@ -217,6 +198,7 @@ static void digram_bytes_drained_(
 
 void fastent_digram_count(
     fastent_chunk_state * st, const u8 * buf, sz len, int binary, int fold) {
+  sz off;
   if (len == 0) return;
   if (!binary && !st->bigram) return;   /*  byte mode without -ee table  */
 
@@ -231,7 +213,7 @@ void fastent_digram_count(
       accumulators carry across chunks, so boundaries do not matter.  */
   fastent_fold_fn ff = dg_fold_fn_();
   u8 scratch[FASTENT_DG_FOLD_CHUNK];
-  for (sz off = 0; off < len; off += FASTENT_DG_FOLD_CHUNK) {
+  for (off = 0; off < len; off += FASTENT_DG_FOLD_CHUNK) {
     sz cl = len - off;
     if (cl > FASTENT_DG_FOLD_CHUNK) cl = FASTENT_DG_FOLD_CHUNK;
     memcpy(scratch, buf + off, cl);

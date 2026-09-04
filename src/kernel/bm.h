@@ -1,6 +1,16 @@
-/*  fastent: windowed linear-complexity estimator (count-only).
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #ifndef FASTENT_BM_H
 #define FASTENT_BM_H
@@ -55,10 +65,9 @@ void fastent_bm_acc_merge(fastent_bm_acc * dst, const fastent_bm_acc * src);
 void fastent_bm_acc_free(fastent_bm_acc * a);
 void fastent_bm_acc_reset(fastent_bm_acc * a, u64 abs_base);
 
-/*  Batched scorers: each scores its lane count of windows per pass
-    with the same per-window L as the scalar reference, and returns
-    the count scored (the largest whole multiple of its lane width
-    <= nfull).  The caller scores the < lane-width tail scalar.  */
+/*  Batched scorers: each scores its lane count of windows per pass with the
+    same per-window L as the scalar reference, and returns the count scored
+    (the largest whole multiple of its lane width <= nfull).  */
 #ifdef HAVE_SSE41
 sz fastent_bm_windows_sse(const u8 * src, sz nfull, u32 * Lout);
 #endif

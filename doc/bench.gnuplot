@@ -1,7 +1,7 @@
-# Regenerates doc/bench.png from doc/bench.tsv.
+#  Regenerate doc/bench.png from doc/bench.tsv.
 #   gnuplot doc/bench.gnuplot
 #   gnuplot -e "data='doc/bench.tsv'; out='doc/bench.png'" doc/bench.gnuplot
-# Overridable: host='...', fontspec='Misc Fixed', the plotted level.
+#  data, out, fontspec and host are overridable.
 
 if (!exists("data"))     data     = 'doc/bench.tsv'
 if (!exists("out"))      out      = 'doc/bench.png'
@@ -27,9 +27,9 @@ cthin(m) = (m eq "byte") ? "#aec7e8" : (m eq "bit") ? "#ff9896" : (m eq "byte-fo
 eval sprintf("set terminal png %s size 700,510 noenhanced", fontspec)
 set output out
 
-set title sprintf("fastent on %s\n%d datasets x %s MiB; color=mode symbol=level; bold=median thin=per-dataset dashed=ent(1)", host, nds, size)
-set xlabel "-j worker threads (log2)" offset 0,0.5
-set ylabel "Throughput, MiB/s (log10)"
+set title sprintf("fastent on %s\n%d datasets x %s MiB; color=mode, symbol=level", host, nds, size)
+set xlabel "workers (-j, log2)" offset 0,0.5
+set ylabel "throughput (MiB/s, log10)"
 set logscale x 2
 set logscale y 10
 set xtics (1, 2, 4, 8, 16, 24)
@@ -39,7 +39,7 @@ set grid xtics ytics lt 0 lc rgb "#c0c0c0"
 set xrange [0.82:28]
 set bmargin 10
 set key at screen 0.5, 0.125 center horizontal maxcols 4 box spacing 1.1 width 1 height 1
-set label 1 "plain modes equivalent to ent(1), -ee and FIPS are (slower) supersets of ent" \
+set label 1 "plain/-e cover ent(1); -ee and FIPS add tests" \
   at screen 0.5, 0.025 center
 
 eb_byte = ebase("byte")

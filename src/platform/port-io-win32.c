@@ -1,12 +1,16 @@
-/*  fastent: Win32 I/O backend.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-      mmap:   CreateFileMapping + MapViewOfFile.
-      stream: _read on the CRT fd.
-      uring:  IOCP-driven overlapped ReadFile pipeline (Vista+; the
-              flag spelled --io=uring on the CLI for cross-platform
-              symmetry).
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "port-io.h"
@@ -60,6 +64,7 @@ typedef struct {
 } iocp_state;
 
 static void iocp_destroy(iocp_state * u) {
+  i32 i;
   if (!u) return;
   /*  CancelIoEx is asynchronous: the kernel may still be writing a
       slot buffer.  Wait for every op to actually drain before the
@@ -67,13 +72,13 @@ static void iocp_destroy(iocp_state * u) {
   if (u->file && u->file != INVALID_HANDLE_VALUE) {
     CancelIoEx(u->file, NULL);
     Fi((int) FASTENT_IOCP_SLOTS,
-       DWORD got;
-       GetOverlappedResult(u->file, &u->slot[i].ov, &got, TRUE))
+      DWORD got;
+      GetOverlappedResult(u->file, &u->slot[i].ov, &got, TRUE));
     CloseHandle(u->file);
   }
   if (u->iocp) CloseHandle(u->iocp);
   Fi((int) FASTENT_IOCP_SLOTS,
-     if (u->slot[i].buf_raw) free(u->slot[i].buf_raw))
+    if (u->slot[i].buf_raw) free(u->slot[i].buf_raw));
   free(u);
 }
 
@@ -85,7 +90,7 @@ static int iocp_submit_(iocp_state * u, i32 slot) {
   if (off >= u->file_size) to_read = 0;
   else if (off + to_read > u->file_size) to_read = (DWORD)(u->file_size - off);
 
-  memset(&s->ov, 0, sizeof(s->ov));
+  memset(&s->ov, 0, sizeof (s->ov));
   s->ov.Offset     = (DWORD)(off & 0xFFFFFFFFu);
   s->ov.OffsetHigh = (DWORD)(off >> 32);
   s->bytes = 0;
@@ -141,7 +146,8 @@ static int iocp_wait_(iocp_state * u, i32 target) {
 }
 
 static iocp_state * iocp_setup(const char * path) {
-  iocp_state * u = calloc(1, sizeof(*u));
+  iocp_state * u = calloc(1, sizeof (*u));
+  i32 i;
   if (!u) return NULL;
 
   u64 sz_out = 0;
@@ -153,20 +159,20 @@ static iocp_state * iocp_setup(const char * path) {
   if (!u->iocp) { iocp_destroy(u); return NULL; }
 
   Fi((int) FASTENT_IOCP_SLOTS,
-     void * raw = NULL;
-     void * user = NULL;
-     if (fastent_io_alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) {
-       iocp_destroy(u);  return NULL;
-     }
-     u->slot[i].buf     = (u8 *) user;
-     u->slot[i].buf_raw = raw)
+    void * raw = NULL;
+    void * user = NULL;
+    if (fastent_io_alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) {
+      iocp_destroy(u);  return NULL;
+    }
+    u->slot[i].buf     = (u8 *) user;
+    u->slot[i].buf_raw = raw);
 
   u->next_submit_offset = 0;
   u->next_consume       = 0;
   u->prev_returned      = -1;
 
   Fi((int) FASTENT_IOCP_SLOTS,
-     if (iocp_submit_(u, (int) i) < 0) { iocp_destroy(u);  return NULL; })
+    if (iocp_submit_(u, (int) i) < 0) { iocp_destroy(u);  return NULL; });
   return u;
 }
 
@@ -176,7 +182,7 @@ static iocp_state * iocp_setup(const char * path) {
 
 int fastent_src_open(
     fastent_source * s, const char * path, fastent_io_mode mode) {
-  memset(s, 0, sizeof(*s));
+  memset(s, 0, sizeof (*s));
   s->kind = FASTENT_SRC_NONE;
   s->fd = -1;
   s->opened_fd = 0;
@@ -251,10 +257,9 @@ int fastent_src_open(
       fastent_win32_mmap_prefetch(base, sz_out);
       return 0;
     }
-    /*  mr == 1: empty file, unmappable but valid; stream it (0 bytes,
-        clean EOF) exactly as the POSIX backend does, even under an
-        explicit --io=mmap.  Only a genuine failure (mr < 0) under
-        --io=mmap is fatal.  */
+    /*  mr == 1: empty file, unmappable but valid; stream it (0 bytes, clean
+        EOF) exactly as the POSIX backend does, even under an explicit
+        --io=mmap.  */
     if (mr < 0 && mode == FASTENT_IO_MMAP) goto close_fail;
   }
 
@@ -364,7 +369,7 @@ static int slab_submit(struct fastent_uring_slab * r, i32 slot) {
   u64 off = r->next_off;
   DWORD to_read = (DWORD) FASTENT_STREAM_BUF;
   if (off + to_read > r->end_off) to_read = (DWORD)(r->end_off - off);
-  memset(&r->ov[slot], 0, sizeof(r->ov[slot]));
+  memset(&r->ov[slot], 0, sizeof (r->ov[slot]));
   r->ov[slot].Offset     = (DWORD)(off & 0xFFFFFFFFu);
   r->ov[slot].OffsetHigh = (DWORD)(off >> 32);
   r->ov[slot].hEvent     = r->ev;
@@ -381,9 +386,10 @@ static int slab_submit(struct fastent_uring_slab * r, i32 slot) {
     output is bit-identical to -j1 / mmap.  */
 fastent_uring_slab * fastent_uring_slab_open(
     int fd, const char * path, u64 off, u64 len) {
+  i32 i;
   (void) fd;
   if (!path || len == 0) return NULL;
-  struct fastent_uring_slab * r = calloc(1, sizeof(*r));
+  struct fastent_uring_slab * r = calloc(1, sizeof (*r));
   if (!r) return NULL;
   u64 fsz = 0;
   r->h = (HANDLE) fastent_win32_open_overlapped(path, &fsz);
@@ -394,13 +400,13 @@ fastent_uring_slab * fastent_uring_slab_open(
   r->end_off  = off + len;
   r->inflight = -1;
   Fi((int) FASTENT_SLAB_SLOTS,
-     void * raw = NULL;
-     void * user = NULL;
-     if (fastent_io_alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) {
-       fastent_uring_slab_close(r);  return NULL;
-     }
-     r->buf[i]     = (u8 *) user;
-     r->buf_raw[i] = raw)
+    void * raw = NULL;
+    void * user = NULL;
+    if (fastent_io_alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) {
+      fastent_uring_slab_close(r);  return NULL;
+    }
+    r->buf[i]     = (u8 *) user;
+    r->buf_raw[i] = raw);
   return r;
 }
 
@@ -428,15 +434,16 @@ sz fastent_uring_slab_next(fastent_uring_slab * r, const u8 ** out) {
 }
 
 void fastent_uring_slab_close(fastent_uring_slab * r) {
+  i32 i;
   if (!r) return;
   if (r->h && r->h != INVALID_HANDLE_VALUE) {
     CancelIoEx(r->h, NULL);
     Fi((int) FASTENT_SLAB_SLOTS,
-       DWORD g;  GetOverlappedResult(r->h, &r->ov[i], &g, TRUE))
+      DWORD g;  GetOverlappedResult(r->h, &r->ov[i], &g, TRUE));
     CloseHandle(r->h);
   }
   if (r->ev) CloseHandle(r->ev);
-  Fi((int) FASTENT_SLAB_SLOTS, if (r->buf_raw[i]) free(r->buf_raw[i]))
+  Fi((int) FASTENT_SLAB_SLOTS, if (r->buf_raw[i]) free(r->buf_raw[i]));
   free(r);
 }
 

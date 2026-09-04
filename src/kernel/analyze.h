@@ -1,24 +1,29 @@
-/*  fastent: analysis state and per-variant entry points.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #ifndef FASTENT_ANALYZE_H
 #define FASTENT_ANALYZE_H
 
 #include "common.h"
 
-/*  Order-0 histogram shadow banks: power-of-two, per-ISA overridable
-    (the &(FASTENT_BANKS-1) index masks are generic).  8 chosen by
-    measurement on Zen 4: breaks more store-to-load-forward chains than
-    4, the u32 banks are 8 KiB (L1-resident).  */
+/*  Order-0 histogram shadow banks: power-of-two, per-ISA overridable (the
+    &(FASTENT_BANKS-1) index masks are generic).  */
 #ifndef FASTENT_BANKS
 #define FASTENT_BANKS  8
 #endif
 
-/*  u32 order-0 drain bound.  Worst case all-same-byte: a bank cell
-    gains <= 1 per byte, so after FASTENT_HIST_CHUNK bytes it holds
-    < 2^30 < 2^32 (4x margin, any FASTENT_BANKS); 1 GiB <= 4 GB meets
-    the once-per-4-GB ask.  Mirrors the proven dg_u32 bound.  */
+/*  u32 order-0 drain bound.  */
 #define FASTENT_HIST_CHUNK ((u64) (1u << 30))
 
 #define FASTENT_SIMD_STRIDE_AVX2 96 /*  16 hexads exactly  */
@@ -27,10 +32,7 @@
 /*  incirc = (256^3 - 1)^2 = 281474943156225  (fits in 49 bits).  */
 #define FASTENT_INCIRC ((u64) 281474943156225ULL)
 
-/*  Order-1 bigram accumulator (-ee).  Order-0 histogram of key
-    ((prev<<8)|cur) over FASTENT_BG_NB round-robin shadows to break
-    store-to-load-forward, summed at finalize; 2 planes (1 MiB) fit L2.
-    u64 so a cell reaches N-1 (all-same-byte) at any size.  */
+/*  Order-1 bigram accumulator (-ee).  */
 #define FASTENT_BG_NB    2
 #define FASTENT_BG_TABLE 65536
 #define FASTENT_BG_CELLS (FASTENT_BG_NB * FASTENT_BG_TABLE)
@@ -38,15 +40,15 @@
 /*  Drain the u32 digram shadow into the u64 master every this many
     bytes.  (1u<<31) - 65536 leaves headroom below 2^31 so a single
     u32 cell (< pairs seen < bytes seen) cannot wrap before a drain.  */
-#define FASTENT_DG_U32_CHUNK ((u64)((1u << 31) - 65536u))
+#define FASTENT_DG_U32_CHUNK ((u64) ((1u << 31) - 65536u))
 
 /*  Scalar case fold: ASCII A-Z and Latin-1 0xC0-0xDE (not 0xD7) to
     lower-case, other bytes unchanged. Same rule as the SIMD fold.  */
 static inline u8 fastent_fold_byte(u8 b) {
   u32 c = b;
-  if (((u32)(c - 'A') < 26u) ||
-      ((u32)(c - 0xC0u) < 31u && c != 0xD7u))
-    return (u8)(c + 0x20u);
+  if (((u32) (c - 'A') < 26u) ||
+      ((u32) (c - 0xC0u) < 31u && c != 0xD7u))
+    return (u8) (c + 0x20u);
   return b;
 }
 
@@ -54,18 +56,14 @@ static inline u8 fastent_fold_byte(u8 b) {
     Monte Carlo hits, and the first/last/carry bytes needed to stitch
     chunk boundaries at finalize.  */
 typedef struct {
-  /*  Order-0 histogram: bank[k][v] is the hot L1 u32 working counter
-      (k = pos mod FASTENT_BANKS, breaks store-to-load-forward).
-      hist_master[v] is the authoritative u64; banks widen-drain in
-      every FASTENT_HIST_CHUNK bytes + at finalize, so no cell wraps.  */
+  /*  Order-0 histogram: bank[k][v] is the hot L1 u32 working counter (k = pos
+      mod FASTENT_BANKS, breaks store-to-load-forward).  */
   u32 bank[FASTENT_BANKS][256];
   u64 hist_master[256];
   u64 hist_chunk_bytes;
 
-  /*  Sum of x[i] * x[i+1] over bytes seen so far, MINUS the wrap term
-      (added globally at finalize).  The SIMD body applies its sign
-      correction before adding, so this holds the canonical unsigned
-      cross-product sum.  */
+  /*  Sum of x[i] * x[i+1] over bytes seen so far, MINUS the wrap term (added
+      globally at finalize).  */
   i64 cross_product;
 
   u64 total_bytes;
@@ -87,26 +85,18 @@ typedef struct {
   u8  mc_buf[6];
   i32 mc_pos;
 
-  /*  Order-1 digram: FASTENT_BG_CELLS u64, NULL unless -ee byte mode.
-      bit_bigram is the always-present bit-mode counterpart.  dg_prev/
-      dg_have carry the previous byte across fastent_digram_count
-      calls (independent of the SCC carry).  */
+  /*  Order-1 digram: FASTENT_BG_CELLS u64, NULL unless -ee byte mode.  */
   u64 * bigram;
   u64   bit_bigram[2][2];
   u8    dg_prev;
   u8    dg_have;
 
-  /*  u32 chunk shadow of `bigram` (half the u64 hot set), drained
-      every FASTENT_DG_U32_CHUNK bytes and before any merge.  Chunk
-      B<=2^31 has <B pairs so no u32 cell wraps; the drain is
-      associativity-only, so bigram[] is bit-identical for any -j.  */
+  /*  u32 chunk shadow of `bigram` (half the u64 hot set), drained every
+      FASTENT_DG_U32_CHUNK bytes and before any merge.  */
   u32 * dg_u32;
   u64   dg_chunk_bytes;
 
-  /*  -ee level-2 sequential extras (runs / longest run / cusum).
-      Symbols are bits or byte values.  Streams accumulate across
-      chunks; with -j slabs merge via a boundary stitch (run_mmap_mt_),
-      lr_head_* recording the leading run so straddlers splice.  */
+  /*  -ee level-2 sequential extras (runs / longest run / cusum).  */
   u64 lr_max;        /*  longest completed identical-symbol run  */
   u64 lr_cur;        /*  open run length                         */
   u8  lr_sym;        /*  open run symbol                          */
@@ -167,10 +157,7 @@ typedef struct fastent_result {
                                 bytes); NaN if no samples  */
   f64 cusum_max;            /*  max |S|, +-1 bit walk; bit mode only  */
 
-  /*  LZ77F estimator (-e, ~2 GiB/s ST band).  NaN sentinel unless
-      extended >= 1.  lz holds the 3 raw tables, heap-allocated only
-      under -e and freed per result so the recursive row struct stays
-      small.  */
+  /*  LZ77F estimator (-e, ~2 GiB/s ST band).  */
   f64 lz_cr_excess;         /*  S1 max(0,(outsz_rand-B)/n)  */
   f64 lz_lit_h;             /*  S2 H_lit (literal byte entropy, bits)  */
   f64 lz_lit_kl;            /*  S2 8 - H_lit (= KL to uniform)  */
@@ -184,11 +171,7 @@ typedef struct fastent_result {
   i32 lz_megamatch;         /*  1 = single dominant match (mega note)  */
   struct fastent_lz77f_tables * lz;  /*  3 raw tables; NULL unless -e */
 
-  /*  Linear-complexity estimator (-eee; ~55 MiB/s ST, the bottleneck).
-      NaN sentinel on bm_deviation unless extended >= 3.  bm_lhist is
-      inline (256 bytes): 2048x smaller than the LZ77F offset table,
-      so it rides every recursive row at no real cost (no heap
-      pointer, unlike struct fastent_lz77f_tables).  */
+  /*  Linear-complexity estimator (-eee; ~55 MiB/s ST, the bottleneck).  */
   f64 bm_deviation;         /*  headline z = |meanL-mu|/sqrt(VarL/W)  */
   f64 bm_mean_lc;           /*  mean per-window linear complexity  */
   f64 bm_mu;                /*  mu(M): random-sequence expectation  */
@@ -198,10 +181,7 @@ typedef struct fastent_result {
   i32 bm_degenerate;        /*  1 = meanL<2 (near-constant; note)  */
   u32 bm_lhist[64];         /*  L_i bucket histogram (bin = L*64/513)  */
 
-  /*  Maurer universal test (-eee, alongside LZ77F / BM).  NaN
-      sentinel on maurer_dev unless extended >= 3.  maurer_lhist is
-      inline (256 bytes, like bm_lhist): a 64-bin log2-distance plot
-      that rides every recursive row at no real cost (no heap table). */
+  /*  Maurer universal test (-eee, alongside LZ77F / BM).  */
   f64 maurer_fn;            /*  fn = Sum log2(dist) / K  */
   f64 maurer_expected;      /*  NIST SP800-22 expected(L), L=8  */
   f64 maurer_dev;           /*  headline z = |fn-exp|/(c*sqrt(var/K))  */
@@ -209,10 +189,7 @@ typedef struct fastent_result {
   i32 maurer_degenerate;    /*  1 = fn << expected (repetitive; note)  */
   u32 maurer_lhist[64];     /*  log2-distance bucket histogram  */
 
-  /*  Binary matrix-rank estimator (-eee, NIST SP800-22 sec 2.5).  NaN
-      sentinel on mrank_dev unless extended >= 3.  Three pooled rank
-      bins (r==32, r==31, r<=30) and the matrix count ride every row;
-      df = 2 is even so the p-value is NaN by design.  */
+  /*  Binary matrix-rank estimator (-eee, NIST SP800-22 sec 2.5).  */
   f64 mrank_dev;            /*  headline z = sqrt(chi2)  */
   f64 mrank_chi;            /*  chi-square statistic, df = 2  */
   f64 mrank_chi_p;          /*  advisory p (NaN: df even)  */
@@ -222,10 +199,7 @@ typedef struct fastent_result {
   u32 mrank_rlo;            /*  count of matrices with rank <= 30  */
   i32 mrank_underpowered;   /*  1 if matrices < FASTENT_MRANK_MIN  */
 
-  /*  Bandt-Pompe permutation entropy (-e, m = 4; ~1 GiB/s ST band).
-      NaN sentinel on perment_deviation unless extended >= 1.  The 24-bin pattern
-      histogram is inline (96 bytes); chi-square df = 23 is odd so the
-      advisory p-value uses fastent_chisq_tail_df directly.  */
+  /*  Bandt-Pompe permutation entropy (-e, m = 4; ~1 GiB/s ST band).  */
   f64 perment_h_norm;       /*  normalized entropy in [0, 1]  */
   f64 perment_deviation;    /*  headline z = (1-H_norm)*sqrt(W*2 ln 2)  */
   f64 perment_chi;          /*  chi-square over 24 bins (advisory)  */
@@ -247,10 +221,8 @@ typedef enum {
   FASTENT_VAR_NEON_         = 6,
   FASTENT_VAR_WASM128_      = 7,
   FASTENT_VAR_SVE2_         = 8,
-  /*  FIPS-only extra tier (no analyze body): AVX-512 + VPOPCNTDQ
-      (wide VPOPCNTQ monobit and run-start popcount).  The FIPS
-      dispatcher carries its own name strings; this value only needs
-      to be distinct.  */
+  /*  FIPS-only extra tier (no analyze body): AVX-512 + VPOPCNTDQ (wide
+      VPOPCNTQ monobit and run-start popcount).  */
   FASTENT_VAR_AVX512_VPOPCNTDQ = 9
 } fastent_variant;
 
@@ -266,14 +238,12 @@ void  fastent_dg_u32_free(u32 * s);
 /*  Stream the u32 chunk shadow into st->bigram (add + zero) and
     reset st->dg_chunk_bytes.  No-op if either table is absent.  */
 void  fastent_dg_drain(fastent_chunk_state * st);
-/*  Widen-add the u32 order-0 banks into st->hist_master, zero the
-    banks, reset st->hist_chunk_bytes.  Fixed bank/value order so the
-    u64 sum is order-independent: flush cadence (any -j, any driver)
-    cannot change the result.  */
+/*  Widen-add the u32 order-0 banks into st->hist_master, zero the banks,
+    reset st->hist_chunk_bytes.  */
 void  fastent_hist_flush_(fastent_chunk_state * st);
 void fastent_finalize(
-    fastent_chunk_state * FASTENT_RESTRICT st, int binary,
-    fastent_result * FASTENT_RESTRICT out);
+    fastent_chunk_state * RESTRICT st, int binary,
+    fastent_result * RESTRICT out);
 
 /*  Variant entries (always declared; analyze.c picks one at runtime).  */
 void analyze_scalar(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -302,10 +272,9 @@ void analyze_sve2(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
-/*  Fused fold+analyse entries: same SIMD body as analyze_<variant> but
-    each loaded vector is case-folded in-register before histogram /
-    SCC / MC Pi consume it.  Drops the 32 KiB staging-copy pass used
-    by the old fold_then_analyze_slab path.  */
+/*  Fused fold+analyse entries: same SIMD body as analyze_<variant> but each
+    loaded vector is case-folded in-register before histogram / SCC / MC Pi
+    consume it.  */
 void analyze_fold_scalar(fastent_chunk_state * st, const u8 * buf, sz len);
 #ifdef HAVE_SSSE3
 void analyze_fold_ssse3(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -333,10 +302,8 @@ void analyze_fold_sve2(fastent_chunk_state * st, const u8 * buf, sz len);
 void analyze_fold_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 #endif
 
-/*  -ee level-2 pass: one scalar scan folding digram histogram, longest
-    run, 0/1 runs and the cusum walk.  Byte mode fills st->bigram, bit
-    mode bit_bigram; dg_prev carries across calls.  Byte runs-vs-median
-    derived in fastent_finalize from digram counts.  fold matches -f.  */
+/*  -ee level-2 pass: one scalar scan folding digram histogram, longest run,
+    0/1 runs and the cusum walk.  */
 void fastent_digram_count(
     fastent_chunk_state * st, const u8 * buf, sz len, int binary, int fold);
 
@@ -346,10 +313,7 @@ void fastent_digram_count(
 void fastent_lr_one(fastent_chunk_state * st, u32 s);
 void fastent_lr_run(fastent_chunk_state * st, u32 q, u64 n);
 
-/*  Byte-mode digram + longest-run kernel, one per ISA.  Each threads
-    dg_u32 / longest-run / dg_prev state as the scalar reference, so
-    the merged result is byte-identical for any -j.  The always-built
-    scalar variant is the reference; SIMD must match it bit-for-bit.  */
+/*  Byte-mode digram + longest-run kernel, one per ISA.  */
 typedef void (* fastent_digram_byte_fn)(fastent_chunk_state *,
                                         const u8 *, sz);
 void digram_bytes_scalar(fastent_chunk_state * st, const u8 * buf, sz len);
@@ -381,10 +345,8 @@ void digram_bytes_wasm128(fastent_chunk_state * st, const u8 * buf, sz len);
 
 fastent_digram_byte_fn fastent_pick_digram_byte_variant(fastent_variant * w);
 
-/*  Bit-mode -ee level-2 fused block kernel (B0 pack + B1/B2 digram +
-    B3 closed-form longest run + B4 cusum LUT), one per ISA.  Scalar
-    variant is the reference; SIMD reproduces its counters bit-for-bit
-    for any -j.  cl <= 64 KiB; state threads across calls.  */
+/*  Bit-mode -ee level-2 fused block kernel (B0 pack + B1/B2 digram + B3
+    closed-form longest run + B4 cusum LUT), one per ISA.  */
 typedef void (* fastent_digram_bits_fn)(fastent_chunk_state *,
                                         const u8 *, sz,
                                         const i32 *, const i32 *,

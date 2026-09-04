@@ -1,7 +1,16 @@
-/*  fastent: pthread-backed thread pool.  Static partition; workers wait
-    on a condition variable for a generation counter to advance.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "port-thread.h"
@@ -29,6 +38,7 @@ struct worker_args { i32 k; };
 
 static void * worker_main(void * arg) {
   i32 k = ((struct worker_args *) arg)->k;
+  sz i;
   free(arg);
 
   /*  No explicit affinity; let the scheduler place threads.  */
@@ -45,8 +55,8 @@ static void * worker_main(void * arg) {
     pthread_mutex_unlock(&g_m);
 
     sz start = (sz) k * n / (sz) T;
-    sz end   = (sz)(k + 1) * n / (sz) T;
-    for (sz i = start; i < end; i++) fn(i, ctx);
+    sz end   = (sz) (k + 1) * n / (sz) T;
+    for (i = start; i < end; i++) fn(i, ctx);
 
     pthread_mutex_lock(&g_m);
     if (--g_busy == 0) pthread_cond_broadcast(&g_work_done);
@@ -56,23 +66,23 @@ static void * worker_main(void * arg) {
 }
 
 static void lazy_init(void) {
+  i32 k;
   if (g_n_threads != 0) return;
   i32 T = g_pending > 0 ? g_pending : 1;
   if (T < 1) T = 1;
   if (T > 1) {
-    g_workers = (pthread_t *) malloc((sz) T * sizeof(pthread_t));
+    g_workers = (pthread_t *) malloc((sz) T * sizeof (pthread_t));
     if (!g_workers) { g_n_threads = 1; return; }
-    /*  Partial failure: keep the k workers already created and run
-        with that count so g_n_threads matches the live pool instead
-        of orphaning live workers behind a serial g_n_threads == 1
-        (k < 2 -> serial).  */
+    /*  Partial failure: keep the k workers already created and run with that
+        count so g_n_threads matches the live pool instead of orphaning live
+        workers behind a serial g_n_threads == 1 (k < 2 -> serial).  */
     Fk(T,
-       struct worker_args * a = (struct worker_args *) malloc(sizeof(*a));
-       if (!a) { g_n_threads = (k >= 2) ? k : 1;  return; }
-       a->k = k;
-       if (pthread_create(&g_workers[k], NULL, worker_main, a) != 0) {
-         free(a);  g_n_threads = (k >= 2) ? k : 1;  return;
-       })
+      struct worker_args * a = (struct worker_args *) malloc(sizeof (*a));
+      if (!a) { g_n_threads = (k >= 2) ? k : 1;  return; }
+      a->k = k;
+      if (pthread_create(&g_workers[k], NULL, worker_main, a) != 0) {
+        free(a);  g_n_threads = (k >= 2) ? k : 1;  return;
+      });
   }
   g_n_threads = T;
 }
@@ -87,10 +97,11 @@ int fastent_num_threads(void) {
 }
 
 void fastent_parallel_for(sz n, fastent_parfor_fn fn, void * ctx) {
+  sz i;
   if (n == 0) return;
   if (g_n_threads == 0) lazy_init();
   if (n == 1 || g_n_threads <= 1) {
-    for (sz i = 0; i < n; i++) fn(i, ctx);
+    for (i = 0; i < n; i++) fn(i, ctx);
     return;
   }
 
@@ -107,7 +118,7 @@ void fastent_parallel_for(sz n, fastent_parfor_fn fn, void * ctx) {
 struct fastent_mutex { pthread_mutex_t m; };
 
 fastent_mutex * fastent_mutex_create(void) {
-  fastent_mutex * x = (fastent_mutex *) malloc(sizeof(*x));
+  fastent_mutex * x = (fastent_mutex *) malloc(sizeof (*x));
   if (!x) return NULL;
   if (pthread_mutex_init(&x->m, NULL) != 0) { free(x);  return NULL; }
   return x;

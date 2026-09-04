@@ -1,6 +1,16 @@
-/*  fastent: command-line parsing + help/version.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "cli.h"
@@ -9,91 +19,73 @@
 /*  Vendored verbatim from github.com/iczelia/yarg; keep it pristine
     and silence its GCC-only calloc-arg-order note here instead.  */
 #if defined(__GNUC__) && !defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wpragmas"
-#  pragma GCC diagnostic ignored "-Wcalloc-transposed-args"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wcalloc-transposed-args"
 #endif
 #include "yarg.h"
 #if defined(__GNUC__) && !defined(__clang__)
-#  pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
 #endif
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+static void banner(FILE * to) {
+  fprintf(to,
+    "fastent " FASTENT_VERSION_STRING " -- fast entropy and randomness tester\n"
+    "Written by Kamila Szewczyk <k@iczelia.net>.\n"
+    "License GNU GPL version 3.\n");
+}
+
 void fastent_print_version(void) {
-  printf("fastent %s\n", FASTENT_VERSION_STRING);
-  fputs(
-    "Copyright (C) 2023-2026 Kamila Szewczyk.\n"
-    "License GPLv3: GNU GPL version 3 only"
-    " <https://gnu.org/licenses/gpl-3.0.html>.\n"
-    "This is free software: you are free to change and redistribute it.\n"
-    "There is NO WARRANTY, to the extent permitted by law.\n",
-    stdout);
+  banner(stdout);
+  printf("Copyright (C) 2023-2026 Kamila Szewczyk.\n"
+         "This is free software: you are free to change and redistribute it.\n"
+         "There is NO WARRANTY, to the extent permitted by law.\n");
 }
 
 void fastent_print_help(void) {
-  fputs(
-    "fastent: measure randomness of a byte (or bit) stream.\n"
-    "Usage: fastent [options] [file]   (full detail in fastent(1))\n"
+  banner(stdout);
+  fprintf(stdout,
     "\n"
-    "  -b, --bits            Treat input as a bit stream\n"
-    "  -c, --counts          Print per-value occurrence counts\n"
-    "  -f, --fold            Fold upper- to lower-case before counting\n"
-    "  -t, --terse           CSV output\n"
-    "  -J, --json            JSON output\n"
-    "  -H, --histogram       Block bar plot of the distribution\n"
-    "  -l, --log             Logarithmic y-axis for -H\n"
-    "  -C, --color=MODE      Colour: auto, always, never\n"
-    "  -p, --full-precision  Render every float at %.17g\n"
-    "  -e, --extended        Extended stats: min-entropy, collision/IC,"
-                                                            " poker,\n"
-    "                        variance, distinct, per-bit bias, LZ77F"
-                                                       " estimator,\n"
-    "                        Bandt-Pompe permutation entropy. Repeat:"
-                                                          " -ee adds\n"
-    "                        order-1 bigram H(cur|prev)+I(prev;cur);"
-                                                       " -eee adds the\n"
-    "                        linear-complexity, Maurer universal and"
-                                                       "\n"
-    "                        binary matrix-rank estimators (with -H,"
-                                                       " the matching\n"
-    "                        plots)\n"
-    "  -a, --annotate        Interpretive pass/fail report (implies -e)\n"
-    "  -i, --io=MODE         Input: auto (default), mmap, stream, uring\n",
-    stdout);
+    "usage: fastent [OPTIONS] [FILE]\n"
+    "       fastent -r [OPTIONS] DIRECTORY\n"
+    "       fastent -h | -V\n"
+    "\n"
+    "  -b, --bits            analyze bits\n"
+    "  -c, --counts          include occurrence counts\n"
+    "  -f, --fold            fold uppercase before analysis\n"
+    "  -t, --terse           write CSV\n"
+    "  -J, --json            write JSON\n"
+    "  -e, --extended        add tests; repeat through -eee\n"
+    "  -a, --annotate        explain verdicts; implies -e\n"
+    "  -p, --full-precision  print round-trippable floats\n"
+    "  -H, --histogram       draw distributions\n"
+    "  -l, --log             use a logarithmic histogram\n"
+    "  -C, --color=MODE      auto, always, or never\n"
+    "  -i, --io=MODE         auto, mmap, stream, or uring\n");
 #ifdef FASTENT_HAVE_THREADS
-  fputs(
-    "  -j N, --threads=N     Use N worker threads (default 1)\n", stdout);
+  fprintf(stdout, "  -j N, --threads=N     use N workers, or auto\n");
 #endif
-  fputs(
-    "  -r, --recursive       Treat arg as a directory; one row per file\n"
-    "  --sort-by=COL[:dir]   Sort -r output (dir = asc|desc). COL: path"
-                                                           " samples\n"
-    "                        entropy chisq mean pi scc min-entropy"
-                                                       " collision ic\n"
-    "                        poker variance redundancy distinct bitbias"
-                                                       " cond-entropy\n"
-    "                        mutual-info lz-deviation lz-cr lz-match-cov"
-                                                       " bm-deviation\n"
-    "                        bm-mean-lc maurer-deviation mrank-dev"
-                                                       " perment-dev\n"
-    "  --fips-140-2          FIPS 140-2 RNG power-up self-tests"
-                                                  " (exit 1 on fail)\n"
-    "  -V, --version         Print version and exit\n"
-    "  -h, --help            Print this message\n",
-    stdout);
+  fprintf(stdout,
+    "  -r, --recursive       analyze each file below a directory\n"
+    "  --sort-by=COL[:DIR]   sort recursive output\n"
+    "  --fips-140-2          run FIPS 140-2 power-up tests\n"
+    "  -h, --help            show help\n"
+    "  -V, --version         show version\n"
+    "\n"
+    "Exit codes  0 success, 1 usage or failed test, 2 system error.\n");
 }
 
 static int parse_int(const char * s, int * out) {
+  char * end;
+  i64 v;
   if (!s || !*s) return -1;
-  if (!strcmp(s, "auto")) {
-    *out = -1;
-    return 0;
-  }
-  char * end = NULL;
-  i64 v = strtol(s, &end, 10);
+  if (!strcmp(s, "auto")) { *out = -1;  return 0; }
+  end = NULL;
+  v = strtol(s, &end, 10);
   if (end == s || (end && *end)) return -1;
   if (v < 0 || v > 1024) return -1;
   *out = (int) v;
@@ -102,23 +94,24 @@ static int parse_int(const char * s, int * out) {
 
 static int parse_sort_by_(const char * arg, fastent_options * o) {
   char buf[64];
-  sz n = strlen(arg);
+  char * colon;
+  const char * dir;
+  fastent_sort_by col;
+  sz n;
+  n = strlen(arg);
   if (n >= sizeof buf) return -1;
   memcpy(buf, arg, n + 1);
-  char * colon = strchr(buf, ':');
+  colon = strchr(buf, ':');
   if (colon) {
     *colon = '\0';
-    const char * dir = colon + 1;
+    dir = colon + 1;
     if      (!strcmp(dir, "asc"))  o->sort_desc = 0;
     else if (!strcmp(dir, "desc")) o->sort_desc = 1;
     else {
-      fprintf(stderr, "--sort-by direction must be asc or desc\n");
+      fastent_message("--sort-by direction must be asc or desc");
       return -1;
     }
-  } else {
-    o->sort_desc = -1;  /*  fill in column default below  */
-  }
-  fastent_sort_by col;
+  } else o->sort_desc = -1;
   if      (!strcmp(buf, "path"))    col = FASTENT_SORT_PATH;
   else if (!strcmp(buf, "samples")) col = FASTENT_SORT_SAMPLES;
   else if (!strcmp(buf, "entropy")) col = FASTENT_SORT_ENTROPY;
@@ -146,18 +139,11 @@ static int parse_sort_by_(const char * arg, fastent_options * o) {
   else if (!strcmp(buf, "mrank-dev"))    col = FASTENT_SORT_MRANK_DEV;
   else if (!strcmp(buf, "perment-dev"))  col = FASTENT_SORT_PERMENT_DEV;
   else {
-    fprintf(stderr, "--sort-by column must be one of: path samples entropy "
-                    "chisq mean pi scc min-entropy collision ic poker "
-                    "variance redundancy distinct bitbias cond-entropy "
-                    "mutual-info lz-deviation lz-cr lz-match-cov "
-                    "bm-deviation bm-mean-lc maurer-deviation "
-                    "mrank-dev perment-dev\n");
+    fastent_message("unknown --sort-by column '%s'", buf);
     return -1;
   }
   o->sort_by = (int) col;
-  /*  Sorting by an extended column implies it is emitted: LZ77F / BM /
-      Maurer / mrank / perment columns need -eee (level 3), the bigram
-      columns need -ee (level 2), the basic extended columns -e.  */
+  /*  Sorting enables the selected field.  */
   if (col >= FASTENT_SORT_LZ_DEVIATION) {
     if (o->extended < 3) o->extended = 3;
   } else if (col >= FASTENT_SORT_COND_ENTROPY) {
@@ -196,17 +182,20 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
     { 'V',         no_argument,       "version"        },
     { 0,           no_argument,       NULL             }
   };
+  yarg_settings st;
+  yarg_result * r;
+  int rc;
+  i32 k;
 
-  memset(o, 0, sizeof(*o));
+  memset(o, 0, sizeof (*o));
   o->threads = 1;
   o->color   = 1;
 
-  yarg_settings st;
   st.dash_dash = true;
   st.style     = YARG_STYLE_UNIX;
-  yarg_result * r = yarg_parse(argc, argv, opts, st);
+  r = yarg_parse(argc, argv, opts, st);
   if (!r) {
-    fprintf(stderr, "fastent: out of memory parsing arguments\n");
+    fastent_message("out of memory");
     return -1;
   }
   if (r->error) {
@@ -215,17 +204,13 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
     return -1;
   }
 
-  /*  Help / version win over everything and exit immediately.  */
+  /*  Help and version take precedence.  */
   Fk(r->argc,
-     if (r->args[k].opt == 'h') {
-       fastent_print_help();  yarg_destroy(r);  exit(0);
-     }
-     if (r->args[k].opt == 'V') {
-       fastent_print_version();  yarg_destroy(r);  exit(0);
-     })
+    if (r->args[k].opt == 'h') { fastent_print_help();  yarg_destroy(r);  exit(0); }
+    if (r->args[k].opt == 'V') { fastent_print_version();  yarg_destroy(r);  exit(0); });
 
-  int rc = 0;
-  for (i32 k = 0; k < r->argc && rc == 0; k++) {
+  rc = 0;
+  for (k = 0; k < r->argc && rc == 0; k++) {
     const yarg_option * a = &r->args[k];
     const char * v = a->arg;
     switch (a->opt) {
@@ -237,7 +222,6 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
       case 'p': o->full_precision = 1; break;
       case 'H': o->histogram = 1; break;
       case 'l': o->histogram_log = 1; break;
-      /*  -e level (repeatable; -ee adds the order-1 bigram).  */
       case 'e': o->extended++; break;
       case 'a': o->annotate = 1; if (o->extended < 1) o->extended = 1; break;
       case 'r': o->recursive = 1; break;
@@ -245,8 +229,7 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
         if      (v && !strcmp(v, "auto"))   o->color = 1;
         else if (v && !strcmp(v, "always")) o->color = 2;
         else if (v && !strcmp(v, "never"))  o->color = 0;
-        else { fprintf(stderr,
-                 "fastent: --color must be auto, always or never\n");
+        else { fastent_message("--color must be auto, always or never");
                rc = -1; }
         break;
       case 'i':
@@ -255,15 +238,13 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
         else if (v && !strcmp(v, "stream"))
           o->io_mode = (int) FASTENT_IO_STREAM;
         else if (v && !strcmp(v, "uring"))  o->io_mode = (int) FASTENT_IO_URING;
-        else { fprintf(stderr,
-                 "fastent: --io must be auto, mmap, stream or uring\n");
+        else { fastent_message("--io must be auto, mmap, stream or uring");
                rc = -1; }
         break;
 #ifdef FASTENT_HAVE_THREADS
       case 'j':
         if (!v || parse_int(v, &o->threads) != 0) {
-          fprintf(stderr, "fastent: --threads: invalid count '%s'\n",
-                  v ? v : "");
+          fastent_message("invalid thread count '%s'", v ? v : "");
           rc = -1;
         } else if (o->threads == 0) {
           o->threads = 1;
@@ -274,19 +255,18 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
         if (!v || parse_sort_by_(v, o) != 0) rc = -1;
         break;
       case OPT_FIPS140: o->fips140 = 1; break;
-      default: break;  /*  unreachable: yarg only yields known opts  */
+      default: break;
     }
   }
 
   if (rc == 0 && r->pos_argc > 1) {
-    fprintf(stderr, "fastent: duplicate file name: %s\n", r->pos_args[1]);
+    fastent_message("too many input paths: %s", r->pos_args[1]);
     rc = -1;
   }
   if (rc == 0 && r->pos_argc == 1 && strcmp(r->pos_args[0], "-")) {
-    /*  Copy out of the result; owned for the process lifetime.
-        A lone "-" is left as a NULL path, i.e. read stdin.  */
+    /*  A lone dash means standard input.  */
     char * p = yarg_strdup(r->pos_args[0]);
-    if (!p) { fprintf(stderr, "fastent: out of memory\n"); rc = -1; }
+    if (!p) { fastent_message("out of memory");  rc = -1; }
     else o->path = p;
   }
 
@@ -294,12 +274,11 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
   if (rc != 0) return -1;
 
   if (o->annotate && o->recursive) {
-    fprintf(stderr, "fastent: --annotate is not supported with -r "
-                    "(recursive output is CSV/JSON)\n");
+    fastent_message("--annotate cannot be used with -r");
     return -1;
   }
   if (o->fips140 && o->recursive) {
-    fprintf(stderr, "fastent: --fips-140-2 is not supported with -r\n");
+    fastent_message("--fips-140-2 cannot be used with -r");
     return -1;
   }
   return 0;

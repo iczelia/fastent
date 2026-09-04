@@ -1,6 +1,16 @@
-/*  fastent: portable I/O source abstraction.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #ifndef FASTENT_PORT_IO_H
 #define FASTENT_PORT_IO_H
@@ -51,9 +61,8 @@ void fastent_src_close(fastent_source * s);
 int  fastent_io_alloc_aligned(void ** out_raw, void ** out_user, sz cap);
 
 /*  Per-worker io_uring slab reader: a private ring double-buffering
-    sequential reads over one disjoint [off,off+len) range (N workers,
-    no shared feed).  open NULL = io_uring absent (caller falls back);
-    next: bytes, 0 = slab end, (sz)-1 = error, ptr valid until next.  */
+    sequential reads over one disjoint [off,off+len) range (N workers, no
+    shared feed).  */
 typedef struct fastent_uring_slab fastent_uring_slab;
 fastent_uring_slab * fastent_uring_slab_open(
     int fd, const char * path, u64 off, u64 len);

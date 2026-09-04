@@ -1,16 +1,22 @@
-/*  fastent: V_* macros for the NEON (AArch64 + ARMv7-A) variant.
-    AArch64-only intrinsics (vqtbl1q_u8, vaddvq_u64/s64) are emulated
-    on ARMv7-A via vtbl2_u8 + lane-extract.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #ifndef FASTENT_ANALYZE_VEC_NEON_H
 #define FASTENT_ANALYZE_VEC_NEON_H
 
-/*  Refuse big-endian NEON: vget_low_/vget_high_ return swapped halves
-    on BE so the SCC and tbl1q paths would silently miscompute.  The
-    configure probe already gates HAVE_NEON on BE; this is a backstop
-    for direct -DFASTENT_VARIANT_NEON builds.  */
+/*  Refuse big-endian NEON: vget_low_/vget_high_ return swapped halves on BE
+    so the SCC and tbl1q paths would silently miscompute.  */
 #if defined(__ARM_BIG_ENDIAN) || \
     (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 #error "fastent NEON variant is not supported on big-endian ARM"

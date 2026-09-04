@@ -1,21 +1,16 @@
-/*  fastent: benchmark dataset generator.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
 
-    Usage:  bench-gen <kind> <size_MiB> <out-path>
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-    Kinds (deterministic, seeded from the kind name):
-      random       xorshift PRNG output, near-uniform bytes
-      zeros        all 0x00
-      ones         all 0xFF
-      counter      0,1,...,255,0,1,...  (perfectly periodic, low SCC)
-      dna          alphabet {A,C,G,T}
-      ascii        printable ASCII 0x20..0x7E
-      biased       50% 0x00, 50% uniform over 0..255
-      sparse-bits  mostly 0 bits, ~1.5% bits set (interesting in -b mode)
-      lcg          glibc-style LCG (low-quality PRNG, visible structure)
-      walk         random walk modulo 256 (heavy autocorrelation)
-      stripes      8-byte blocks of a single random byte (low MC entropy)  */
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include <errno.h>
 #include <inttypes.h>
@@ -36,7 +31,8 @@ static uint64_t xs64(void) {
 
 static void seed(const char * kind) {
   uint64_t s = 0xCBF29CE484222325ULL;
-  for (const char * p = kind; *p; p++) {
+  const char * p;
+  for (p = kind; *p; p++) {
     s ^= (uint8_t) *p;
     s *= 0x100000001B3ULL;
   }
@@ -66,7 +62,8 @@ static void gen_ones(uint8_t * b, size_t n, uint64_t pos) {
 }
 
 static void gen_counter(uint8_t * b, size_t n, uint64_t pos) {
-  for (size_t i = 0; i < n; i++) b[i] = (uint8_t) ((pos + i) & 0xFFu);
+  size_t i;
+  for (i = 0; i < n; i++) b[i] = (uint8_t) ((pos + i) & 0xFFu);
 }
 
 static const char dna_alpha[4] = { 'A', 'C', 'G', 'T' };
@@ -74,9 +71,10 @@ static const char dna_alpha[4] = { 'A', 'C', 'G', 'T' };
 static void gen_dna(uint8_t * b, size_t n, uint64_t pos) {
   (void) pos;
   size_t i = 0;
+  int k;
   while (i + 32 <= n) {
     uint64_t r = xs64();
-    for (int k = 0; k < 32; k++) { b[i + k] = (uint8_t) dna_alpha[r & 3u]; r >>= 2; }
+    for (k = 0; k < 32; k++) { b[i + k] = (uint8_t) dna_alpha[r & 3u];  r >>= 2; }
     i += 32;
   }
   if (i < n) {
@@ -86,8 +84,9 @@ static void gen_dna(uint8_t * b, size_t n, uint64_t pos) {
 }
 
 static void gen_ascii(uint8_t * b, size_t n, uint64_t pos) {
+  size_t i;
   (void) pos;
-  for (size_t i = 0; i < n; i++) {
+  for (i = 0; i < n; i++) {
     /*  Rejection-free: multiply 95 into the high bits and take them.  */
     uint64_t r = xs64();
     b[i] = (uint8_t) (0x20u + (unsigned) ((r * 95ULL) >> 32) % 95u);
@@ -95,21 +94,23 @@ static void gen_ascii(uint8_t * b, size_t n, uint64_t pos) {
 }
 
 static void gen_biased(uint8_t * b, size_t n, uint64_t pos) {
+  size_t i;
   (void) pos;
-  for (size_t i = 0; i < n; i++) {
+  for (i = 0; i < n; i++) {
     uint64_t r = xs64();
     b[i] = (r & 1u) ? (uint8_t) 0u : (uint8_t) (r >> 1);
   }
 }
 
 static void gen_sparse_bits(uint8_t * b, size_t n, uint64_t pos) {
+  uint64_t k;
   (void) pos;
   memset(b, 0, n);
   /*  About 1.5% of bits set: n*8/64, roughly n/8 bits.  Repeats may
       collide so the actual density is slightly lower, which is fine.  */
   uint64_t total_bits = (uint64_t) n * 8ULL;
   uint64_t set_bits   = total_bits / 64ULL;
-  for (uint64_t k = 0; k < set_bits; k++) {
+  for (k = 0; k < set_bits; k++) {
     uint64_t r = xs64();
     uint64_t bit = r % total_bits;
     b[bit >> 3] |= (uint8_t) (1u << (bit & 7u));
@@ -120,9 +121,10 @@ static void gen_sparse_bits(uint8_t * b, size_t n, uint64_t pos) {
     continuous stream.  */
 static uint32_t lcg_state = 1u;
 static void gen_lcg(uint8_t * b, size_t n, uint64_t pos) {
+  size_t i;
   (void) pos;
   uint32_t s = lcg_state;
-  for (size_t i = 0; i < n; i++) {
+  for (i = 0; i < n; i++) {
     s = s * 1103515245u + 12345u;
     b[i] = (uint8_t) (s >> 16);
   }
@@ -131,9 +133,10 @@ static void gen_lcg(uint8_t * b, size_t n, uint64_t pos) {
 
 static uint8_t walk_state = 0u;
 static void gen_walk(uint8_t * b, size_t n, uint64_t pos) {
+  size_t i;
   (void) pos;
   uint8_t v = walk_state;
-  for (size_t i = 0; i < n; i++) {
+  for (i = 0; i < n; i++) {
     int step = (int) ((xs64() & 7u)) - 3;  /*  -3..+4, mean ~0.5  */
     v = (uint8_t) ((int) v + step);
     b[i] = v;
@@ -173,10 +176,11 @@ static struct {
 };
 
 int main(int argc, char ** argv) {
+  size_t i;
   if (argc != 4) {
     fprintf(stderr, "usage: %s <kind> <size_MiB> <out-path>\n", argv[0]);
     fprintf(stderr, "kinds:");
-    for (size_t i = 0; i < sizeof(table)/sizeof(*table); i++)
+    for (i = 0; i < sizeof (table)/sizeof (*table); i++)
       fprintf(stderr, " %s", table[i].name);
     fputc('\n', stderr);
     return 2;
@@ -186,9 +190,9 @@ int main(int argc, char ** argv) {
   const char * out = argv[3];
 
   gen_fn fn = NULL;
-  for (size_t i = 0; i < sizeof(table)/sizeof(*table); i++)
+  for (i = 0; i < sizeof (table)/sizeof (*table); i++)
     if (!strcmp(table[i].name, kind)) { fn = table[i].fn; break; }
-  if (!fn) { fprintf(stderr, "unknown kind: %s\n", kind); return 2; }
+  if (!fn) { fprintf(stderr, "bench-gen: unknown kind '%s'\n", kind); return 2; }
 
   seed(kind);
   /*  Re-seed the persistent-state generators per kind.  */

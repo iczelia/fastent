@@ -1,7 +1,12 @@
-#  fastent: regenerate compile_commands.json for clangd / IDE tooling.
-#  Usage:  make clean && make -n V=1 | python3 scripts/gen_compile_commands.py "$PWD" > compile_commands.json
-#  (the autotools build has no native compdb export and bear is not vendored.)
-import sys, re, json, shlex
+#!/usr/bin/env python3
+"""Convert verbose make output to a clang compilation database."""
+
+import json
+import re
+import shlex
+import sys
+
+
 root = sys.argv[1]
 out = []
 for line in sys.stdin:
@@ -17,6 +22,6 @@ for line in sys.stdin:
         args = shlex.split(line)
     except ValueError:
         continue
-    out.append({"directory": root, "file": src, "arguments": args})
+    out.append({"arguments": args, "directory": root, "file": src})
 json.dump(out, sys.stdout, indent=1)
 sys.stdout.write("\n")

@@ -1,792 +1,191 @@
-.\" Manual page for fastent.
-.\" Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only.
-.TH FASTENT 1 "May 2026" "fastent 1.3" "User Commands"
-
+.\"  Copyright (C) 2023-2026 Kamila Szewczyk
+.\"
+.\"  This program is free software; you can redistribute it and/or modify
+.\"  it under the terms of the GNU General Public License as published by
+.\"  the Free Software Foundation, version 3.
+.\"
+.\"  This program is distributed in the hope that it will be useful,
+.\"  but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\"  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\"  GNU General Public License for more details.
+.\"
+.\"  You should have received a copy of the GNU General Public License
+.\"  along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH FASTENT 1 "2026-05-20" "fastent 1.3" "User Commands"
 .SH NAME
-fastent \- pseudorandom byte stream entropy and randomness tester
-
+fastent \- entropy and randomness tester
 .SH SYNOPSIS
 .B fastent
 .RI [ options ]
-.RI [ file | directory ]
-
+.RI [ file ]
+.br
+.B fastent
+.B \-r
+.RI [ options ]
+.I directory
 .SH DESCRIPTION
 .B fastent
-applies five tests of randomness to a byte stream and reports the
-results: Shannon entropy, chi-square statistic and tail probability,
-arithmetic mean, Monte Carlo value of \(*p, and serial correlation
-coefficient.  The byte stream is read from
-.I file
-or, if no filename is given, from standard input.  Pass
-.B \-r
-to recurse into a
-.IR directory ;
-fastent then emits one row per regular file rather than a single
-summary.
+measures entropy and statistical randomness in a byte or bit stream. With no
+path, it reads standard input. Normal output contains Shannon entropy,
+chi-square and its upper-tail probability, arithmetic mean, a Monte Carlo
+estimate of pi, and serial correlation.
 .PP
-The inner loop is vectorised, uses a 4-way banked histogram, and
-dispatches at runtime to the best available SIMD variant on the host
-(scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512 (+BITALG) / AArch64 NEON /
-AArch64 SVE2 / ARMv7-A NEON / WebAssembly SIMD128).  Regular-file
-inputs are memory-mapped or read via io_uring (Linux 5.1+) / IOCP
-(Windows Vista+) and processed by an optional thread pool with
-deterministic output.
-
+The program dispatches SIMD kernels at run time and can split work across
+threads. Results are stable across supported kernels, I/O modes, and thread
+counts.
 .SH OPTIONS
 .TP
 .BR \-b ", " \-\-bits
-Treat input as a stream of bits rather than 8-bit bytes.  In bit mode
-the histogram has two bins, the arithmetic mean is reported relative
-to 0.5, and the chi-square statistic has one degree of freedom.
-The Monte Carlo \(*p test remains byte-driven.
+Treat the input as bits. Histograms have two bins and the mean is relative to
+0.5. The Monte Carlo test remains byte based.
 .TP
 .BR \-c ", " \-\-counts
-Print a per-value occurrence table.  In default output the table is
-human-readable; with
-.B \-t
-it is rendered as CSV.
+Include an occurrence table.
 .TP
 .BR \-f ", " \-\-fold
-Fold upper-case letters to their lower-case equivalents before
-counting (ASCII A-Z and Latin-1 0xC0-0xDE excluding 0xD7).  The fold
-is fused into the SIMD analyser body: each loaded vector is folded
-in-register before the histogram, serial-correlation, and Monte
-Carlo \(*p kernels consume it, so
-.B \-f
-keeps the full SIMD throughput rather than falling back to a scalar
-prepass.
+Fold ASCII and Latin-1 uppercase letters before analysis.
 .TP
 .BR \-t ", " \-\-terse
-Emit results in CSV format suitable for downstream parsers.
+Write CSV.
 .TP
 .BR \-J ", " \-\-json
-Emit results as a JSON document.  Overrides
-.BR \-t .
-With
-.B \-c
-the occurrences table is included as a nested array.
+Write JSON. This takes precedence over CSV and annotated output.
 .TP
 .BR \-e ", " \-\-extended
-Also report the extended statistics: min-entropy
-.RB ( H \(if ),
-collision entropy
-.RB ( H 2)
-and index of coincidence, the poker test (16-bin nibble chi-square,
-15 degrees of freedom), variance and standard deviation, redundancy,
-the distinct-symbol count, the most/least common symbol, and the
-per-bit-position bias (the probability that bit
-.IR k ,
-0 = LSB .. 7 = MSB, is set; byte mode only).  These are appended to
-the default, terse, JSON, and recursive output; without
-.B \-e
-the output is byte-for-byte the classic format.  All extended
-quantities are derived at finalisation, so they add no per-byte cost
-and remain bit-identical across hosts and thread counts.
+Add min-entropy, collision entropy, index of coincidence, poker, variance,
+standard deviation, redundancy, symbol summaries, bit-position bias, LZ77F,
+and Bandt-Pompe permutation entropy.
 .IP
-.B \-e
-also runs the
-.B LZ77F
-estimator: a count-only LZ77F match finder (acceleration 1,
-HLOG 13) that never emits a byte.  It reports the compressibility
-excess over an incompressible baseline
-.RB ( lz_cr_excess ),
-the literal byte-value Shannon entropy and its KL divergence to
-uniform
-.RB ( lz_lit_h " / " lz_lit_kl ),
-the match coverage
-.RB ( lz_match_cov ),
-the offset and match-length concentration
-.RB ( lz_off_conc " / " lz_mlen_excess ;
-each takes its continuous 0 limit below two matches), an advisory
-literal chi-square against uniform
-.RB ( lz_lit_chi ,
-255 degrees of freedom, kept separate from the headline as order-0
-entropy and its chi-square are kept separate), and a headline
-.B lz_deviation
-z =
-.RB max( S1 ", " S2 /8 ", " S3 )
-over
-.RB sigma0 " = max(2/" n ", 2" \[u207B]\[u2077] ),
-badged
-.BR PASS / WEAK / FAIL
-(z < 2 / z < 3 / z >= 3).  A pristine periodic or exact-duplicate
-input that collapses to a single dominant match (fewer than two
-matches with high coverage) is flagged explicitly so a zero
-offset/length concentration does not read as no structure; the
-verdict still fails via the compressibility and coverage signals.
-The parse is keyed to a fixed 4 MiB block grid on the absolute
-file offset with a fresh hash table per block, so the count-only
-size and every table are exactly additive: the result is
-bit-identical for any thread count, for
-.BR \-\-io=mmap ", " stream " or " uring ,
-and across hosts.  Drift versus a whole-file table-carrying serial
-parse is at most about 0.055 percent and verdict-neutral.  Reported
-in the default, terse, JSON, recursive and annotated output.
-.IP
-.B \-e
-also computes a Bandt-Pompe permutation entropy estimator with
-embedding dimension m = 4 (24 ordinal patterns).  Each length-4
-byte window is reduced to one of 24 Lehmer-code ids by six strict
-byte comparisons (ties break by index, the standard Bandt-Pompe
-convention) and the 24-bin pattern histogram sum-merges on the 4
-MiB absolute-offset grid.  The finaliser reports the normalised
-entropy
-.B perment_h_norm
-in [0, 1] (1.0 for uniform patterns) and a headline
-.B perment_deviation
-z = (1 - H_norm) * sqrt(W * 2 * ln 2) badged
-.BR PASS / WEAK / FAIL
-(z < 2 / z < 3 / z >= 3), so random sources pass cleanly and
-concentrated histograms (a strictly monotone stream collapses to
-one of the 24 bins) hit the FAIL band.  The (m - 1) windows that
-would span a grid boundary are dropped, capping drift at about
-(nblocks - 1) * 3 windows out of n total (~7.2e-7 at 4 MiB blocks,
-verdict-neutral); histogram merge is integer-additive and order-
-free, so the result is bit-identical for any thread count, I/O
-mode and host.  An advisory 24-bin chi-square
-.RB ( perment_chi ,
-df = 23) rides alongside the headline.  Scope: permutation entropy
-catches short-range monotone or structural correlations that
-order-0 and order-1 measures miss; it is blind to long-range
-patterns by construction.
-.IP
+Repeat the option. The
 .B \-ee
-.RB ( "or " \-e\~\-e ", or " \-\-extended\~\-\-extended )
-additionally computes the order-1 bigram conditional entropy
-.RB H( cur | prev ),
-the adjacent mutual information
-.RB I( prev ; cur ),
-a longest identical-symbol run, a runs test, and a bit-mode cusum
-max excursion.  The order-0 statistics keep full SIMD throughput;
-the level-2 reductions are split across the
-.B \-j
-workers (per-slab on mmap, an SPMC pipeline on stream and io_uring)
-and merged with a boundary stitch, deterministic and bit-identical
-across thread counts.  Byte mode keeps two 64K u64 tables per worker
-thread (1 MiB); bit mode is free.
-.IP
+level adds order-1 conditional entropy, adjacent mutual information, runs,
+longest run, and bit cusum. The
 .B \-eee
-runs a windowed linear-complexity estimator.  Each whole 512-bit
-(64-byte) window of the stream is reduced
-by GF(2) Berlekamp-Massey to its linear complexity
-.IR L ,
-the length of the shortest LFSR that generates it.  It reports the
-mean
-.I L
-.RB ( bm_mean_lc ),
-the random-sequence expectation
-.RB ( bm_mu ),
-a headline
-.B bm_deviation
-z =
-.RB | bm_mean_lc \- bm_mu |
-over
-.RB sqrt( VarL / W )
-badged
-.BR PASS / WEAK / FAIL
-(z < 2 / z < 3 / z >= 3), and an advisory NIST SP800-22
-linear-complexity class chi-square
-.RB ( bm_chi ,
-5 degrees of freedom: the two extreme tail classes are pooled).
-A near-constant stream (mean
-.I L
-below 2) is flagged like the LZ77F single-dominant-match note; the
-verdict still fails via the large z.  Bits are read most-significant
-first per byte, the same convention as
-.BR \-b "."
-64 divides the 4 MiB grid, so a window never straddles a block and
-the result is bit-identical for any thread count, I/O mode and host
-with zero drift.  Scope: GF(2) Berlekamp-Massey catches LFSR-class
-and low-bit linear recurrences (a maximal 16-bit LFSR scores
-.I L
-near 16, far below mu = 256) but not a truncated-high-byte LCG,
-whose output bits carry no short GF(2) recurrence.
-.IP
-.B \-eee
-also runs a windowed Maurer universal statistical test alongside
-the linear-complexity estimator.  The bit stream is read
-most-significant first per byte and cut into
-.I L
-= 8-bit blocks; after
-.I Q
-= 10*2^L initialisation blocks, each further block adds the base-2
-logarithm of the distance back to the previous occurrence of its
-pattern.  It reports the statistic
-.RB ( maurer_fn ,
-the mean of those logarithms), the NIST SP800-22 expected value for
-.I L
-= 8
-.RB ( maurer_expected ),
-and a headline
-.B maurer_deviation
-z =
-.RB | maurer_fn \- maurer_expected |
-over
-.RB ( c "*" sqrt( variance / K ))
-badged
-.BR PASS / WEAK / FAIL
-(z < 2 / z < 3 / z >= 3).  A highly repetitive stream (fn far below
-expected) is flagged; the verdict still fails via the large z.
-.I L
-is fixed at 8 so a 4 MiB window holds about 4.19 million test
-blocks, sixteen times the NIST
-.I K
->= 1000*2^L validity floor (L = 16 would fall about forty-five
-times short).  Each 4 MiB grid block uses a fresh recency table and
-the per-block partial sums combine in absolute block index order,
-so the result is bit-identical for any thread count, I/O mode and
-host; drift versus a textbook whole-stream table-carrying Maurer is
-bounded and verdict-neutral (at most about 0.001%, 0.00073%
-measured on a 100 MB English text corpus).  Scope: Maurer is a
-global compressibility statistic ("how compressible under an
-idealised universal compressor"); it catches repetitive or
-compressible sources that pass order-0/-1, LZ77F and the
-linear-complexity screen but does not locate the structure and does
-not replace the per-test advisories.
-.IP
-The same
-.B \-eee
-level additionally runs the NIST SP800-22 sec 2.5 binary matrix-rank test.
-The byte stream is partitioned into disjoint 32x32 GF(2) matrices
-(128 bytes each); each matrix rank is reduced in place by Gauss-
-Jordan on 32-bit row words and binned into the three pooled NIST
-rank classes (r == 32, r == 31, r <= 30).  A chi-square against the
-NIST closed-form probabilities (df = 2) drives the headline
-.B mrank_dev
-z = sqrt(chi2) badged
-.BR PASS / WEAK / FAIL
-(z < 2 / z < 3 / z >= 3).  An underpowered run (fewer than 16
-matrices) skips the verdict, sets the headline to NaN and flags
-.BR mrank_underpowered .
-128 divides the 4 MiB absolute-offset grid so matrices never
-straddle; the three rank bin counts sum-merge order-free, so the
-result is bit-identical for any thread count, I/O mode and host.
-The chi-square upper tail is computed by the same
-.B fastent_chisq_tail
-family as the other estimators; df = 2 is even and outside its
-odd-df contract, so the advisory p-value
-.RB ( mrank_chi_p )
-is NaN by design.  Scope: the matrix-rank test catches truncated-
-bit linear recurrence sources that survive order-0 byte histograms
-and the 512-bit Berlekamp-Massey scorer (a low-bit LFSR that folds
-onto 32-bit rows lands in the r <= 30 tail).  It does not locate
-where the structure is and is not a substitute for the per-test
-advisories.
+level adds 512-bit Berlekamp-Massey complexity, Maurer universal, and NIST
+32x32 binary matrix-rank tests.
 .TP
 .BR \-a ", " \-\-annotate
-Render an interpretive report instead of the plain text: every metric
-is shown with a
-.BR PASS / WEAK / FAIL
-verdict and a one-line explanation, followed by a headline naming the
-weakest signal.  Implies
+Write a PASS, WEAK, or FAIL report with short explanations. Implies
 .BR \-e .
-Not supported with
-.BR \-r ;
-.BR \-\-json " and " \-t
-take precedence if combined.  Verdict colour follows
-.BR \-\-color .
+It cannot be combined with recursive mode.
 .TP
 .BR \-p ", " \-\-full-precision
-Render every floating-point value at \fB%.17g\fR (machine precision).
+Print floating-point values with enough digits to round-trip binary64.
 .TP
 .BR \-j " " \fIN\fR ", " \-\-threads= \fIN\fR
 Use
 .I N
-worker threads (default 1).  Pass
-.B "\-j auto"
-to use one thread per online CPU
-.RB ( sysconf(_SC_NPROCESSORS_ONLN) ).
-Threading covers every input path: mmap slices the resident buffer
-into per-thread slabs, while stdin/stream and io_uring use an SPMC
-pipeline (one serialized read at a time, analysis in parallel).
-Blocks are aligned to multiples of six so the Monte Carlo \(*p state
-machine never crosses threads, and the boundary products, digram
-pair, longest run, bit runs and cusum walk are stitched in stream
-order.  Output is byte-for-byte identical to the single-threaded run
-because all arithmetic is integer and the merge order is
-deterministic.
-This option is present only when
-.B fastent
-was built with a thread backend; a single-threaded build omits both
-.B \-j
-and
-.B \-\-threads
-(and rejects them as unknown).
+workers. The value
+.B auto
+uses the online CPU count. This option is absent from builds without a thread
+backend.
 .TP
 .BR \-i ", " "\-\-io=" \fIMODE\fR
-Pick the input strategy.  \fIMODE\fR is one of:
-.RS
-.IP \fBauto\fR 8
-Default.  Memory-map regular files; fall back to streaming reads
-for stdin, pipes, and unmappable sources.
-.IP \fBmmap\fR 8
-Memory-mapped only; error out if the input cannot be mapped.
-.IP \fBstream\fR 8
-2 MiB
-.BR read (2)
-loop in all cases.
-.IP \fBuring\fR 8
-Asynchronous, four-way pipelined reads.  io_uring on Linux 5.1+
-(raw
-.BR io_uring_setup "(2) / " io_uring_enter (2),
-no liburing dependency); IOCP on Windows Vista+ (overlapped
-.BR ReadFile " + " GetQueuedCompletionStatus ).
-ENOSYS on other targets.
-.RE
+Select input handling.
+.B auto
+maps regular files and streams other inputs;
+.B mmap
+requires a mapping;
+.B stream
+uses ordinary reads; and
+.B uring
+uses io_uring on Linux or IOCP on Windows. An unavailable explicitly selected
+backend is an error.
 .TP
 .BR \-H ", " \-\-histogram
-Render a vertical block-plot of the byte (or bit) distribution
-before the textual results.  Uses Unicode 1/8-th block glyphs
-(U+2581..U+2588) on terminals that support UTF-8, single-byte CP 437
-glyphs on DOS / Win9x consoles, and ASCII '#' on stdout when
-redirected.  A Y-axis scale labelled with the largest bin count and
-an X-axis tick row aligned under the bars frame the plot.  The
-histogram and other output formats compose: the
-histogram is rendered before the human-readable text but is also
-included alongside
-.BR \-t " and " \-\-json
-when those are set.
-.IP
-Extra plots follow the byte/bit plot under
-.BR \-e " and " \-eee ,
-using the same Unicode-glyph,
-.BR \-\-log ,
-Y-axis-scale and X-tick rendering.  Under
-.B \-e
-the LZ77F match offsets (1..65535) and match lengths (4..255+) in
-log2 buckets, the LZ77F literal byte-value histogram (256 bins,
-its title carrying H_lit), and a 24-bin Bandt-Pompe pattern
-histogram follow.  Under
-.B \-eee
-the linear-complexity
-.I L
-histogram (64 bins over 0..512), the Maurer log2-distance
-histogram (64 bins), and a 3-bar matrix-rank histogram follow
-those.  They compose with
-.BR \-t " and " \-\-json
-exactly as the byte/bit plot does.
+Draw the selected distribution. Active extended tests add their own plots.
+Terminals use block glyphs; redirected output uses ASCII.
 .TP
 .BR \-l ", " \-\-log
-Logarithmic Y axis for the histogram.  Useful when one bin dominates.
+Use a logarithmic Y axis for histograms.
 .TP
 .BR \-C ", " "\-\-color=" \fIMODE\fR
-Colour mode for the histogram.  \fIMODE\fR is
-.BR auto " (default; colour iff stdout is a TTY and " NO_COLOR " unset), "
+Set color to
+.BR auto ,
 .BR always ,
 or
 .BR never .
-Bytes in [0,32) and 127 render in dim grey (control chars), [32,128)
-in default foreground (ASCII printable), [128,256) in accent
-(high-bit / Latin-1).  Colour is emitted as ANSI escapes on POSIX,
-.BR SetConsoleTextAttribute (3)
-on Windows (works on Win95+ without ANSI.SYS), and DJGPP
-.IR <conio.h>
-.BR textcolor / cputs
-BIOS-attribute writes on MS-DOS.
 .TP
 .BR \-r ", " \-\-recursive
-Treat the positional argument as a directory; walk it recursively
-and emit one row per regular file.  Output format is CSV by default
-or JSON under
-.BR \-\-json ;
-the
-.B path
-column comes first, followed by the same six summary metrics as
-.BR \-t ,
-and the extended columns when
-.B \-e
-is in effect.
-Walks do not cross symlinks (except at the root).  Unreadable files
-or directories print a stderr warning and are skipped.
+Walk a directory and write one CSV row per regular file, or a JSON array with
+.BR \-J .
 .TP
-.B "\-\-sort-by=" \fICOL\fR [: \fIDIR\fR ]
-Sort the rows in recursive mode.
-.I COL
-is one of
-.BR path ", " samples ", " entropy ", " chisq ", " mean ", " pi ", " scc ", "
-.BR min-entropy ", " collision ", " ic ", " poker ", " variance ", "
-.BR redundancy ", " distinct ", " bitbias ", "
-.BR cond-entropy ", " mutual-info ", "
-.BR lz-deviation ", " lz-cr ", " lz-match-cov ", "
-.BR bm-deviation ", " bm-mean-lc ", " maurer-deviation ", "
-.BR mrank-dev ", " perment-dev .
-Selecting any of the basic extended columns implies
-.BR \-e ;
-.BR lz-deviation ", " lz-cr ", " lz-match-cov " and " perment-dev
-also imply
-.BR \-e ;
-.B cond-entropy
+.BI \-\-sort-by= COL [: asc |: desc ]
+Sort recursive output. Basic columns are
+.BR path ,
+.BR samples ,
+.BR entropy ,
+.BR chisq ,
+.BR mean ,
+.BR pi ,
 and
-.B mutual-info
-imply
-.BR \-ee ;
-.BR bm-deviation ", " bm-mean-lc ", " maurer-deviation " and " mrank-dev
-imply
-.BR \-eee .
-.I DIR
-is
-.B asc
-or
-.BR desc ;
-default is descending for the numeric columns and ascending for
-.BR path .
+.BR scc .
+Extended columns use the field names printed by CSV. Their selection enables
+the needed extended level. Numeric columns default to descending order; paths
+default to ascending order.
 .TP
 .B \-\-fips\-140\-2
-Run the FIPS 140-2 RNG power-up self-tests (4.9.1) instead of the
-normal analysis: monobit, poker, runs and long run, applied
-independently to each 20000-bit (2500-byte) block.  Bits are taken
-most-significant first; the poker groups are the high then the low
-nibble of each byte.  The acceptance constants are the FIPS 140-2
-values (monobit 9725 < ones < 10275; poker 2.16 < X < 46.17; the runs
-intervals; long run a run of 34 or more; the rng-tools
-.B rngtest
-utility historically uses 26).  Trailing bytes that do not fill a
-block are not tested.  A pass/fail report is printed and the exit
-status is 0 if every block passed all four tests, 1 otherwise; other
-output options are ignored.  The independent blocks are split across
-the
-.B \-j
-workers and the result is bit-identical regardless of thread count.
+Run the FIPS 140-2 monobit, poker, runs, and long-run power-up tests over each
+complete 20,000-bit block. Normal analysis is skipped. Recursive mode is not
+supported.
 .TP
 .BR \-h ", " \-\-help
-Print a short usage message and exit.
+Print usage and exit.
 .TP
 .BR \-V ", " \-\-version
-Print the program version and exit.
-
-.SH "OUTPUT FORMAT"
-By default,
-.B fastent
-emits six paragraphs of human-readable text reporting each of the
-five tests plus an estimate of optimum byte- or bit-wise
-compressibility.
-.PP
-In terse mode (\fB\-t\fR), two lines of CSV are written:
-
-.RS
-.nf
-0,File-bytes,Entropy,Chi-square,P-Exceed,Mean,Monte-Carlo-Pi,Serial-Correlation
-1,<samples>,<entropy>,<chi-square>,<p-exceed>,<mean>,<monte-pi>,<scc>
-.fi
-.RE
-
-In bit mode the first field is
-.B File-bits
-instead of
-.BR File-bytes .
-With
-.BR \-c ,
-two additional sections appear:
-
-.RS
-.nf
-2,Value,Occurrences,Fraction
-3,<value>,<count>,<fraction>
-\&...
-.fi
-.RE
-
-In JSON mode (\fB\-\-json\fR), the structure is:
-
-.RS
-.nf
-{
-  "unit": "byte",
-  "samples": <integer>,
-  "entropy": <float>,
-  "optimum_compression_percent": <integer>,
-  "chi_square": { "statistic": <float>, "df": <int>, "p_exceed": <float> },
-  "arithmetic_mean": <float>,
-  "monte_carlo_pi": { "value": <float>, "error_percent": <float> },
-  "serial_correlation": <float | null>,
-  "occurrences": [ {"value":<int>,"count":<int>,"fraction":<float>}, ... ]
-}
-.fi
-.RE
-.PP
-The
-.B serial_correlation
-field is
-.B null
-when the input contains only a single distinct value (the
-human-readable output renders this case as
-\fIundefined (all values equal!)\fR).
-.PP
-Under
-.B \-r
-the CSV header becomes
-.RS
-.nf
-path,unit,samples,entropy,chi_square,p_exceed,mean,\
-monte_carlo_pi,serial_correlation
-.fi
-.RE
-with one data line per file (paths are RFC 4180-quoted when they
-contain a comma, double quote, or newline).  JSON recursive output
-nests the file rows under
-.B files
-in a top-level object:
-.RS
-.nf
-{
-  "unit": "byte",
-  "files": [
-    { "path": "...", "samples": <int>, "entropy": <float>, ... },
-    ...
-  ]
-}
-.fi
-.RE
-Any numeric field whose value would be NaN (e.g.\&
-.B monte_carlo_pi
-on a sub-hexad-sized file) is written as JSON
+Print the version and license notice.
+.SH OUTPUT
+Plain output describes one stream. CSV and JSON retain stable field names for
+scripts. Values that cannot be computed are written as
+.BR nan
+or JSON
 .BR null .
 .PP
-Under
-.B \-e
-the extended statistics are appended to every format.  The terse and
-recursive CSV rows gain, in order,
-.BR Min-Entropy ", " Collision-Entropy ", " IC ", " Poker ", " Poker-p ", "
-.BR Variance ", " Stddev ", " Redundancy ", " Distinct ", " Mode ", "
-.BR Mode-Count ", " Rarest ", " Rarest-Count ", "
-.BR Bit0 .. Bit7 ", " Bit-Bias-Max ", " Bit-Bias-Worst ", "
-.BR Conditional-Entropy ", " Mutual-Information ", "
-.BR Runs ", " Longest-Run ", " Cusum-Max .
-The JSON object gains
-.BR min_entropy ", " collision_entropy ", " index_of_coincidence ", "
-a
-.B poker
-sub-object
-.RB ( null
-in bit mode),
-.BR variance ", " stddev ", " redundancy ", " distinct_symbols ", "
-and the
-.BR most_common " and " rarest
-sub-objects, the
-.B bit_frequencies
-array (8 values, or
-.B null
-in bit mode) and the
-.B bit_bias
-sub-object
-.RB ( max ", " worst_bit ).
-Under
-.B \-e
-the LZ77F and permutation entropy columns are also appended:
-.BR LZ-CR-Excess ", " LZ-Lit-H ", " LZ-Lit-KL ", " LZ-Match-Cov ", "
-.BR LZ-Off-Conc ", " LZ-Mlen-Excess ", " LZ-Lit-Chi ", " LZ-Lit-Chi-p ", "
-.BR LZ-Deviation ", " LZ-Matches ", " LZ-Megamatch ", " Perment-Hnorm ", "
-.BR Perment-Deviation ", " Perment-Windows ;
-JSON gains the
-.B lz77f
-and
-.B permutation_entropy
-sub-objects (each
-.B null
-when the stream has no scored content).
-With
-.B \-ee
-the
-.BR conditional_entropy ", " mutual_information ", " runs ", "
-.BR longest_run " and " cusum_max
-fields are populated (otherwise
-.BR null ).
-Under
-.B \-eee
-the slower grid columns follow:
-.BR BM-Mean-LC ", " BM-Mu ", " BM-Chi ", " BM-Chi-p ", " BM-Deviation ", "
-.BR BM-Windows ", " BM-Degenerate ", "
-.BR Maurer-Fn ", " Maurer-Expected ", " Maurer-Deviation ", " Maurer-K ", "
-.BR Maurer-Degenerate ", " MRank-Dev ", " MRank-Chi ", " MRank-Matrices ", "
-.BR MRank-Underpowered ;
-JSON gains the
-.BR linear_complexity ", " maurer_universal " and " binary_matrix_rank
-sub-objects.
-In
-.BR \-\-annotate
-mode the plain text is replaced by an aligned table: one row per
-metric with its value, p-value where defined, a
-.BR PASS / WEAK / FAIL / "N/A"
-badge, and a short interpretation, closing with a
-.B VERDICT
-headline that names the weakest signal.  Entropy-ratio verdicts are
-advisory; the chi-square, poker, mean, and serial-correlation verdicts
-are derived from the p-value or a z-score against the uniform
-sampling distribution.
-
-.SH "EXIT STATUS"
-.B fastent
-returns 0 on success, 1 on argument parsing failure, and 2 if the
-input file cannot be opened.
-
+Annotated output gives each applicable metric a verdict. PASS is below two
+standard deviations, WEAK is below three, and FAIL is at least three where a
+normal score exists. Advisory statistics are marked separately. These screens
+do not certify a random generator.
+.SH EXIT STATUS
+.TP
+.B 0
+Analysis completed, or every FIPS block passed.
+.TP
+.B 1
+Usage error, failed FIPS block, or refused option combination.
+.TP
+.B 2
+I/O, allocation, or platform error.
 .SH EXAMPLES
-.PP
-Test the entropy of 1 MiB of kernel randomness:
-.IP
-.B head -c 1M /dev/urandom | fastent
-.PP
-Bit-level analysis of a JPEG, with the histogram included:
-.IP
-.B fastent -bc photo.jpg
-.PP
-Machine-readable summary of a tarball:
-.IP
-.B fastent --json large.tar
-.PP
-Full-precision terse output for a benchmark:
-.IP
-.B fastent -tp random.bin
-.PP
-Walk a directory and sort files by entropy, descending:
-.IP
-.B fastent -r --sort-by=entropy /var/log
-.PP
-Same as JSON, including the per-file path column, on cold-cache
-NVMe data:
-.IP
-.B fastent -r --json --io=uring /mnt/data > entropy.json
-.PP
-Visualise the byte distribution of a tarball with a log Y axis:
-.IP
-.B fastent -H --log archive.tar.gz
-
+.nf
+fastent sample.bin
+fastent -a -ee sample.bin
+fastent -b -H random.bin
+generator | fastent -J
+fastent -r --sort-by=entropy data/
+fastent --fips-140-2 rng.bin
+.fi
 .SH PERFORMANCE
-.B fastent
-reads input via memory mapping with
-.BR madvise (2)
-.B MADV_SEQUENTIAL
-and
-.BR posix_fadvise (2)
-.B POSIX_FADV_SEQUENTIAL
-when the input is a regular file.  On Linux 5.1+ and Windows Vista+
-.B \-\-io=uring
-trades that for a four-deep async pipeline (io_uring on Linux, IOCP
-on Win32) which hides latency on cold-cache NVMe;  hot-cache
-throughput is unchanged.  Otherwise input goes through a 2 MiB
-.BR read (2)
-loop.
+The order-0 path uses banked SIMD histograms. Mapped files are split into
+aligned slabs; streams use a bounded shared pipeline. The extended grid tests
+process fixed 4 MiB blocks. Higher
+.B \-e
+levels cost more, with Berlekamp-Massey normally the slowest test.
+.SH PORTABILITY
+The C99 sources support common Linux, Windows, macOS, OpenBSD, and FreeBSD
+hosts. Release builds also cover WebAssembly, Windows 95, DJGPP/MS-DOS, and
+several further Linux architectures.
 .PP
-The histogram inner loop uses four banked sub-histograms to break
-the read-modify-write hazard chain; the serial-correlation
-cross-product is computed via signed widened multiply + horizontal
-add (the SSE / AVX2 path with a sign-correction term derived from
-the byte sum, the AVX-512 path with the same algorithm widened to
-64-byte vectors).  Bit-mode population count uses
-.B VPOPCNTB
-on AVX-512 BITALG hosts and a PSHUFB nibble-LUT fallback otherwise.
-The AArch64 SVE2 path uses
-.B svdot_u32
-for the cross-product and runs at the host's native vector length
-(128 to 2048 bits per SVE2 spec).
-.PP
-On a recent x86_64 host with AVX-512 single-thread throughput sits
-around 2.5 GB/s (byte) / 4.7 GB/s (bit); a saturated
-.B \-j auto
-sweep reaches roughly 15-17 GB/s before DDR4 bandwidth caps it.  See
-the README for the per-host scaling plot.
-
-.SH PLATFORMS
-.B fastent
-is portable across every Unix-like host with a working C99 compiler
-and libc.  Pre-built binaries are published for each release, all
-fully static (except macOS, which links the platform SDK stub):
-.IP \(bu 2
-Linux on x86_64, i386, aarch64, armhf, riscv64, ppc64le, ppc64,
-powerpc, s390x, loongarch64, mips, mipsel, mips64, mips64el, alpha,
-sparc64, sparc, m68k, hppa, arc, sh4.
-.IP \(bu 2
-Windows on x86_64, i686, and aarch64; a separate Win95-compatible
-i686 build limits its import table to
-.B kernel32.dll
-and
-.B msvcrt.dll
-and runs on every Windows release from 95 onward.
-.IP \(bu 2
-macOS on x86_64 and aarch64.
-.IP \(bu 2
-MS-DOS on i386 (DJGPP + CWSDPMI baked in; no separate DPMI host
-needed).
-WebAssembly on wasm32 and wasm64 (emscripten, self-contained
-single-file
-.B node
-launcher with NODERAWFS host-fs bridge); both run as
-.B "node fastent.js" .
-The wasm64 launcher needs node 24 or later (memory64 stabilised in
-V8 13).
-.PP
-SIMD fast paths cover x86 (SSSE3 / SSE4.1 / AVX2 / AVX-512 with
-optional BITALG), AArch64 + ARMv7-A (NEON), AArch64 (SVE2), and
-WebAssembly (SIMD128).  Every other target falls back to the scalar
-loop, which is still 4-way banked and keeps most of the per-byte
-throughput.
-
-.SH ENVIRONMENT
-.B fastent
-does not consult any environment variables.  The thread count comes
-from
-.B \-j
-/
-.B \-\-threads
-on the command line only.
-
-.SH "DETERMINISM"
-Output is byte-for-byte reproducible across thread counts.  The
-internal arithmetic is all integer, slab boundaries are aligned to
-multiples of six so the Monte Carlo \(*p state machine never crosses
-a thread, and the merge order is fixed.  A given input produces
-the same numbers under
-.B \-j 1
-and
-.BR "\-j auto" .
-
-.SH "MEMORY USE"
-Regular-file inputs are memory-mapped read-only: virtual address
-space proportional to the input, resident-set growth driven by the
-kernel's read-ahead.  Stream inputs (stdin, pipes, unmappable files,
-.BR \-\-io=stream )
-use a single 2 MiB aligned read buffer regardless of input size.
-Each worker thread under
-.B \-j N
-holds a small per-slab accumulator (a few KiB) plus the histogram
-bins; total resident overhead under
-.B "\-j auto"
-stays well under a megabyte on top of the mapped region.  The one
-exception is
-.B \-ee
-in byte mode, which adds two 64K u64 digram tables (1 MiB) per
-worker thread plus one aggregate; bit-mode
-.B \-ee
-adds only a 2-by-2 table.
-
-.SH BUGS
-The optimum-compression figure derives from the first-order
-(byte-marginal or bit-marginal) Shannon entropy and is therefore a
-lower bound: it ignores any structure beyond a single byte/bit,
-including correlations, repeats, and longer-range patterns that a
-real compressor (e.g.\&
-.BR xz (1),
-.BR zstd (1))
-would exploit.  A source whose byte histogram is uniform but whose
-sample sequence is highly structured (digits of \(*p, an LCG stream)
-is reported as 0% compressible despite being reproducible from a
-tiny seed.
-.PP
-A perfectly tight bound would require the Kolmogorov complexity of
-the input -- the length of the shortest program that emits it.
-The author gladly offers co-authorship on the resulting paper
-to anyone who computes that quantity efficiently for arbitrary
-inputs.
-
+The runtime may dispatch scalar, SSSE3, SSE4.1, AVX2, AVX-512, NEON, SVE2, or
+WebAssembly SIMD128 kernels when they were built and the host supports them.
+.SH LIMITS
+Several tests need large samples. Underpowered tests return no verdict. LZ77F
+and permutation entropy restart at 4 MiB boundaries and therefore have a small,
+bounded difference from whole-stream forms. FIPS mode ignores a final partial
+20,000-bit block.
 .SH AUTHOR
-Written by Kamila Szewczyk <k@iczelia.net>.
-
-.SH COPYRIGHT
-Copyright \(co 2023-2026 Kamila Szewczyk.  License GPLv3: GNU GPL
-version 3 only <\fIhttps://gnu.org/licenses/gpl-3.0.html\fR>.
-This is free software: you are free to change and redistribute it.
-There is NO WARRANTY, to the extent permitted by law.
-
-.SH "SEE ALSO"
+Kamila Szewczyk <k@iczelia.net>
+.SH SEE ALSO
+.BR ent (1),
 .BR rngtest (1),
 .BR dieharder (1),
 .BR od (1)

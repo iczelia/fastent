@@ -1,6 +1,16 @@
-/*  fastent: POSIX/ANSI terminal port.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "port-term.h"
@@ -11,7 +21,7 @@
 #include <unistd.h>
 
 #ifdef TIOCGWINSZ
-  #include <sys/ioctl.h>
+#include <sys/ioctl.h>
 #endif
 
 int fastent_term_isatty(void) {

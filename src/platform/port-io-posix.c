@@ -1,6 +1,16 @@
-/*  fastent: POSIX I/O backend (mmap, stream read, optional io_uring).
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "port-io.h"
@@ -16,28 +26,28 @@
 #include <fcntl.h>
 
 #ifdef HAVE_SYS_STAT_H
-  #include <sys/stat.h>
+#include <sys/stat.h>
 #endif
 #ifdef HAVE_SYS_MMAN_H
-  #include <sys/mman.h>
+#include <sys/mman.h>
 #endif
 
 #ifdef HAVE_IO_URING
-  #include <sys/syscall.h>
-  #include <linux/io_uring.h>
+#include <sys/syscall.h>
+#include <linux/io_uring.h>
 #endif
 
 #ifndef O_BINARY
-  #define O_BINARY 0
+#define O_BINARY 0
 #endif
 #ifndef MADV_SEQUENTIAL
-  #define MADV_SEQUENTIAL 0
+#define MADV_SEQUENTIAL 0
 #endif
 #ifndef MADV_WILLNEED
-  #define MADV_WILLNEED 0
+#define MADV_WILLNEED 0
 #endif
 #ifndef POSIX_FADV_SEQUENTIAL
-  #define POSIX_FADV_SEQUENTIAL 0
+#define POSIX_FADV_SEQUENTIAL 0
 #endif
 
 static int alloc_stream_buf(fastent_source * s) {
@@ -98,13 +108,13 @@ static int uring_submit_read(uring_state * u, int src_fd, i32 slot) {
   u64 off = u->next_submit_offset;
   sz  to_read = FASTENT_STREAM_BUF;
   if (off >= u->file_size) to_read = 0;
-  else if (off + to_read > u->file_size) to_read = (sz)(u->file_size - off);
+  else if (off + to_read > u->file_size) to_read = (sz) (u->file_size - off);
 
-  memset(sqe, 0, sizeof(*sqe));
+  memset(sqe, 0, sizeof (*sqe));
   sqe->opcode    = IORING_OP_READ;
   sqe->fd        = src_fd;
   sqe->off       = off;
-  sqe->addr      = (u64)(uintptr_t) u->slot_buf[slot];
+  sqe->addr      = (u64) (uintptr_t) u->slot_buf[slot];
   sqe->len       = (u32) to_read;
   sqe->user_data = (u64) slot;
 
@@ -145,9 +155,10 @@ static int uring_wait(uring_state * u, i32 target_slot) {
 }
 
 static void uring_destroy(uring_state * u) {
+  i32 i;
   if (!u) return;
   Fi((int) FASTENT_URING_SLOTS,
-     if (u->slot_buf_raw[i]) free(u->slot_buf_raw[i]))
+    if (u->slot_buf_raw[i]) free(u->slot_buf_raw[i]));
   if (u->sqes && u->sqes != MAP_FAILED) munmap(u->sqes, u->sqes_size);
   if (u->cq_ring && u->cq_ring != u->sq_ring && u->cq_ring != MAP_FAILED)
     munmap(u->cq_ring, u->cq_ring_size);
@@ -160,18 +171,19 @@ static void uring_destroy(uring_state * u) {
 /*  Ring + slot buffers, no reads pre-submitted: shared by the single-
     feed source path and the per-worker slab reader.  */
 static uring_state * uring_setup_bare(u64 file_size) {
-  uring_state * u = calloc(1, sizeof(*u));
+  uring_state * u = calloc(1, sizeof (*u));
+  i32 i;
   if (!u) return NULL;
   u->ring_fd = -1;
 
   struct io_uring_params p;
-  memset(&p, 0, sizeof(p));
+  memset(&p, 0, sizeof (p));
   long r = io_uring_setup_sys(FASTENT_URING_ENTRIES, &p);
   if (r < 0) { free(u); return NULL; }
   u->ring_fd = (int) r;
 
-  u->sq_ring_size = p.sq_off.array + p.sq_entries * sizeof(u32);
-  u->cq_ring_size = p.cq_off.cqes  + p.cq_entries * sizeof(struct io_uring_cqe);
+  u->sq_ring_size = p.sq_off.array + p.sq_entries * sizeof (u32);
+  u->cq_ring_size = p.cq_off.cqes  + p.cq_entries * sizeof (struct io_uring_cqe);
   if (p.features & IORING_FEAT_SINGLE_MMAP) {
     if (u->cq_ring_size > u->sq_ring_size) u->sq_ring_size = u->cq_ring_size;
     u->cq_ring_size = u->sq_ring_size;
@@ -181,16 +193,14 @@ static uring_state * uring_setup_bare(u64 file_size) {
                     MAP_SHARED | MAP_POPULATE, u->ring_fd, IORING_OFF_SQ_RING);
   if (u->sq_ring == MAP_FAILED) { uring_destroy(u); return NULL; }
 
-  if (p.features & IORING_FEAT_SINGLE_MMAP) {
-    u->cq_ring = u->sq_ring;
-  } else {
+  if (p.features & IORING_FEAT_SINGLE_MMAP) { u->cq_ring = u->sq_ring; } else {
     u->cq_ring = mmap(NULL, u->cq_ring_size, PROT_READ | PROT_WRITE,
                       MAP_SHARED | MAP_POPULATE, u->ring_fd,
                       IORING_OFF_CQ_RING);
     if (u->cq_ring == MAP_FAILED) { uring_destroy(u); return NULL; }
   }
 
-  u->sqes_size = p.sq_entries * sizeof(struct io_uring_sqe);
+  u->sqes_size = p.sq_entries * sizeof (struct io_uring_sqe);
   u->sqes = mmap(NULL, u->sqes_size, PROT_READ | PROT_WRITE,
                  MAP_SHARED | MAP_POPULATE, u->ring_fd, IORING_OFF_SQES);
   if (u->sqes == MAP_FAILED) { uring_destroy(u); return NULL; }
@@ -207,13 +217,13 @@ static uring_state * uring_setup_bare(u64 file_size) {
             ((char *) u->cq_ring + p.cq_off.cqes);
 
   Fi((int) FASTENT_URING_SLOTS,
-     void * raw = NULL;
-     void * user = NULL;
-     if (fastent_io_alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) {
-       uring_destroy(u);  return NULL;
-     }
-     u->slot_buf[i]     = (u8 *) user;
-     u->slot_buf_raw[i] = raw)
+    void * raw = NULL;
+    void * user = NULL;
+    if (fastent_io_alloc_aligned(&raw, &user, FASTENT_STREAM_BUF) < 0) {
+      uring_destroy(u);  return NULL;
+    }
+    u->slot_buf[i]     = (u8 *) user;
+    u->slot_buf_raw[i] = raw);
 
   u->next_consume       = 0;
   u->prev_returned      = -1;
@@ -226,15 +236,14 @@ static uring_state * uring_setup_bare(u64 file_size) {
     pre-submitted reads the FASTENT_SRC_URING path consumes in order.  */
 static uring_state * uring_setup(int src_fd, u64 file_size) {
   uring_state * u = uring_setup_bare(file_size);
+  i32 i;
   if (!u) return NULL;
 #ifdef HAVE_POSIX_FADVISE
   if (src_fd >= 0)
     posix_fadvise(src_fd, 0, (off_t) file_size, POSIX_FADV_SEQUENTIAL);
 #endif
   Fi((int) FASTENT_URING_SLOTS,
-     if (uring_submit_read(u, src_fd, (int) i) < 0) {
-       uring_destroy(u);  return NULL;
-     })
+    if (uring_submit_read(u, src_fd, (int) i) < 0) { uring_destroy(u);  return NULL; });
   return u;
 }
 
@@ -257,10 +266,10 @@ static int slab_submit(fastent_uring_slab * r, i32 slot) {
   struct io_uring_sqe * sqe = &u->sqes[idx];
   u64 off = u->next_submit_offset;
   sz  to_read = FASTENT_STREAM_BUF;
-  if (off + to_read > r->end_off) to_read = (sz)(r->end_off - off);
-  memset(sqe, 0, sizeof(*sqe));
+  if (off + to_read > r->end_off) to_read = (sz) (r->end_off - off);
+  memset(sqe, 0, sizeof (*sqe));
   sqe->opcode = IORING_OP_READ;  sqe->fd = r->fd;  sqe->off = off;
-  sqe->addr = (u64)(uintptr_t) u->slot_buf[slot];
+  sqe->addr = (u64) (uintptr_t) u->slot_buf[slot];
   sqe->len = (u32) to_read;     sqe->user_data = (u64) slot;
   u->sq_array[idx] = idx;  u->slot_done[slot] = 0;  u->slot_result[slot] = 0;
   *u->sq_ktail = tail + 1;
@@ -277,7 +286,7 @@ fastent_uring_slab * fastent_uring_slab_open(
     int fd, const char * path, u64 off, u64 len) {
   (void) path;
   if (len == 0) return NULL;
-  fastent_uring_slab * r = calloc(1, sizeof(*r));
+  fastent_uring_slab * r = calloc(1, sizeof (*r));
   if (!r) return NULL;
   r->u = uring_setup_bare(off + len);
   if (!r->u) { free(r); return NULL; }
@@ -333,7 +342,7 @@ void fastent_uring_slab_close(fastent_uring_slab * r) { (void) r; }
 
 int fastent_src_open(
     fastent_source * s, const char * path, fastent_io_mode mode) {
-  memset(s, 0, sizeof(*s));
+  memset(s, 0, sizeof (*s));
   s->kind = FASTENT_SRC_NONE;
   s->fd = -1;
   s->opened_fd = 0;
@@ -425,9 +434,9 @@ int fastent_src_open(
       s->size = file_size;
 #ifdef HAVE_MADVISE
       madvise(p, (sz) file_size, MADV_SEQUENTIAL | MADV_WILLNEED);
-  #ifdef MADV_HUGEPAGE
+#ifdef MADV_HUGEPAGE
       madvise(p, (sz) file_size, MADV_HUGEPAGE);
-  #endif
+#endif
 #endif
 #ifdef HAVE_POSIX_FADVISE
       posix_fadvise(fd, 0, (off_t) file_size, POSIX_FADV_SEQUENTIAL);

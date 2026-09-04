@@ -1,6 +1,16 @@
-/*  fastent: terminal histogram renderer.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "output.h"
@@ -41,7 +51,7 @@ static const char * const * hist_glyphs_(i32 * sub) {
 static i32 hist_bars_(
     const u64 * grouped, i32 cols, u64 max, int histogram_log,
     int use_color, i32 (*col_class)(i32, void *), void * cc_ctx) {
-  i32 sub;
+  i32 i, j, sub;
   const char * const * blocks = hist_glyphs_(&sub);
   const i32 height = 8;
   const i32 levels = height * sub;
@@ -52,35 +62,36 @@ static i32 hist_bars_(
   if (gw < 1) gw = 1;
 
   Fi(height,
-     const i32 row_bot = (height - 1 - i) * sub;
-     const i32 row_top = row_bot + sub;
-     i32 last_class = -1;
-     const f64 yf = (f64)(height - i) / (f64) height;
-     const u64 yval = histogram_log
-                      ? (u64)(exp(yf * log_denom) - 1.0 + 0.5)
-                      : (u64)(yf * (f64) max + 0.5);
-     printf("%*" PRIu64 " |", gw, (u64) yval);
-     Fj(cols,
-        f64 frac;
-        if (histogram_log) {
-          frac = grouped[j] == 0 ? 0.0
-               : log((f64) grouped[j] + 1.0) / log_denom;
-        } else {
-          frac = (f64) grouped[j] / (f64) max;
-        }
-        i32 hh = (i32)(frac * (f64) levels + 0.5);
-        if (hh > levels) hh = levels;
-        const char * glyph;
-        if (hh >= row_top)      glyph = blocks[sub];
-        else if (hh <= row_bot) glyph = blocks[0];
-        else                    glyph = blocks[hh - row_bot];
-        if (use_color && col_class) {
-          i32 cls = col_class(j, cc_ctx);
-          if (cls != last_class) { fastent_term_set_fg(cls);  last_class = cls; }
-        }
-        fastent_term_write(glyph))
-     if (use_color && col_class) fastent_term_set_fg(-1);
-     putchar('\n'))
+    const i32 row_bot = (height - 1 - i) * sub;
+    const i32 row_top = row_bot + sub;
+    i32 last_class = -1;
+    const f64 yf = (f64) (height - i) / (f64) height;
+    const u64 yval = histogram_log
+                     ? (u64) (exp(yf * log_denom) - 1.0 + 0.5)
+                     : (u64) (yf * (f64) max + 0.5);
+    printf("%*" PRIu64 " |", gw, (u64) yval);
+    Fj(cols,
+      f64 frac;
+      i32 hh, cls;
+      const char * glyph;
+      if (histogram_log) {
+        frac = grouped[j] == 0 ? 0.0
+             : log((f64) grouped[j] + 1.0) / log_denom;
+      } else {
+        frac = (f64) grouped[j] / (f64) max;
+      }
+      hh = (i32) (frac * (f64) levels + 0.5);
+      if (hh > levels) hh = levels;
+      if (hh >= row_top)      glyph = blocks[sub];
+      else if (hh <= row_bot) glyph = blocks[0];
+      else                    glyph = blocks[hh - row_bot];
+      if (use_color && col_class) {
+        cls = col_class(j, cc_ctx);
+        if (cls != last_class) { fastent_term_set_fg(cls);  last_class = cls; }
+      }
+      fastent_term_write(glyph));
+    if (use_color && col_class) fastent_term_set_fg(-1);
+    putchar('\n'));
   return gw;
 }
 
@@ -93,61 +104,56 @@ static i32 byte_col_class_(i32 j, void * ctx) {
 
 /*  Byte / bit order-0 distribution plot.  Behaviour unchanged.  */
 static void hist_byte_(const fastent_result * r, const fastent_options * o) {
+  i32 i, j, c, w, cols, tick_every, gw, peak_v = 0;
   const i32 bins = o->binary ? 2 : 256;
-
   i32 group = 1;
+  u64 grouped[256], max = 0, raw_peak = 0;
+  int use_color;
+  byte_cc_ cc;
   if (!o->binary) {
-    i32 w = fastent_term_width();
+    w = fastent_term_width();
     if (w < 1) w = 80;
     while (bins / group > w && group < bins) group <<= 1;
   }
-  const i32 cols = bins / group;
+  cols = bins / group;
 
-  u64 grouped[256];
   Fi(cols,
-     u64 sum = 0;
-     Fj(group, sum += r->hist[i * group + j]);
-     grouped[i] = sum)
+    u64 sum = 0;
+    Fj(group, sum += r->hist[i * group + j]);
+    grouped[i] = sum);
 
-  u64 max = 0;
-  Fi(cols, if (grouped[i] > max) max = grouped[i])
+  Fi(cols, if (grouped[i] > max) max = grouped[i]);
   if (max == 0) {
     printf("(histogram: no samples)\n\n");
     return;
   }
 
-  const int use_color = color_active_(o->color);
-  byte_cc_ cc = { group };
-  i32 gw = hist_bars_(grouped, cols, max, o->histogram_log, use_color,
-                      byte_col_class_, &cc);
+  use_color = color_active_(o->color);  cc.group = group;
+  gw = hist_bars_(grouped, cols, max, o->histogram_log, use_color,
+                  byte_col_class_, &cc);
 
   if (bins == 256) {
-    i32 tick_every = cols / 8;
+    tick_every = cols / 8;
     if (tick_every < 1) tick_every = 1;
-    Fi(gw + 1, putchar(' '))
+    Fi(gw + 1, putchar(' '));
     putchar('+');
-    Fi(cols, putchar((i % tick_every == 0) ? '|' : '-'))
+    Fi(cols, putchar((i % tick_every == 0) ? '|' : '-'));
     putchar('\n');
-    Fi(gw + 2, putchar(' '))
-    i32 c;
+    Fi(gw + 2, putchar(' '));
     for (c = 0; c < cols; c += tick_every) {
       char buf[8];
-      i32 n = snprintf(buf, sizeof(buf), "%d", c * group);
+      i32 n = snprintf(buf, sizeof (buf), "%d", c * group);
       if (n > tick_every) n = tick_every;
-      if (c + tick_every >= cols) {
-        printf("%.*s", n, buf);
-      } else {
+      if (c + tick_every >= cols) { printf("%.*s", n, buf); } else {
         printf("%-*.*s", tick_every, n, buf);
       }
     }
     putchar('\n');
   } else {
-    Fi(gw + 2, putchar(' '))
+    Fi(gw + 2, putchar(' '));
     printf("0 1\n");
   }
-  u64 raw_peak = 0;
-  i32 peak_v   = 0;
-  Fi(bins, if (r->hist[i] > raw_peak) { raw_peak = r->hist[i]; peak_v = i; })
+  Fi(bins, if (r->hist[i] > raw_peak) { raw_peak = r->hist[i]; peak_v = i; });
   printf("(peak %" PRIu64 " sample%s at byte %d",
          (u64) raw_peak,
          raw_peak == 1 ? "" : "s",
@@ -172,16 +178,19 @@ static i32 log2_bucket_(u64 x) {
 static i32 log2_collect_(
     const u64 * src, i32 lo, i32 hi, u64 * bkt, u64 * tot) {
   i32 nb = log2_bucket_((u64) hi) + 1;
+  i32 i;
+  u64 t = 0;
   if (nb < 1) nb = 1;
   if (nb > 24) nb = 24;
-  Fi(nb, bkt[i] = 0)
-  u64 t = 0;
-  Fi0(hi + 1, lo,
-      const u64 c = src[i];
-      if (!c) continue;
-      i32 b = log2_bucket_((u64) i);
-      if (b >= nb) b = nb - 1;
-      bkt[b] += c;  t += c)
+  Fi(nb, bkt[i] = 0);
+  for (i = lo; i < hi + 1; i++) {
+    i32 b;
+    const u64 c = src[i];
+    if (!c) continue;
+    b = log2_bucket_((u64) i);
+    if (b >= nb) b = nb - 1;
+    bkt[b] += c;  t += c;
+  }
   *tot = t;
   return nb;
 }
@@ -194,18 +203,19 @@ static void log2_row_(
   const i32 height = 8, levels = height * sub;
   const f64 ld = hlog ? log((f64) max + 1.0) : 0.0;
   const i32 row_bot = (height - 1 - rr) * sub, row_top = row_bot + sub;
-  const f64 yf = (f64)(height - rr) / (f64) height;
-  const u64 yv = hlog ? (u64)(exp(yf * ld) - 1.0 + 0.5)
-                      : (u64)(yf * (f64) max + 0.5);
+  const f64 yf = (f64) (height - rr) / (f64) height;
+  const u64 yv = hlog ? (u64) (exp(yf * ld) - 1.0 + 0.5)
+                      : (u64) (yf * (f64) max + 0.5);
+  i32 i;
   printf("%*" PRIu64 " |", gw, yv);
   Fi(nb,
-     f64 frac = hlog ? (bkt[i] == 0 ? 0.0
-                        : log((f64) bkt[i] + 1.0) / ld)
-                     : (f64) bkt[i] / (f64) max;
-     i32 hh = (i32)(frac * (f64) levels + 0.5);
-     if (hh > levels) hh = levels;
-     fputs(hh >= row_top ? blk[sub]
-         : hh <= row_bot ? blk[0] : blk[hh - row_bot], stdout))
+    f64 frac = hlog ? (bkt[i] == 0 ? 0.0
+                       : log((f64) bkt[i] + 1.0) / ld)
+                    : (f64) bkt[i] / (f64) max;
+    i32 hh = (i32) (frac * (f64) levels + 0.5);
+    if (hh > levels) hh = levels;
+    fputs(hh >= row_top ? blk[sub]
+        : hh <= row_bot ? blk[0] : blk[hh - row_bot], stdout));
 }
 
 /*  The two -eee log2 plots SIDE BY SIDE: offsets left, match lengths
@@ -215,65 +225,64 @@ static void hist_log2_pair_(
     const char * tA, const u64 * sA, i32 loA, i32 hiA,
     const char * tB, const u64 * sB, i32 loB, i32 hiB,
     const fastent_options * o) {
-  u64 bA[24], bB[24], totA, totB;
-  i32 nbA = log2_collect_(sA, loA, hiA, bA, &totA);
-  i32 nbB = log2_collect_(sB, loB, hiB, bB, &totB);
-  u64 mA = 1, mB = 1;
-  Fi(nbA, if (bA[i] > mA) mA = bA[i])
-  Fi(nbB, if (bB[i] > mB) mB = bB[i])
-  char g[24];
-  i32 gwA = snprintf(g, sizeof g, "%" PRIu64, mA);  if (gwA < 1) gwA = 1;
-  i32 gwB = snprintf(g, sizeof g, "%" PRIu64, mB);  if (gwB < 1) gwB = 1;
-  i32 sub;
-  const char * const * blk = hist_glyphs_(&sub);
-  const int hlog = o->histogram_log;
-  const i32 wA = gwA + 2 + nbA;            /*  width of one A piece  */
-  i32 tAlen = 0;  while (tA[tAlen]) tAlen++;
-  const i32 bw = wA > tAlen ? wA : tAlen;  /*  A column block width  */
-  const i32 padA = bw - wA;
+  u64 bA[24], bB[24], totA, totB, mA = 1, mB = 1;
+  i32 i, j, sub, gwA, gwB, tAlen = 0, mlA, mlB, rows;
+  i32 nbA, nbB, wA, bw, padA;
+  const char * const * blk;
   const char * SEP = "   ";
-  char fb[48];
+  int hlog = o->histogram_log;
+  char g[24], fb[48];
+  nbA = log2_collect_(sA, loA, hiA, bA, &totA);
+  nbB = log2_collect_(sB, loB, hiB, bB, &totB);
+  Fi(nbA, if (bA[i] > mA) mA = bA[i]);
+  Fi(nbB, if (bB[i] > mB) mB = bB[i]);
+  gwA = snprintf(g, sizeof g, "%" PRIu64, mA);  if (gwA < 1) gwA = 1;
+  gwB = snprintf(g, sizeof g, "%" PRIu64, mB);  if (gwB < 1) gwB = 1;
+  blk = hist_glyphs_(&sub);
+  wA = gwA + 2 + nbA;
+  while (tA[tAlen]) tAlen++;
+  bw = wA > tAlen ? wA : tAlen;  padA = bw - wA;
   snprintf(fb, sizeof fb, "(log2 buckets [2^k, 2^k+1)%s)",
            hlog ? ", log y" : "");
 
   printf("%s", tA);  Fi(bw - tAlen, putchar(' '));
   fputs(SEP, stdout);  printf("%s\n", tB);
   Fi(8,
-     log2_row_(bA, nbA, mA, hlog, blk, sub, gwA, i);
-     Fj(padA, putchar(' '));  fputs(SEP, stdout);
-     log2_row_(bB, nbB, mB, hlog, blk, sub, gwB, i);
-     putchar('\n'))
+    log2_row_(bA, nbA, mA, hlog, blk, sub, gwA, i);
+    Fj(padA, putchar(' '));  fputs(SEP, stdout);
+    log2_row_(bB, nbB, mB, hlog, blk, sub, gwB, i);
+    putchar('\n'));
 
-  Fi(gwA + 1, putchar(' '))  putchar('+');  Fi(nbA, putchar('|'))
+  Fi(gwA + 1, putchar(' '));  putchar('+');  Fi(nbA, putchar('|'));
   Fj(padA, putchar(' '));  fputs(SEP, stdout);
-  Fi(gwB + 1, putchar(' '))  putchar('+');  Fi(nbB, putchar('|'))
+  Fi(gwB + 1, putchar(' '));  putchar('+');  Fi(nbB, putchar('|'));
   putchar('\n');
 
   /*  Vertical x-labels under each tick: digit of 2^k, MSD on top,
       bottom-justified within each plot's own width.  The footer
       rides the last (units) row of the offsets block.  */
-  i32 mlA = (i32) snprintf(g, sizeof g, "%d", 1 << (nbA - 1));
-  i32 mlB = (i32) snprintf(g, sizeof g, "%d", 1 << (nbB - 1));
-  i32 rows = mlA > mlB ? mlA : mlB;
+  mlA = (i32) snprintf(g, sizeof g, "%d", 1 << (nbA - 1));
+  mlB = (i32) snprintf(g, sizeof g, "%d", 1 << (nbB - 1));
+  rows = mlA > mlB ? mlA : mlB;
   Fi(rows,
-     i32 r = i;
-     Fj(gwA + 2, putchar(' '))
-     Fj(nbA,
+    i32 r = i;
+    Fj(gwA + 2, putchar(' '));
+    Fj(nbA,
+      char lb[16];
+      i32 ln = snprintf(lb, sizeof lb, "%d", 1 << j);
+      i32 pos = r - (mlA - ln);
+      putchar(r < mlA && pos >= 0 && pos < ln ? lb[pos] : ' '));
+    if (r < mlB) {
+      Fj(padA, putchar(' '));  fputs(SEP, stdout);
+      Fj(gwB + 2, putchar(' '));
+      Fj(nbB,
         char lb[16];
         i32 ln = snprintf(lb, sizeof lb, "%d", 1 << j);
-        i32 pos = r - (mlA - ln);
-        putchar(r < mlA && pos >= 0 && pos < ln ? lb[pos] : ' '))
-     if (r < mlB) {
-       Fj(padA, putchar(' '));  fputs(SEP, stdout);
-       Fj(gwB + 2, putchar(' '))
-       Fj(nbB,
-          char lb[16];
-          i32 ln = snprintf(lb, sizeof lb, "%d", 1 << j);
-          i32 pos = r - (mlB - ln);
-          putchar(pos >= 0 && pos < ln ? lb[pos] : ' '))
-     }
-     if (r == rows - 1) printf(" %s", fb);
-     putchar('\n'))
+        i32 pos = r - (mlB - ln);
+        putchar(pos >= 0 && pos < ln ? lb[pos] : ' '));
+    }
+    if (r == rows - 1) printf(" %s", fb);
+    putchar('\n'));
   putchar('\n');
 }
 
@@ -281,36 +290,35 @@ static void hist_log2_pair_(
     machinery as the order-0 byte plot, fed by lit_byte.  */
 static void hist_lit256_(
     const char * title, const u64 * lit, const fastent_options * o) {
+  i32 i, j, c, group = 1, w, cols, gw, tick_every;
+  u64 grouped[256], max = 0;
+  int use_color;
+  byte_cc_ cc;
   printf("%s\n", title);
-  i32 group = 1;
-  i32 w = fastent_term_width();
+  w = fastent_term_width();
   if (w < 1) w = 80;
   while (256 / group > w && group < 256) group <<= 1;
-  const i32 cols = 256 / group;
-  u64 grouped[256];
+  cols = 256 / group;
   Fi(cols,
-     u64 sum = 0;
-     Fj(group, sum += lit[i * group + j]);
-     grouped[i] = sum)
-  u64 max = 0;
-  Fi(cols, if (grouped[i] > max) max = grouped[i])
+    u64 sum = 0;
+    Fj(group, sum += lit[i * group + j]);
+    grouped[i] = sum);
+  Fi(cols, if (grouped[i] > max) max = grouped[i]);
   if (max == 0) { printf("(no samples)\n\n");  return; }
 
-  const int use_color = color_active_(o->color);
-  byte_cc_ cc = { group };
-  i32 gw = hist_bars_(grouped, cols, max, o->histogram_log, use_color,
-                      byte_col_class_, &cc);
-  i32 tick_every = cols / 8;
+  use_color = color_active_(o->color);  cc.group = group;
+  gw = hist_bars_(grouped, cols, max, o->histogram_log, use_color,
+                  byte_col_class_, &cc);
+  tick_every = cols / 8;
   if (tick_every < 1) tick_every = 1;
-  Fi(gw + 1, putchar(' '))
+  Fi(gw + 1, putchar(' '));
   putchar('+');
-  Fi(cols, putchar((i % tick_every == 0) ? '|' : '-'))
+  Fi(cols, putchar((i % tick_every == 0) ? '|' : '-'));
   putchar('\n');
-  Fi(gw + 2, putchar(' '))
-  i32 c;
+  Fi(gw + 2, putchar(' '));
   for (c = 0; c < cols; c += tick_every) {
     char buf[8];
-    i32 n = snprintf(buf, sizeof(buf), "%d", c * group);
+    i32 n = snprintf(buf, sizeof (buf), "%d", c * group);
     if (n > tick_every) n = tick_every;
     if (c + tick_every >= cols) printf("%.*s", n, buf);
     else                        printf("%-*.*s", tick_every, n, buf);
@@ -326,25 +334,26 @@ static void hist_lit256_(
     per bin (<= 79 cols).  Same 8-row glyph grid as the byte plot; no
     downsample needed (64 fits any sane terminal).  */
 static void hist_lc_(const fastent_result * r, const fastent_options * o) {
+  u64 g[64], max = 0;
+  i32 i, c, gw, tick_every;
+  int use_color;
   printf("Linear complexity L per %d-bit window (mean L=%.6g, mu=%.6g)\n",
          512, r->bm_mean_lc, r->bm_mu);
-  u64 g[64];
-  Fi(64, g[i] = r->bm_lhist[i])
-  u64 max = 0;
-  Fi(64, if (g[i] > max) max = g[i])
+  Fi(64, g[i] = r->bm_lhist[i]);
+  Fi(64, if (g[i] > max) max = g[i]);
   if (max == 0) { printf("(no full windows)\n\n");  return; }
-  const int use_color = color_active_(o->color);
-  i32 gw = hist_bars_(g, 64, max, o->histogram_log, use_color, NULL, NULL);
-  i32 tick_every = 64 / 8;
-  Fi(gw + 1, putchar(' '))
+  use_color = color_active_(o->color);
+  gw = hist_bars_(g, 64, max, o->histogram_log, use_color, NULL, NULL);
+  tick_every = 64 / 8;
+  Fi(gw + 1, putchar(' '));
   putchar('+');
-  Fi(64, putchar((i % tick_every == 0) ? '|' : '-'))
+  Fi(64, putchar((i % tick_every == 0) ? '|' : '-'));
   putchar('\n');
-  Fi(gw + 2, putchar(' '))
-  for (i32 c = 0; c < 64; c += tick_every) {
+  Fi(gw + 2, putchar(' '));
+  for (c = 0; c < 64; c += tick_every) {
     char buf[8];
-    i32 v = (i32)((u64) c * (512u + 1u) / 64u);
-    i32 ln = snprintf(buf, sizeof(buf), "%d", v);
+    i32 v = (i32) ((u64) c * (512u + 1u) / 64u);
+    i32 ln = snprintf(buf, sizeof (buf), "%d", v);
     if (ln > tick_every) ln = tick_every;
     if (c + tick_every >= 64) printf("%.*s", ln, buf);
     else                      printf("%-*.*s", tick_every, ln, buf);
@@ -360,24 +369,25 @@ static void hist_lc_(const fastent_result * r, const fastent_options * o) {
     glyph grid as the byte plot.  */
 static void hist_maurer_(
     const fastent_result * r, const fastent_options * o) {
+  u64 g[64], max = 0;
+  i32 i, c, gw, tick_every;
+  int use_color;
   printf("Maurer log2(recurrence distance) (fn=%.6g, expected=%.6g)\n",
          r->maurer_fn, r->maurer_expected);
-  u64 g[64];
-  Fi(64, g[i] = r->maurer_lhist[i])
-  u64 max = 0;
-  Fi(64, if (g[i] > max) max = g[i])
+  Fi(64, g[i] = r->maurer_lhist[i]);
+  Fi(64, if (g[i] > max) max = g[i]);
   if (max == 0) { printf("(no test blocks)\n\n");  return; }
-  const int use_color = color_active_(o->color);
-  i32 gw = hist_bars_(g, 64, max, o->histogram_log, use_color, NULL, NULL);
-  i32 tick_every = 64 / 8;
-  Fi(gw + 1, putchar(' '))
+  use_color = color_active_(o->color);
+  gw = hist_bars_(g, 64, max, o->histogram_log, use_color, NULL, NULL);
+  tick_every = 64 / 8;
+  Fi(gw + 1, putchar(' '));
   putchar('+');
-  Fi(64, putchar((i % tick_every == 0) ? '|' : '-'))
+  Fi(64, putchar((i % tick_every == 0) ? '|' : '-'));
   putchar('\n');
-  Fi(gw + 2, putchar(' '))
-  for (i32 c = 0; c < 64; c += tick_every) {
+  Fi(gw + 2, putchar(' '));
+  for (c = 0; c < 64; c += tick_every) {
     char buf[8];
-    i32 ln = snprintf(buf, sizeof(buf), "%d", c);
+    i32 ln = snprintf(buf, sizeof (buf), "%d", c);
     if (ln > tick_every) ln = tick_every;
     if (c + tick_every >= 64) printf("%.*s", ln, buf);
     else                      printf("%-*.*s", tick_every, ln, buf);
@@ -393,18 +403,19 @@ static void hist_maurer_(
     terminal; the labels carry context the bar widths cannot.  */
 static void hist_mrank_(
     const fastent_result * r, const fastent_options * o) {
+  u64 g[3], max = 0;
+  i32 i, gw;
+  int use_color;
   printf("Matrix rank (32x32, %" PRIu64 " matrices)\n",
          (u64) r->mrank_matrices);
-  u64 g[3];
   g[0] = r->mrank_r32;  g[1] = r->mrank_r31;  g[2] = r->mrank_rlo;
-  u64 max = 0;
-  Fi(3, if (g[i] > max) max = g[i])
+  Fi(3, if (g[i] > max) max = g[i]);
   if (max == 0) { printf("(no matrices)\n\n");  return; }
-  const int use_color = color_active_(o->color);
-  i32 gw = hist_bars_(g, 3, max, o->histogram_log, use_color, NULL, NULL);
-  Fi(gw + 1, putchar(' '))
-  putchar('+');  Fi(3, putchar('|'))  putchar('\n');
-  Fi(gw + 2, putchar(' '))
+  use_color = color_active_(o->color);
+  gw = hist_bars_(g, 3, max, o->histogram_log, use_color, NULL, NULL);
+  Fi(gw + 1, putchar(' '));
+  putchar('+');  Fi(3, putchar('|'));  putchar('\n');
+  Fi(gw + 2, putchar(' '));
   fputs("r=32 r=31 r<=30", stdout);  putchar('\n');
   printf("(rank bin");
   if (o->histogram_log) printf(", log y");
@@ -416,25 +427,25 @@ static void hist_mrank_(
     plot; tick every 4 bins so the axis stays readable.  */
 static void hist_perment_(
     const fastent_result * r, const fastent_options * o) {
+  u64 g[24], max = 0;
+  i32 i, c, gw, tick_every = 4;
+  int use_color;
   printf("Permutation entropy patterns (m=4, %" PRIu64 " windows, "
          "H_norm=%.6g)\n",
          (u64) r->perment_windows, r->perment_h_norm);
-  u64 g[24];
-  Fi(24, g[i] = r->perment_hist[i])
-  u64 max = 0;
-  Fi(24, if (g[i] > max) max = g[i])
+  Fi(24, g[i] = r->perment_hist[i]);
+  Fi(24, if (g[i] > max) max = g[i]);
   if (max == 0) { printf("(no windows)\n\n");  return; }
-  const int use_color = color_active_(o->color);
-  i32 gw = hist_bars_(g, 24, max, o->histogram_log, use_color, NULL, NULL);
-  i32 tick_every = 4;
-  Fi(gw + 1, putchar(' '))
+  use_color = color_active_(o->color);
+  gw = hist_bars_(g, 24, max, o->histogram_log, use_color, NULL, NULL);
+  Fi(gw + 1, putchar(' '));
   putchar('+');
-  Fi(24, putchar((i % tick_every == 0) ? '|' : '-'))
+  Fi(24, putchar((i % tick_every == 0) ? '|' : '-'));
   putchar('\n');
-  Fi(gw + 2, putchar(' '))
-  for (i32 c = 0; c < 24; c += tick_every) {
+  Fi(gw + 2, putchar(' '));
+  for (c = 0; c < 24; c += tick_every) {
     char buf[8];
-    i32 ln = snprintf(buf, sizeof(buf), "%d", c);
+    i32 ln = snprintf(buf, sizeof (buf), "%d", c);
     if (ln > tick_every) ln = tick_every;
     if (c + tick_every >= 24) printf("%.*s", ln, buf);
     else                      printf("%-*.*s", tick_every, ln, buf);

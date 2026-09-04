@@ -1,62 +1,17 @@
 #!/usr/bin/env sh
-#  Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only.
+# Copyright (C) 2023-2026 Kamila Szewczyk.
 #
-#  Fetch pinned single-header dependencies, then regenerate the
-#  autotools build.  Each dependency is pinned to an upstream commit
-#  hash and verified by SHA-256.  A file that is already present and
-#  matches its hash is left untouched, so building from a release
-#  tarball (or offline) needs no network.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, version 3.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 set -e
-
-cd "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-
-#  Pick a downloader and a SHA-256 hasher once.
-if   command -v curl >/dev/null 2>&1; then DL=curl
-elif command -v wget >/dev/null 2>&1; then DL=wget
-else echo "bootstrap: need curl or wget to fetch dependencies" >&2; exit 1
-fi
-if   command -v sha256sum >/dev/null 2>&1; then HASH="sha256sum"
-elif command -v shasum    >/dev/null 2>&1; then HASH="shasum -a 256"
-else echo "bootstrap: need sha256sum or shasum" >&2; exit 1
-fi
-
-hash_file() { $HASH "$1" | cut -d' ' -f1; }
-
-#  fetch_dep <owner/repo> <commit> <path-in-repo> <dest> <sha256>
-fetch_dep() {
-  _repo=$1; _commit=$2; _src=$3; _dest=$4; _want=$5
-  if [ -f "$_dest" ] && [ "$(hash_file "$_dest")" = "$_want" ]; then
-    echo "bootstrap: $_dest present and verified"
-    return 0
-  fi
-  _url="https://raw.githubusercontent.com/$_repo/$_commit/$_src"
-  _tmp="$_dest.tmp.$$"
-  echo "bootstrap: fetching $_repo@$_commit -> $_dest"
-  mkdir -p "$(dirname -- "$_dest")"
-  case $DL in
-    curl) curl -fsSL "$_url" -o "$_tmp" ;;
-    wget) wget -qO   "$_tmp" "$_url"    ;;
-  esac
-  _got=$(hash_file "$_tmp")
-  if [ "$_got" != "$_want" ]; then
-    echo "bootstrap: SHA-256 mismatch for $_dest" >&2
-    echo "  expected $_want" >&2
-    echo "  got      $_got"  >&2
-    rm -f "$_tmp"
-    exit 1
-  fi
-  mv -f "$_tmp" "$_dest"
-  echo "bootstrap: $_dest verified OK"
-}
-
-#  --- pinned dependencies ---------------------------------------------
-#  yarg: single-header command-line argument parser, by the same
-#  author.  Used by src/cli.c.
-fetch_dep iczelia/yarg \
-  0fbf7c3c717fc27b26e554d1315b439cb30a85a0 \
-  yarg.h \
-  src/yarg.h \
-  71f97498969f619d19eb8845d06a700126e37ccf2bc6ac7f7b1d77ede370984b
-#  ---------------------------------------------------------------------
-
 autoreconf --install

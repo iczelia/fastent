@@ -1,27 +1,21 @@
 #!/bin/sh
-# fastent benchmark harness.
-# Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).
+#  Copyright (C) 2023-2026 Kamila Szewczyk
 #
-# Knobs (override via environment):
-#   FASTENT     path to the fastent binary  (default: $BUILDDIR/fastent)
-#   SIZE_MB     per-dataset file size in MiB (default: 1024)
-#   RUNS        timed runs per cell          (default: 5)
-#   WARMUP      untimed warmup runs / cell   (default: 1)
-#   JOBS        space-separated -j sweep     (default: 1 2 4 8 ... nproc, capped)
-#   DATASETS    space-separated kinds        (default: random zeros counter dna
-#                                                      ascii biased sparse-bits
-#                                                      lcg walk stripes)
-#   MODES      'byte' / 'bit' / 'byte-fold' / 'bit-fold' subset
-#                                            (default: byte bit byte-fold)
-#   LEVELS     analysis depth: 'plain' '-e' '-ee' subset
-#                                            (default: plain e ee)
-#   BENCH_FIPS if non-empty/non-0: also time --fips-140-2 once per
-#              dataset across the jobs sweep      (default: 1)
-#   CACHE_DIR   where generated files live   (default: /tmp/fastent-bench)
-#   BENCH_QUICK if non-empty: SIZE_MB=64 RUNS=3 WARMUP=0, small JOBS sweep
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, version 3.
 #
-# All datasets are written once and reused across runs; subsequent runs are
-# served from page cache, which is what we want for CPU-bound measurement.
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+#  Benchmark deterministic data sets.
+#
+#  SIZE_MB, RUNS, WARMUP, JOBS, DATASETS, MODES and LEVELS tune the run.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)

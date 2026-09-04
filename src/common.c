@@ -12,6 +12,13 @@
     You should have received a copy of the GNU General Public License
     along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
-#define FASTENT_VARIANT_NEON
-#define FASTENT_HAVE_SIMD
-#include "fips1402-impl.h"
+#include "common.h"
+
+#include <stdarg.h>
+
+void fastent_message(const char * fmt, ...) {
+  va_list ap;
+  fputs("fastent: ", stderr);
+  va_start(ap, fmt);  vfprintf(stderr, fmt, ap);  va_end(ap);
+  fputc('\n', stderr);
+}

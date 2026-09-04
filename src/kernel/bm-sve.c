@@ -1,11 +1,16 @@
-/*  fastent: AArch64 SVE batched Berlekamp-Massey (svcntd windows per
-    pass).  SVE has a runtime vector length, so the lane count is
-    svcntd(); each pass scores that many windows under a whilelt
-    predicate, bit-identical to the scalar reference per window.
-    SVE vectors are sizeless (no C arrays), so the eight polynomial
-    words are eight named registers expanded by an X-macro.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "bm.h"
@@ -19,12 +24,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/*  Each window occupies one u64 lane; the eight polynomial words are
-    eight scalable vectors.  The Massey two-register form carries
-    bs_ = x^(N-mm) B advanced by a uniform 1-bit poly *x per step, so
-    the discrepancy update is the bare c ^= bs_ with no per-lane
-    variable shift, keeping the lanes independent and the per-window L
-    bit-identical to the scalar reference.  */
+/*  Each window occupies one u64 lane; the eight polynomial words are eight
+    scalable vectors.  */
 
 #define WB 8u   /*  FASTENT_BM_W64 polynomial words  */
 
@@ -69,18 +70,21 @@ static inline svuint64_t bm_parmask_(svbool_t pg, svuint64_t a) {
 /*  Pack one 64-byte window into 8 u64, MSB-first (byte i high to low,
     bit 7 of byte 0 is poly coefficient 0).  */
 static inline void bm_pack_(const u8 * src, u64 s[WB]) {
-  Fi((int) WB, s[i] = 0)
-  for (u32 i = 0; i < FASTENT_BM_WB; i++)
+  i32 i;
+  Fi((int) WB, s[i] = 0);
+  for (i = 0; i < FASTENT_BM_WB; i++)
     s[i >> 3] |= (u64) src[i] << (56u - 8u * (i & 7u));
 }
 
 /*  Process `lanes` (<= svcntd) full M-bit windows; write L into Lout. */
 static void bm_batch_(const u8 * src, sz lanes, u32 * Lout) {
-  u64 (*sp)[WB] = (u64 (*)[WB]) malloc((sz) lanes * sizeof(*sp));
-  u64 * nbuf = (u64 *) malloc((sz) lanes * sizeof(u64));
-  i64 * L = (i64 *) malloc((sz) lanes * sizeof(i64));
+  u64 (*sp)[WB] = (u64 (*)[WB]) malloc((sz) lanes * sizeof (*sp));
+  u64 * nbuf = (u64 *) malloc((sz) lanes * sizeof (u64));
+  i64 * L = (i64 *) malloc((sz) lanes * sizeof (i64));
+  sz i;
+  u32 N;
   if (!sp || !nbuf || !L) { free(sp);  free(nbuf);  free(L);  return; }
-  for (sz i = 0; i < lanes; i++) {
+  for (i = 0; i < lanes; i++) {
     bm_pack_(src + i * FASTENT_BM_WB, sp[i]);
     L[i] = 0;
   }
@@ -96,28 +100,28 @@ static void bm_batch_(const u8 * src, sz lanes, u32 * Lout) {
   s0 = one63;
   BM_POLX(pg, s);                /*  bs_ at start of N=0 is x^1 * 1  */
 
-  for (u32 N = 0; N < FASTENT_BM_M; N++) {
+  for (N = 0; N < FASTENT_BM_M; N++) {
     BM_POLX(pg, r);
     u32 wi = N >> 6, sh = 63u - (N & 63u);
-    for (sz i = 0; i < lanes; i++)
+    for (i = 0; i < lanes; i++)
       nbuf[i] = ((sp[i][wi] >> sh) & 1ull) << 63;
     r0 = svorr_u64_x(pg, r0, svld1_u64(pg, nbuf));
 
     svuint64_t acc = Z;
-    #define ACC(w) acc = sveor_u64_x(pg, acc, \
+#define ACC(w) acc = sveor_u64_x(pg, acc, \
                           svand_u64_x(pg, c##w, r##w));
     W8(ACC)
-    #undef ACC
+#undef ACC
     svuint64_t dmask = bm_parmask_(pg, acc);
     svbool_t dm = svcmpne_n_u64(pg, dmask, 0);
 
-    #define SAVE(w) t##w = c##w;
+#define SAVE(w) t##w = c##w;
     W8(SAVE)
-    #undef SAVE
-    #define UPD(w) c##w = sveor_u64_x(pg, c##w, \
+#undef SAVE
+#define UPD(w) c##w = sveor_u64_x(pg, c##w, \
                           svand_u64_x(pg, s##w, dmask));
     W8(UPD)
-    #undef UPD
+#undef UPD
 
     /*  Length change where d set and 2L <= N.  2L<=N is N-2L>=0;
         with L,N small the i64 lane compare is exact.  */
@@ -127,9 +131,9 @@ static void bm_batch_(const u8 * src, sz lanes, u32 * Lout) {
         discrepancy predicate.  */
     svbool_t le = svcmple_n_s64(pg, twoL, (i64) N);
     svbool_t chg = svand_b_z(pg, dm, le);
-    #define SEL(w) s##w = svsel_u64(chg, t##w, s##w);
+#define SEL(w) s##w = svsel_u64(chg, t##w, s##w);
     W8(SEL)
-    #undef SEL
+#undef SEL
     /*  L <- N + 1 - L where chg.  */
     svint64_t newL = svsubr_n_s64_x(pg, Lv, (i64) N + 1);
     Lv = svsel_s64(chg, newL, Lv);
@@ -137,7 +141,7 @@ static void bm_batch_(const u8 * src, sz lanes, u32 * Lout) {
 
     BM_POLX(pg, s);
   }
-  for (sz i = 0; i < lanes; i++) Lout[i] = (u32) L[i];
+  for (i = 0; i < lanes; i++) Lout[i] = (u32) L[i];
   free(sp);  free(nbuf);  free(L);
 }
 
@@ -147,7 +151,8 @@ static void bm_batch_(const u8 * src, sz lanes, u32 * Lout) {
 sz fastent_bm_windows_sve(const u8 * src, sz nfull, u32 * Lout) {
   const sz vl = (sz) svcntd();
   sz g = nfull - (nfull % vl);
-  for (sz i = 0; i < g; i += vl)
+  sz i;
+  for (i = 0; i < g; i += vl)
     bm_batch_(src + i * FASTENT_BM_WB, vl, Lout + i);
   return g;
 }

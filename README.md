@@ -1,212 +1,131 @@
 # fastent
 
-fastent: high-throughput entropy and randomness tester for byte and bit
-streams, with deterministic multi-threaded output and runtime SIMD
-dispatch.
-Licensed under the terms of GNU GPL version 3 only - see [`COPYING`](COPYING).
-Report issues to Kamila Szewczyk &lt;k@iczelia.net&gt;.
-Project homepage: https://github.com/iczelia/fastent
+fastent measures entropy and statistical randomness in byte or bit streams. It
+uses runtime-dispatched SIMD and produces the same result across supported hosts,
+I/O modes, and thread counts.
+
+fastent is licensed under GNU GPL version 3. See [COPYING](COPYING). Report
+issues to Kamila Szewczyk <k@iczelia.net>. The project is hosted at
+<https://github.com/iczelia/fastent>.
 
 [![CI](https://github.com/iczelia/fastent/actions/workflows/ci.yml/badge.svg?branch=trunk)](https://github.com/iczelia/fastent/actions/workflows/ci.yml)
 
-![GPLv3](contrib/gplv3.png)
-
-## What it reports
-
-Default output: Shannon entropy, chi-square statistic with tail
-probability, arithmetic mean, Monte Carlo value of pi, and serial
-correlation coefficient.  `-e` is repeatable; tiers are bucketed by
-measured per-test single-thread throughput.
-
-`-e` adds the basic extended stats (min-entropy, collision entropy and
-index of coincidence, a poker test, variance and standard deviation,
-redundancy, the distinct-symbol count, the most/least common symbol,
-per-bit-position bias), the LZ77F match-finder estimator, and the
-Bandt-Pompe permutation entropy: the two grid-based tests in the
-"fast" band, both running at 1-2 GiB/s single-thread on a Zen 4.
-
-`-ee` adds the order-1 bigram conditional entropy `H(cur|prev)` and
-adjacent mutual information `I(prev;cur)`, a longest identical-symbol
-run, a runs test, and a bit-mode cusum max excursion.  Exposes order-1
-structure (text, code, many binary formats) that the order-0 measures
-and the linear serial correlation miss.
-
-`-eee` adds the slow grid-based tests: a windowed linear-complexity
-estimator (per 512-bit window GF(2) Berlekamp-Massey, `bm_deviation`
-catches LFSR-class recurrences), a Maurer universal statistical test
-(fixed `L = 8`, `maurer_deviation` catches repetitive / compressible
-sources the other screens miss), and a NIST binary matrix-rank test
-(32x32 GF(2) matrices, `mrank_dev` catches truncated-bit linear
-structure).  Single-thread throughput in this band runs 50-350 MiB/s,
-gated by Berlekamp-Massey.
-
-Byte mode by default; bit mode under `-b`.  Output formats:
-human-readable, CSV (`-t`), JSON (`-J`), and an interpretive pass/fail
-report (`-a`/`--annotate`); add a per-value occurrence table with `-c`
-or a terminal block-plot of the histogram with `-H`.
-
-## Highlights
-
-- 4-way banked SIMD histogram inner loop; serial-correlation
-  cross-product via `VPMADDUBSW`/`PSADBW` (SVE2: `svdot_u32` at the
-  native vector length); bit-mode popcount via `VPOPCNTB`, with
-  PSHUFB / `vcntq_u8` / `wasm_i8x16_popcnt` fallbacks
-- runtime CPU dispatch: scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512
-  (F + BW + BITALG) / NEON / SVE2 / ARMv7-A NEON / WebAssembly SIMD128
-- `-i`/`--io={auto,mmap,stream,uring}` input strategy: `mmap` with
-  sequential advice, `uring` async pipeline (io_uring / IOCP),
-  `stream` portable `read(2)` loop
-- extended statistics (`-e`): min-entropy, collision entropy / IC,
-  poker test, variance, redundancy, distinct/mode/rarest, per-bit
-  bias; derived at finalisation, no per-byte cost, bit-identical
-  across hosts and thread counts.  `--annotate` turns them into a
-  per-metric PASS / WEAK / FAIL report with a headline verdict
-- `--fips-140-2`: the FIPS 140-2 4.9.1 RNG power-up tests (monobit,
-  poker, runs, long run) per 20000-bit block; pass/fail report,
-  exit 1 on failure, parallel and bit-identical across thread counts
-- order-1 bigram (`-ee`): conditional entropy `H(cur|prev)`, adjacent
-  mutual information `I(prev;cur)`, runs / longest-run / cusum; split
-  across the `-j` workers and merged with a boundary stitch,
-  deterministic and bit-identical across thread counts (~1 MiB/thread
-  byte table, 2x2 in bit mode)
-- LZ77F estimator (`-e`): a count-only (acceleration 1,
-  HLOG 13) match finder; compressibility excess, literal byte
-  entropy / KL, match coverage, offset and match-length
-  concentration, an advisory literal chi-square, and a headline
-  `lz_deviation` z badged PASS / WEAK / FAIL.  Keyed to a fixed
-  4 MiB absolute-offset block grid.  Sortable via
-  `--sort-by=lz-deviation` / `lz-cr` / `lz-match-cov`; `-e -H`
-  adds log2-bucket offset / length plots and a literal byte plot
-- linear-complexity estimator (`-eee`, slowest grid test ~55 MiB/s
-  single-thread): per 512-bit window GF(2) Berlekamp-Massey yields
-  the shortest-LFSR length L; mean L vs the random-sequence
-  expectation `bm_mu` gives
-  a headline `bm_deviation` z badged PASS / WEAK / FAIL, plus an
-  advisory NIST class chi-square. `-eee -H` adds an L
-  histogram.  Catches LFSR-class and low-bit linear recurrences,
-  not a truncated-high-byte LCG.
-- Maurer universal test (`-eee`): a count-only Maurer scorer on the MSB-first bit
-  stream with fixed `L = 8`; the mean log2 recurrence distance
-  `maurer_fn` versus the NIST SP800-22 `maurer_expected` gives a
-  headline `maurer_deviation` z badged PASS / WEAK / FAIL.  Fresh
-  recency table per 4 MiB grid block, partials combined in absolute
-  block order (bit-identical for any `-j` / I/O / host; drift versus
-  whole-stream Maurer at most about 0.001%).  Sortable via
-  `--sort-by=maurer-deviation`; `-eee -H` adds a log2-distance
-  plot.
-- binary matrix-rank estimator (`-eee`, NIST SP800-22 sec 2.5):
-  partitions the bit stream into 32x32 GF(2) matrices, scores each
-  matrix rank by Gauss-Jordan, bins into r=32 / r=31 / r<=30 and
-  chi-squares against the NIST closed-form probabilities (df = 2);
-  the headline `mrank_dev` is `sqrt(chi2)` badged PASS / WEAK / FAIL.
-  128 divides the 4 MiB grid so matrices never straddle (exact
-  integer sum-merge, bit-identical for any `-j` / I/O / host).
-  Sortable via `--sort-by=mrank-dev`.
-- Bandt-Pompe permutation entropy (`-e`, m = 4): folds each length-4
-  byte window to one of 24 ordinal Lehmer-code patterns and computes
-  the normalised entropy `perment_h_norm` in `[0, 1]`; the headline
-  `perment_deviation` z scales `(1 - H_norm)` by the IID-variance,
-  badged PASS / WEAK / FAIL.  Sum-merged on the 4 MiB grid with
-  bounded boundary drift (mirrors LZ77F).  Sortable via
-  `--sort-by=perment-dev`; with `-H` a 24-bin pattern plot follows.
-- recursive mode (`-r DIR`): one CSV / JSON row per file, sortable via
-  `--sort-by` (path, entropy, chisq, the extended columns, ...)
-- terminal histogram (`-H`) with Unicode block glyphs, a Y-axis
-  max-value scale and an aligned X-axis tick row, optional log Y
-  axis (`--log`), platform-native colouring
-- optional worker pool (pthread / Win32): mmap slabs or an SPMC
-  stream/io_uring pipeline, both 6-aligned; output byte-identical
-  to `-j 1`
-- faithfully-rounded, libm-free entropy (double-double Horner over a
-  128-entry log table); bit-identical across libc / FPU
-- portable C99 sources: builds under gcc, clang, mingw-w64, DJGPP,
-  and TinyCC; only the SIMD bodies need a vendor-extended compiler
-
-## Requirements
-
-- Any C99 compiler with a working libc (gcc, clang, tcc all known to work)
-- autotools (`autoconf`, `automake`), `make`
-- `pthreads` (optional; build without via `--disable-threads`)
-
-## Build from a release tarball
+## Quick start
 
 ```sh
-./configure --enable-native --enable-lto
-make -j"$(nproc)"
-make check
+fastent sample.bin
+fastent -a -ee sample.bin
+fastent -b -H random.bin
+fastent -r --sort-by=entropy data/
 ```
 
-## Build from git
+With no path, fastent reads standard input. Byte mode is the default; `-b`
+selects bits. `-a` explains the result, `-H` draws a histogram, and `-r` emits
+one CSV row per file below a directory.
+
+## Tests
+
+The default report contains Shannon entropy, chi-square and its upper-tail
+probability, arithmetic mean, a Monte Carlo estimate of pi, and serial
+correlation. Repeat `-e` to add slower tests.
+
+| Level | Added tests |
+| --- | --- |
+| `-e` | Min-entropy, collision entropy, index of coincidence, poker, variance, redundancy, symbol and bit bias, LZ77F, and Bandt-Pompe permutation entropy |
+| `-ee` | Order-1 conditional entropy and mutual information, runs, longest run, and bit cusum |
+| `-eee` | 512-bit Berlekamp-Massey complexity, Maurer universal, and NIST 32x32 binary matrix rank |
+
+`--fips-140-2` replaces the normal report with the FIPS 140-2 monobit, poker,
+runs, and long-run power-up tests over each complete 20,000-bit block. It exits
+with status 1 when a block fails.
+
+These tests screen data; they do not certify a random generator. Small samples
+also weaken or disable some verdicts.
+
+## Output
+
+Plain text is the default. `-t` writes CSV, `-J` writes JSON, and `-a` writes a
+PASS, WEAK, or FAIL report. `-c` includes occurrence counts. `-p` prints binary64
+values with enough digits to round-trip.
+
+`-H` draws the selected distribution. Extended mode adds plots for LZ77F,
+permutation entropy, linear complexity, Maurer distance, and matrix rank when
+their tests are active. `--log` selects a logarithmic Y axis and
+`--color=auto|always|never` controls color.
+
+Recursive mode accepts `--sort-by=COL[:asc|desc]`. Common columns are `path`,
+`samples`, `entropy`, `chisq`, `mean`, `pi`, and `scc`; `fastent --help` lists
+the extended columns. Selecting one also enables the required `-e` level.
+
+## Installation
+
+Use a package or download a binary from GitHub Releases. To build a release
+tarball, run
 
 ```sh
-./bootstrap
-./configure --enable-native --enable-lto
-make -j"$(nproc)"
+./configure
+make
 make check
-```
-
-## Install
-
-```sh
 sudo make install
 ```
 
-## Configure options
+Run `./bootstrap` first in a Git checkout. It requires autoconf and automake.
+Releases regenerate `ChangeLog` from git history with the vendored
+`contrib/gitlog-to-changelog`. The program requires C99 and libm. Threads are
+optional.
 
-- `--enable-native` - `-march=native -mtune=native`
-- `--enable-lto` - link-time optimisation
-- `--disable-threads` - single-threaded build, no pthread dependency
-- `--disable-wasm128` - skip the WebAssembly SIMD128 analyse body
-  (target older wasm runtimes without the SIMD128 proposal; scalar
-  variant dispatches in its place)
-- `--with-windows-target=vista|win95` - Windows target version
-  - `vista` (default): wide-API path, modern PE subsystem
-  - `win95`: narrow-API path, PE subsystem 4.0, kernel32 + msvcrt imports only
+| Configure option | Effect |
+| --- | --- |
+| `--enable-native` | Tune for the build host |
+| `--enable-lto` | Enable link-time optimization |
+| `--disable-threads` | Build without a worker pool |
+| `--disable-wasm128` | Omit the WebAssembly SIMD128 kernels |
+| `--with-windows-target=win95` | Use the narrow Windows 95 API and PE baseline |
 
-## Supported platforms
+## Input and concurrency
 
-Verified to compile and pass `make check`:
+`--io=auto` maps regular files and streams everything else. `mmap` requires a
+mapping, `stream` always uses ordinary reads, and `uring` selects the asynchronous
+backend: io_uring on Linux or IOCP on Windows. Explicitly requesting an
+unavailable backend is an error.
 
-Primary platforms:
-- Linux: x86_64, i386, aarch64 (NEON + SVE2), armhf (NEON) (gcc, clang, tcc)
-- Windows: x86_64, i686, aarch64 (mingw-w64, zig cc) - threads + IOCP on Vista+
-- macOS: x86_64, aarch64 (NEON + SVE2) (clang)
-- OpenBSD / FreeBSD: pledge(2) on OpenBSD; SVE2 hwcap query on FreeBSD/macOS
+`-j N` uses `N` workers; `-j auto` uses the online CPU count. Mapped files are
+split into aligned slabs. Stream and asynchronous input use a bounded shared
+pipeline. Integer reductions and fixed-order boundary merges keep output stable.
 
-Exotic Linux (musl, fully static; smoke-tested under qemu-user):
-- riscv64, ppc64le, ppc64, powerpc, s390x, loongarch64,
-  mips, mipsel, mips64, mips64el
+The implementation dispatches scalar, SSSE3, SSE4.1, AVX2, AVX-512, NEON,
+SVE2, or WebAssembly SIMD128 kernels when built and available. The scalar path
+remains the reference.
 
-Exotic Linux (glibc, fully static; build-validated):
-- alpha, sparc64, sparc, m68k, hppa, arc, sh4
+## Portability
 
-WebAssembly (emscripten, single-file node launcher; `-msimd128`):
-- wasm32: `node fastent.js ...`
-- wasm64: `node --experimental-wasm-memory64 fastent.js ...` (-sMEMORY64)
+Regular builds support Linux, Windows, macOS, OpenBSD, and FreeBSD on their
+common x86 and ARM targets. Release builds also cover several musl and glibc
+architectures, WebAssembly, Windows 95, and DJGPP/MS-DOS. Cross-build recipes
+are in [the release workflow](.github/workflows/release.yml).
 
-Self-contained `.js` per target (the wasm is base64-embedded via
-`-sSINGLE_FILE`); `-sNODERAWFS` routes the libc through node's `fs`.
+A Windows build with MinGW resembles
 
-Legacy targets:
-- Windows 95 (i686, mingw-w64 + `--with-windows-target=win95`)
-- MS-DOS (i386, DJGPP with CWSDPMI baked into the executable)
+```sh
+./configure --host=x86_64-w64-mingw32 \
+            CC=x86_64-w64-mingw32-gcc LDFLAGS=-static
+make
+```
 
-Pre-built binaries for every target are published with each tagged
-release.  Cross-compile recipes for every platform live in
-[`.github/workflows/release.yml`](.github/workflows/release.yml).
+For WebAssembly, use the matching Emscripten host and `-msimd128`. The release
+workflow builds a single-file Node launcher. DOS builds include CWSDPMI in the
+executable.
 
-## Throughput
+## Performance
 
-`make bench` sweeps 10 deterministic datasets (random, zeros, counter,
-dna, ascii, biased, sparse-bits, lcg, walk, stripes) at 512 MiB each
-through three modes and a power-of-two `-j` ladder, with `ent(1)`
-timed alongside as a single-threaded baseline.
+The byte path uses banked histograms; SIMD kernels also handle correlation and
+bit population counts. Extended grid tests use fixed 4 MiB blocks. A stream is
+therefore reproducible without retaining the whole input.
 
-![throughput scaling](doc/bench.png)
+`make bench` generates ten deterministic 512 MiB inputs and compares all modes
+and thread counts with `ent(1)`. `make bench-quick` runs a smaller sanity check.
 
-Numbers in MiB/s.  A single fastent worker is 22 to 90x faster than
-`ent(1)`; saturated multi-threaded `fastent` reaches 140 to 327x
-before DDR4 bandwidth caps it.
+![Throughput scaling](doc/bench.png)
 
 ## TODO
 
@@ -220,4 +139,4 @@ before DDR4 bandwidth caps it.
 
 ## See also
 
-`rngtest(1)`, `dieharder(1)`, `od(1)`, `ent(1)`
+`ent(1)`, `rngtest(1)`, `dieharder(1)`, `od(1)`

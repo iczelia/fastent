@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
-# Bundle all staged binaries into one archive set per OS family.
+#  Copyright (C) 2023-2026 Kamila Szewczyk
 #
-#   build/ci/bundle-release.sh
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, version 3.
 #
-# Inputs:
-#   staged/        every fastent-<id>[.exe|.js] from the build jobs
-#   fastent-src/   unpacked source dist (for ver + README/COPYING/...)
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
 #
-# Produces, under dist/, for each family that has binaries:
-#   fastent-<ver>-<family>.tar  .tar.gz  .tar.bz2  .tar.bz3
-#                               .tar.xz  .tar.zst  .zip
-#
-# Family is the <id> prefix: linux-* windows-* macos-* wasi-* dos-*.
-# Every per-arch binary keeps its unique name inside the archive, so
-# fastent-1.2-windows.zip holds fastent-windows-x86_64.exe,
-# fastent-windows-aarch64.exe, ... alongside the docs.
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+#  Bundle staged binaries by operating-system family.
 set -euo pipefail
 
 # Ubuntu CI runners: pull any missing compressor.

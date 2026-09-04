@@ -1,6 +1,16 @@
-/*  fastent: scalar math shims.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "fastent-math.h"
 
@@ -65,14 +75,11 @@ static inline dd_t log2_1pr_poly(f64 r) {
   return dd_mul_d_(poly, r);
 }
 
-/*  log2(x) in DD by generic exponent / mantissa decomposition.
-    Correct for any finite x > 0 (incl. denormals).  Weak spot: the
-    e + log2(m) cancellation for x just below 1 (e=-1, m near 2);
-    such callers use log2_near1_dd_.  */
+/*  log2(x) in DD by generic exponent / mantissa decomposition.  */
 static dd_t log2_generic_dd_(f64 x) {
   u64 pb;
   memcpy(&pb, &x, 8);
-  i32 e_biased = (i32)((pb >> 52) & 0x7ff);
+  i32 e_biased = (i32) ((pb >> 52) & 0x7ff);
   u64 mant     = pb & 0x000fffffffffffffULL;
   i32 e;
   if (e_biased == 0) {
@@ -90,7 +97,7 @@ static dd_t log2_generic_dd_(f64 x) {
   f64 m;
   memcpy(&m, &m_bits, 8);
 
-  i32 i = (i32)((mant >> 45) & 0x7f);
+  i32 i = (i32) ((mant >> 45) & 0x7f);
   f64 r = fma(m, fastent_inv_c[i], -1.0);
 
   dd_t log2_1ps = log2_1pr_poly(r);
@@ -102,7 +109,7 @@ static dd_t log2_generic_dd_(f64 x) {
     the result avoids the e + log2(m) cancellation near 1.  */
 static dd_t log2_near1_dd_(f64 x) {
   f64 q  = 1.0 - x;
-  i32 i  = (i32)(q * 256.0);
+  i32 i  = (i32) (q * 256.0);
   f64 ci = (f64) i / 256.0;
   f64 s  = q - ci;
   f64 u  = s * fastent_inv_one_minus_c[i];
@@ -161,12 +168,12 @@ f64 fastent_log2_fast(f64 x) {
   /*  Caller guarantees finite normal x > 0.  ~1e-9, plain double.  */
   u64 b;
   memcpy(&b, &x, 8);
-  i32 e    = (i32)((b >> 52) & 0x7ff) - 1023;
+  i32 e    = (i32) ((b >> 52) & 0x7ff) - 1023;
   u64 mant = b & 0x000fffffffffffffULL;
   u64 mb   = ((u64) 1023u << 52) | mant;
   f64 m;
   memcpy(&m, &mb, 8);
-  i32 i  = (i32)((mant >> 45) & 0x7f);
+  i32 i  = (i32) ((mant >> 45) & 0x7f);
   f64 r  = fma(m, fastent_inv_c[i], -1.0);
   /*  log2(1+r) ~ (r - r^2/2 + r^3/3) / ln2, |r| < 2^-7.  */
   f64 poly = r * (1.0 + r * (-0.5 + r * (1.0 / 3.0)));

@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
-#  fastent: self-contained sanity test suite.
+#  Copyright (C) 2023-2026 Kamila Szewczyk
 #
-#  Generates a small set of deterministic fixtures and asserts that
-#  fastent reports the expected statistics on each.  Locale is pinned
-#  to C so float formatting is stable.
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, version 3.
 #
-#  Usage: run-tests.sh path/to/fastent.bin path/to/fixturedir
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
 #
-#  The fixture dir lives in builddir, NOT srcdir, so the source tree
-#  stays read-only-clean across out-of-tree builds and dist tarballs.
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+#  Build fixtures and run the regression suite.
 #
-#  Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only.
+#    tests/run-tests.sh FASTENT FIXTURE_DIR
 
 set -eu
 export LC_ALL=C
@@ -165,19 +170,19 @@ assert_grep() {  #  assert_grep <pattern> <text>
   printf '%s\n' "${txt}" | grep -qE -- "${pat}"
 }
 
-check "all-zeros: entropy = 0" bash -c '
+check "all-zeros: entropy is zero" bash -c '
   out=$('"${FASTENT}"' "'"${FIX}"'/all-zeros.bin")
-  grep -qE "Entropy = 0\.000000 bits per byte\." <<< "$out"
+  grep -qE "entropy +0 bits/byte" <<< "$out"
 '
 
-check "all-ones: entropy = 0" bash -c '
+check "all-ones: entropy is zero" bash -c '
   out=$('"${FASTENT}"' "'"${FIX}"'/all-ones.bin")
-  grep -qE "Entropy = 0\.000000 bits per byte\." <<< "$out"
+  grep -qE "entropy +0 bits/byte" <<< "$out"
 '
 
-check "uniform: entropy = 8.000000" bash -c '
+check "uniform: entropy is eight" bash -c '
   out=$('"${FASTENT}"' "'"${FIX}"'/uniform.bin")
-  grep -qE "Entropy = 8\.000000 bits per byte\." <<< "$out"
+  grep -qE "entropy +8 bits/byte" <<< "$out"
 '
 
 check "terse mode: well-formed" bash -c '
@@ -230,13 +235,13 @@ check "JSON mode: parseable" bash -c '
 
 check "counts mode: histogram present" bash -c '
   out=$('"${FASTENT}"' -c "'"${FIX}"'/uniform.bin")
-  grep -q "^Value Char Occurrences Fraction$" <<< "$out" &&
-    grep -qE "^Total:.*1048576" <<< "$out"
+  grep -q "^value char occurrences fraction$" <<< "$out" &&
+    grep -qE "^total +1048576" <<< "$out"
 '
 
 check "bit mode: entropy ~1.0 on uniform" bash -c '
   out=$('"${FASTENT}"' -b "'"${FIX}"'/uniform.bin")
-  grep -qE "Entropy = 1\.000000 bits per bit\." <<< "$out"
+  grep -qE "entropy +1 bits/bit" <<< "$out"
 '
 
 check "stdin matches file path" bash -c '
@@ -278,13 +283,13 @@ fi
 
 check "no -e: extended stats hidden" bash -c '
   out=$('"${FASTENT}"' "'"${FIX}"'/lcg.bin")
-  ! grep -q "Min-entropy" <<< "$out"
+  ! grep -q "min entropy" <<< "$out"
 '
 
-check "uniform -e: min-entropy = 8.000000" bash -c '
+check "uniform -e: extended entropy is eight" bash -c '
   out=$('"${FASTENT}"' -e "'"${FIX}"'/uniform.bin")
-  grep -qE "Min-entropy is 8\.000000 bits per byte\." <<< "$out" &&
-    grep -qE "Collision entropy is 8\.000000 bits per byte\." <<< "$out"
+  grep -qE "min entropy +8 bits/byte" <<< "$out" &&
+    grep -qE "collision entropy +8 bits/byte" <<< "$out"
 '
 
 check "terse -e: 50 columns (basic + extended + LZ77F + perment)" bash -c '
@@ -640,12 +645,12 @@ check "JSON -e bit mode: poker null" bash -c '
 
 check "annotate: verdict line present" bash -c '
   out=$('"${FASTENT}"' --annotate --color=never "'"${FIX}"'/lcg.bin")
-  grep -qE "^  VERDICT: " <<< "$out"
+  grep -qE "^  verdict: " <<< "$out"
 '
 
 check "annotate all-zeros: not random" bash -c '
   out=$('"${FASTENT}"' --annotate --color=never "'"${FIX}"'/all-zeros.bin")
-  grep -qE "VERDICT: DOES NOT PASS AS RANDOM" <<< "$out"
+  grep -qE "verdict: does not appear random" <<< "$out"
 '
 
 check "annotate rejected with -r" bash -c '

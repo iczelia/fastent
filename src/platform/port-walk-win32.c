@@ -1,8 +1,16 @@
-/*  fastent: Win32 recursive directory walker (FindFirstFileW).
-    Operates on UTF-8 paths by transcoding to UTF-16 for the
-    underlying API and back for the callback.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "port-walk.h"
@@ -21,11 +29,9 @@
 static wchar_t * utf8_to_wide_(const char * s) {
   i32 n = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
   if (n <= 0) return NULL;
-  wchar_t * w = (wchar_t *) malloc((sz) n * sizeof(wchar_t));
+  wchar_t * w = (wchar_t *) malloc((sz) n * sizeof (wchar_t));
   if (!w) return NULL;
-  if (MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n) <= 0) {
-    free(w); return NULL;
-  }
+  if (MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n) <= 0) { free(w); return NULL; }
   return w;
 }
 
@@ -34,9 +40,7 @@ static char * wide_to_utf8_(const wchar_t * w) {
   if (n <= 0) return NULL;
   char * s = (char *) malloc((sz) n);
   if (!s) return NULL;
-  if (WideCharToMultiByte(CP_UTF8, 0, w, -1, s, n, NULL, NULL) <= 0) {
-    free(s); return NULL;
-  }
+  if (WideCharToMultiByte(CP_UTF8, 0, w, -1, s, n, NULL, NULL) <= 0) { free(s); return NULL; }
   return s;
 }
 
@@ -45,11 +49,11 @@ static wchar_t * join_path_w_(const wchar_t * a, const wchar_t * b) {
   sz lb = wcslen(b);
   int sep  = (la > 0 && a[la - 1] != L'\\' && a[la - 1] != L'/');
   wchar_t * out = (wchar_t *) malloc((la + (sep ? 1 : 0) + lb + 1)
-                                      * sizeof(wchar_t));
+                                      * sizeof (wchar_t));
   if (!out) return NULL;
-  memcpy(out, a, la * sizeof(wchar_t));
+  memcpy(out, a, la * sizeof (wchar_t));
   if (sep) out[la++] = L'\\';
-  memcpy(out + la, b, (lb + 1) * sizeof(wchar_t));
+  memcpy(out + la, b, (lb + 1) * sizeof (wchar_t));
   return out;
 }
 
@@ -57,9 +61,9 @@ static wchar_t * make_pattern_(const wchar_t * dir) {
   sz ld = wcslen(dir);
   int sep  = (ld > 0 && dir[ld - 1] != L'\\' && dir[ld - 1] != L'/');
   wchar_t * out = (wchar_t *) malloc((ld + (sep ? 1 : 0) + 2)
-                                      * sizeof(wchar_t));
+                                      * sizeof (wchar_t));
   if (!out) return NULL;
-  memcpy(out, dir, ld * sizeof(wchar_t));
+  memcpy(out, dir, ld * sizeof (wchar_t));
   if (sep) out[ld++] = L'\\';
   out[ld++] = L'*';
   out[ld]   = L'\0';
@@ -120,9 +124,7 @@ int fastent_walk(const char * root, fastent_walk_fn fn, void * ctx) {
     errno = ENOENT;
     return -1;
   }
-  if (attr & FILE_ATTRIBUTE_DIRECTORY) {
-    rc = walk_dir_w_(wroot, fn, ctx, 0);
-  } else {
+  if (attr & FILE_ATTRIBUTE_DIRECTORY) { rc = walk_dir_w_(wroot, fn, ctx, 0); } else {
     rc = fn(root, ctx);
   }
   free(wroot);

@@ -1,6 +1,16 @@
-/*  fastent: FIPS 140-2 RNG power-up self-tests.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #ifndef FASTENT_FIPS1402_H
 #define FASTENT_FIPS1402_H
@@ -23,26 +33,19 @@ typedef struct {
   u64 blocks_pass;   /*  blocks passing all four sub-tests    */
 } fastent_fips_report;
 
-/*  Run the four FIPS 140-2 RNG tests over buf[0..len).  threads <= 1
-    runs serially; otherwise the (independent) blocks are split
-    across the worker pool.  Bit-identical regardless of thread
-    count.  */
+/*  Run the four FIPS 140-2 RNG tests over buf[0..len).  */
 void fastent_fips140_run(
     const u8 * buf, sz len, int threads, fastent_fips_report * out);
 
-/*  Batched block runner: tests nblocks consecutive 2500-byte blocks
-    starting at buf and folds the verdicts into *r (integer, sum-
-    mergeable).  One such symbol exists per ISA variant; the byte-
-    exact output is identical across all of them.  */
+/*  Batched block runner: tests nblocks consecutive 2500-byte blocks starting
+    at buf and folds the verdicts into *r (integer, sum-mergeable).  */
 typedef void (* fastent_fips_run_fn)(const u8 * buf, u64 nblocks,
                                      fastent_fips_report * r);
 
 #define FASTENT_FIPS_BLOCK_BYTES 2500u
 
-/*  Bounded streaming FIPS driver: init binds *out, push folds whole
-    blocks via the per-ISA runner, finish reports the residue.  Only a
-    sub-block carry is buffered; full blocks are tested directly from
-    caller-provided chunks.  Byte-identical to fastent_fips140_run.  */
+/*  Bounded streaming FIPS driver: init binds *out, push folds whole blocks
+    via the per-ISA runner, finish reports the residue.  */
 typedef struct {
   fastent_fips_report * out;
   fastent_fips_run_fn   run;

@@ -1,6 +1,16 @@
-/*  fastent: JSON output.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "output.h"
@@ -10,7 +20,7 @@
 #include <stdio.h>
 
 #ifndef M_PI
-  #define M_PI 3.14159265358979323846
+#define M_PI 3.14159265358979323846
 #endif
 
 /*  JSON has no NaN/Infinity literal, so non-finite values render
@@ -37,6 +47,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
                      : comp_raw < 0.0      ? 0
                      : comp_raw > 100.0    ? 100
                                            : (i32) comp_raw;
+  i32 i;
 
   printf("{\n");
   printf("  \"unit\": \"%s\",\n", samp);
@@ -64,9 +75,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
     jnum_(fmt_fp, r->collision_entropy);
     printf(",\n  \"index_of_coincidence\": "); jnum_(fmt_fp, r->ic);
     printf(",\n  \"poker\": ");
-    if (!(r->poker_chisq == r->poker_chisq)) {
-      fputs("null", stdout);
-    } else {
+    if (!(r->poker_chisq == r->poker_chisq)) { fputs("null", stdout); } else {
       printf("{ \"statistic\": "); jnum_(fmt_fp, r->poker_chisq);
       printf(", \"df\": 15, \"p_exceed\": "); jnum_(fmt_fp, r->poker_p);
       printf(" }");
@@ -84,11 +93,9 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
     else printf("{ \"value\": %d, \"count\": %" PRIu64 " }",
                 r->rarest_value, (u64) r->rarest_count);
     printf(",\n  \"bit_frequencies\": ");
-    if (r->bit_bias_worst < 0) {
-      fputs("null", stdout);
-    } else {
+    if (r->bit_bias_worst < 0) { fputs("null", stdout); } else {
       putchar('[');
-      Fi(8, if (i) putchar(','); putchar(' '); jnum_(fmt_fp, r->bit_freq[i]))
+      Fi(8, if (i) putchar(','); putchar(' '); jnum_(fmt_fp, r->bit_freq[i]));
       fputs(" ]", stdout);
     }
     printf(",\n  \"bit_bias\": ");
@@ -105,9 +112,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   }
   if (o->extended >= 1) {
     printf(",\n  \"lz77f\": ");
-    if (r->lz_deviation != r->lz_deviation) {
-      fputs("null", stdout);
-    } else {
+    if (r->lz_deviation != r->lz_deviation) { fputs("null", stdout); } else {
       printf("{\n    \"cr_excess\": ");      jnum_(fmt_fp, r->lz_cr_excess);
       printf(",\n    \"literal_entropy\": "); jnum_(fmt_fp, r->lz_lit_h);
       printf(",\n    \"literal_kl\": ");      jnum_(fmt_fp, r->lz_lit_kl);
@@ -129,9 +134,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   }
   if (o->extended >= 3) {
     printf(",\n  \"linear_complexity\": ");
-    if (r->bm_deviation != r->bm_deviation) {
-      fputs("null", stdout);
-    } else {
+    if (r->bm_deviation != r->bm_deviation) { fputs("null", stdout); } else {
       printf("{\n    \"mean_lc\": ");          jnum_(fmt_fp, r->bm_mean_lc);
       printf(",\n    \"mu\": ");               jnum_(fmt_fp, r->bm_mu);
       printf(",\n    \"class_chi_square\": { \"statistic\": ");
@@ -146,9 +149,7 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
       printf("\n  }");
     }
     printf(",\n  \"maurer_universal\": ");
-    if (r->maurer_dev != r->maurer_dev) {
-      fputs("null", stdout);
-    } else {
+    if (r->maurer_dev != r->maurer_dev) { fputs("null", stdout); } else {
       printf("{\n    \"fn\": ");                jnum_(fmt_fp, r->maurer_fn);
       printf(",\n    \"expected\": ");          jnum_(fmt_fp, r->maurer_expected);
       printf(",\n    \"deviation\": ");         jnum_(fmt_fp, r->maurer_dev);
@@ -160,25 +161,21 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   }
   if (o->extended >= 1) {
     printf(",\n  \"permutation_entropy\": ");
-    if (r->perment_deviation != r->perment_deviation) {
-      fputs("null", stdout);
-    } else {
+    if (r->perment_deviation != r->perment_deviation) { fputs("null", stdout); } else {
       printf("{\n    \"h_norm\": ");            jnum_(fmt_fp, r->perment_h_norm);
       printf(",\n    \"deviation\": ");         jnum_(fmt_fp, r->perment_deviation);
       printf(",\n    \"chi_square\": ");        jnum_(fmt_fp, r->perment_chi);
       printf(",\n    \"chi_p\": ");             jnum_(fmt_fp, r->perment_chi_p);
       printf(",\n    \"windows\": %" PRIu64,    (u64) r->perment_windows);
       printf(",\n    \"histogram\": [");
-      Fi(24, if (i) putchar(','); printf(" %u", r->perment_hist[i]))
+      Fi(24, if (i) putchar(','); printf(" %u", r->perment_hist[i]));
       fputs(" ]", stdout);
       printf("\n  }");
     }
   }
   if (o->extended >= 3) {
     printf(",\n  \"binary_matrix_rank\": ");
-    if (r->mrank_dev != r->mrank_dev) {
-      fputs("null", stdout);
-    } else {
+    if (r->mrank_dev != r->mrank_dev) { fputs("null", stdout); } else {
       printf("{\n    \"deviation\": ");         jnum_(fmt_fp, r->mrank_dev);
       printf(",\n    \"chi_square\": ");        jnum_(fmt_fp, r->mrank_chi);
       printf(",\n    \"chi_p\": ");             jnum_(fmt_fp, r->mrank_chi_p);
@@ -196,13 +193,13 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
     const i32 bins = o->binary ? 2 : 256;
     int first = 1;
     Fi(bins,
-       if (r->hist[i] == 0) continue;
-       if (!first) printf(",\n");
-       first = 0;
-       printf("    { \"value\": %d, \"count\": %" PRIu64 ", \"fraction\": ",
-              i, (u64) r->hist[i]);
-       jnum_(fmt_fp, (f64) r->hist[i] / (f64) r->total_samples);
-       printf(" }"))
+      if (r->hist[i] == 0) continue;
+      if (!first) printf(",\n");
+      first = 0;
+      printf("    { \"value\": %d, \"count\": %" PRIu64 ", \"fraction\": ",
+             i, (u64) r->hist[i]);
+      jnum_(fmt_fp, (f64) r->hist[i] / (f64) r->total_samples);
+      printf(" }"));
     printf("\n  ]");
   }
   printf("\n}\n");

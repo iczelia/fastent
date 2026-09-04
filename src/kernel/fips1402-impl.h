@@ -1,67 +1,35 @@
-/*  fastent: templated FIPS 140-2 block body.  Included from
-    fips1402-scalar.c, fips1402-ssse3.c, fips1402-sse41.c,
-    fips1402-avx2.c, fips1402-avx512.c, fips1402-avx512-bitalg.c,
-    fips1402-neon.c, fips1402-wasm128simd.c.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Each TU defines one of:
-      FASTENT_VARIANT_SCALAR
-      FASTENT_VARIANT_SSSE3
-      FASTENT_VARIANT_SSE41
-      FASTENT_VARIANT_AVX2
-      FASTENT_VARIANT_AVX512  (+ optionally FASTENT_AVX512_HAVE_BITALG)
-      FASTENT_VARIANT_NEON
-      FASTENT_VARIANT_WASM128
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
 
-    and (optionally) FASTENT_HAVE_SIMD if the SIMD body should run.
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).
-
-    Four tests over each independent 20000-bit (2500-byte) block:
-    monobit, poker, runs and long run.  Bits are MSB first within
-    each byte; poker's 4-bit groups are the high then the low nibble
-    of each byte.  Constants are the FIPS 140-2 values (long-run
-    threshold 34).  Blocks are independent, so the result is a pure
-    integer reduction with no boundary stitch: bit-identical across
-    thread count, IO mode, and ISA.
-
-    Per-block summaries (all integer, sum-mergeable):
-      ones      total set bits (monobit)
-      f[16]     nibble histogram (poker)
-      cnt1[k]   number of 1-runs of length min(k,6), k = 1..6
-      cnt0[k]   number of 0-runs of length min(k,6), k = 1..6
-      lr        1 iff some run reaches FIPS_LONGRUN (34)
-
-    The runs path packs the byte stream into MSB-first big-endian
-    words (bit i of the stream = bit 7-(i&7) of byte i>>3).  On a
-    little-endian host an 8-byte load byte-swapped with
-    __builtin_bswap64 lays byte 8w into the most significant 8 bits
-    of word w, so "next bit in stream order" is a plain left shift
-    with carry-in from the next word's MSB; no per-byte bit reversal
-    is needed.  The run-length spectrum is then read in ONE pass from
-    the transition bitmap T = V ^ (V shifted one bit in stream
-    order), with the block end forced to a boundary, producing both
-    polarities at once.  */
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "fips1402.h"
 
 #if defined(FASTENT_VARIANT_NEON)
-  #include "analyze-vec-neon.h"
+#include "analyze-vec-neon.h"
 #elif defined(FASTENT_VARIANT_WASM128)
-  #include "analyze-vec-wasm.h"
+#include "analyze-vec-wasm.h"
 #elif defined(FASTENT_VARIANT_AVX512) || defined(FASTENT_VARIANT_AVX2) \
    || defined(FASTENT_VARIANT_SSE41)  || defined(FASTENT_VARIANT_SSSE3)
-  #include "analyze-vec-x86.h"
-  /*  The shared x86 vec header only knows the base and BITALG AVX-512
-      tiers, so it stamps _avx512 here.  The FIPS-only VPOPCNTDQ tier
-      needs a distinct symbol suffix so its TU does not collide with
-      the base AVX-512 FIPS body in the link.  */
-  #if defined(FASTENT_AVX512_HAVE_VPOPCNTDQ)
-    #undef  FASTENT_VAR_SUFFIX
-    #define FASTENT_VAR_SUFFIX _avx512_vpopcntdq
-  #endif
+#include "analyze-vec-x86.h"
+  /*  The shared x86 vec header only knows the base and BITALG AVX-512 tiers,
+      so it stamps _avx512 here.  */
+#if defined(FASTENT_AVX512_HAVE_VPOPCNTDQ)
+#undef  FASTENT_VAR_SUFFIX
+#define FASTENT_VAR_SUFFIX _avx512_vpopcntdq
+#endif
 #else
-  #define FASTENT_VAR_SUFFIX _scalar
+#define FASTENT_VAR_SUFFIX _scalar
 #endif
 
 #define FASTENT_CAT2(a, b) a##b
@@ -79,11 +47,8 @@
     the top 32 hardware bits, so the valid-bit mask is the high half.  */
 #define FIPS_LAST_MASK_BE 0xFFFFFFFF00000000ull
 
-/*  MSB-first big-endian word load.  On little-endian a byte-swap of
-    the raw 8 bytes places byte (8w) into bits 63..56 of word w, so
-    bit i of the stream = bit 63-(i&63) of word i>>6.  On big-endian
-    the natural load already has that layout.  */
-static FASTENT_ALWAYS_INLINE u64 FASTENT_FN(fips_load_be)(const u8 * p) {
+/*  MSB-first big-endian word load.  */
+static INLINE u64 FASTENT_FN(fips_load_be)(const u8 * p) {
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
   u64 v;
   memcpy(&v, p, 8);
@@ -98,24 +63,22 @@ static FASTENT_ALWAYS_INLINE u64 FASTENT_FN(fips_load_be)(const u8 * p) {
 /*  Pack one 2500-byte block into FIPS_NW MSB-first words.  The last
     word holds 32 valid bits; trailing bits are zero.  2500 = 312*8 +
     4, so 312 full 8-byte words plus a 4-byte tail.  */
-static FASTENT_ALWAYS_INLINE void
+static INLINE void
 FASTENT_FN(fips_pack)(const u8 * b, u64 W[FIPS_NW]) {
-  i32 w;
+  i32 i, w;
   for (w = 0; w < (i32) FIPS_NW - 1; w++)
     W[w] = FASTENT_FN(fips_load_be)(b + (sz) w * 8);
   /*  Tail: 4 bytes -> high 32 bits of the final word, low 32 zero.  */
   {
     u64 t = 0;
-    Fi(4, t |= (u64) b[2496 + i] << (56 - i * 8))
+    Fi(4, t |= (u64) b[2496 + i] << (56 - i * 8));
     W[FIPS_NW - 1] = t;
   }
 }
 
-/*  Shift the packed bit stream n positions later (1<=n<=32): the
-    stream successor at distance n.  In an MSB-first big-endian word
-    that is a left shift with carry from the next word's top n bits;
-    past the last word is zero.  */
-static FASTENT_ALWAYS_INLINE void
+/*  Shift the packed bit stream n positions later (1<=n<=32): the stream
+    successor at distance n.  */
+static INLINE void
 FASTENT_FN(fips_succn)(const u64 src[FIPS_NW], u64 dst[FIPS_NW], u32 n) {
   i32 w;
   for (w = 0; w < (i32) FIPS_NW; w++) {
@@ -126,14 +89,13 @@ FASTENT_FN(fips_succn)(const u64 src[FIPS_NW], u64 dst[FIPS_NW], u32 n) {
 }
 
 /*  Bounded-window run-length spectrum per polarity P: S=P&~pred(P),
-    A_k=P&succ(A_{k-1}), ge[k]=popcount(S&A_k) runs>=k; bucket=
-    ge[k]-ge[k+1], long-run=34-equal window via log-doubling AND
-    (1,2,4,8,16,+2).  Out-of-block zero = reference recurrence.  */
+    A_k=P&succ(A_{k-1}), ge[k]=popcount(S&A_k) runs>=k; bucket= ge[k]-ge[k+1],
+    long-run=34-equal window via log-doubling AND (1,2,4,8,16,+2).  */
 
 static void FASTENT_FN(fips_runs_side)(
     const u64 P[FIPS_NW], u32 ge[7], int * lr34) {
   u64 S[FIPS_NW], A[FIPS_NW], nx[FIPS_NW];
-  i32 w;
+  i32 i, w;
   u32 k;
   for (w = 0; w < (i32) FIPS_NW; w++) {
     const u64 pred = (P[w] >> 1)
@@ -141,7 +103,7 @@ static void FASTENT_FN(fips_runs_side)(
     S[w] = P[w] & ~pred;
     A[w] = P[w];
   }
-  Fi(7, ge[i] = 0)
+  Fi(7, ge[i] = 0);
   {
     u64 g = 0;
     for (w = 0; w < (i32) FIPS_NW; w++)
@@ -191,38 +153,34 @@ static void FASTENT_FN(fips_runs)(
   u64 C[FIPS_NW];
   u32 ge1[7], ge0[7];
   int lr1, lr0;
-  i32 w;
+  i32 i, w;
   for (w = 0; w < (i32) FIPS_NW; w++) C[w] = ~W[w];
   C[FIPS_NW - 1] &= FIPS_LAST_MASK_BE;     /*  drop dead tail bits  */
   FASTENT_FN(fips_runs_side)(W, ge1, &lr1);
   FASTENT_FN(fips_runs_side)(C, ge0, &lr0);
-  Fi0(7, 1,
-      cnt1[i] = (i < 6) ? ge1[i] - ge1[i + 1] : ge1[6];
-      cnt0[i] = (i < 6) ? ge0[i] - ge0[i + 1] : ge0[6])
+  for (i = 1; i < 7; i++) {
+    cnt1[i] = (i < 6) ? ge1[i] - ge1[i + 1] : ge1[6];
+    cnt0[i] = (i < 6) ? ge0[i] - ge0[i + 1] : ge0[6];
+  }
   cnt1[0] = cnt0[0] = 0;
   *lr = (lr1 || lr0);
 }
 
 #ifdef FASTENT_HAVE_SIMD
-/*  Horizontal sum of the epi64 lanes of a SIMD vector.  Each SAD
-    reduction already produced one u64 per 64-bit lane, so a scalar
-    fold over the stored lanes finishes the reduction portably for
-    every ISA (called once per block, off the hot path).  */
-static FASTENT_ALWAYS_INLINE u64
+/*  Horizontal sum of the epi64 lanes of a SIMD vector.  */
+static INLINE u64
 FASTENT_FN(fips_hsum_epi64)(FASTENT_SIMD_VEC v) {
   u64 lanes[FASTENT_SIMD_VLEN / 8];
   u64 s = 0;
   i32 i;
   V_STORE(lanes, v);
-  for (i = 0; i < (i32)(FASTENT_SIMD_VLEN / 8); i++) s += lanes[i];
+  for (i = 0; i < (i32) (FASTENT_SIMD_VLEN / 8); i++) s += lanes[i];
   return s;
 }
 
-/*  Byte-wise popcount of a vector, reduced (PSADBW / pairwise ladder)
-    to per-64-bit-lane partial sums.  BITALG uses VPOPCNTB, NEON
-    vcntq_u8, WASM wasm_i8x16_popcnt; the rest use the Mula PSHUFB
-    nibble-LUT (arXiv:1611.07612).  */
-static FASTENT_ALWAYS_INLINE FASTENT_SIMD_VEC
+/*  Byte-wise popcount of a vector, reduced (PSADBW / pairwise ladder) to
+    per-64-bit-lane partial sums.  */
+static INLINE FASTENT_SIMD_VEC
 FASTENT_FN(fips_popcnt_bytes)(FASTENT_SIMD_VEC v) {
 #if defined(FASTENT_VARIANT_AVX512) && defined(FASTENT_AVX512_HAVE_BITALG)
   return V_SAD_EPU8(_mm512_popcnt_epi8(v), V_SETZERO());
@@ -231,17 +189,17 @@ FASTENT_FN(fips_popcnt_bytes)(FASTENT_SIMD_VEC v) {
 #elif defined(FASTENT_VARIANT_WASM128)
   return V_SAD_EPU8(wasm_i8x16_popcnt(v), V_SETZERO());
 #else
-  #if defined(FASTENT_VARIANT_AVX2)
+#if defined(FASTENT_VARIANT_AVX2)
     const FASTENT_SIMD_VEC lut = _mm256_setr_epi8(
       0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4,
       0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4);
-  #elif defined(FASTENT_VARIANT_AVX512)
+#elif defined(FASTENT_VARIANT_AVX512)
     const FASTENT_SIMD_VEC lut = _mm512_broadcast_i32x4(
       _mm_setr_epi8(0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4));
-  #else
+#else
     const FASTENT_SIMD_VEC lut = _mm_setr_epi8(
       0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4);
-  #endif
+#endif
   const FASTENT_SIMD_VEC nmask = V_SET1_EPI8(0x0F);
   FASTENT_SIMD_VEC lo = V_AND(v, nmask);
   FASTENT_SIMD_VEC hi = V_AND(V_SRLI_EPI16(v, 4), nmask);
@@ -254,7 +212,7 @@ FASTENT_FN(fips_popcnt_bytes)(FASTENT_SIMD_VEC v) {
 /*  Monobit: total set bits over the 2500 raw bytes, vector bulk +
     scalar tail.  AVX-512 VPOPCNTDQ uses _mm512_popcnt_epi64 instead
     of the PSHUFB-LUT + PSADBW ladder; integer result identical.  */
-static FASTENT_ALWAYS_INLINE u64
+static INLINE u64
 FASTENT_FN(fips_monobit)(const u8 * b) {
 #if defined(FASTENT_VARIANT_AVX512) \
  && defined(FASTENT_AVX512_HAVE_VPOPCNTDQ)
@@ -284,17 +242,16 @@ FASTENT_FN(fips_monobit)(const u8 * b) {
 }
 
 /*  Poker nibble histogram via per-value mask compare: count(t) =
-    popcount(lo==t)+popcount(hi==t) over all bytes; SAD turns each
-    0/-1 compare mask into a per-lane count, negated back.  16
-    values, both nibble planes, exact integer.  */
-static FASTENT_ALWAYS_INLINE void
+    popcount(lo==t)+popcount(hi==t) over all bytes; SAD turns each 0/-1
+    compare mask into a per-lane count, negated back.  */
+static INLINE void
 FASTENT_FN(fips_poker)(const u8 * b, u32 f[16]) {
   const FASTENT_SIMD_VEC nmask = V_SET1_EPI8(0x0F);
   const FASTENT_SIMD_VEC zero = V_SETZERO();
   FASTENT_SIMD_VEC acc[16];
   FASTENT_SIMD_VEC tv[16];
-  i32 t, i = 0;
-  Fi(16, acc[i] = zero;  tv[i] = V_SET1_EPI8((char) i))
+  i32 t, i = 0, j;
+  Fj(16, acc[j] = zero;  tv[j] = V_SET1_EPI8((char) j));
   for (; i + FASTENT_SIMD_VLEN <= (i32) FIPS_BLOCK_BYTES;
          i += FASTENT_SIMD_VLEN) {
     FASTENT_SIMD_VEC v  = V_LOAD(b + i);
@@ -311,18 +268,17 @@ FASTENT_FN(fips_poker)(const u8 * b, u32 f[16]) {
   for (t = 0; t < 16; t++)
     f[t] = (u32) (FASTENT_FN(fips_hsum_epi64)(acc[t]) / 255u);
   /*  Scalar tail bytes.  */
-  for (; i < (i32) FIPS_BLOCK_BYTES; i++) {
-    f[b[i] >> 4]++;  f[b[i] & 0x0Fu]++;
-  }
+  for (; i < (i32) FIPS_BLOCK_BYTES; i++) { f[b[i] >> 4]++;  f[b[i] & 0x0Fu]++; }
 }
 #endif  /*  FASTENT_HAVE_SIMD  */
 
 /*  Test one 2500-byte block and fold its verdict into *r.  Monobit
     and poker read the raw bytes (order-invariant); runs read the
     packed words.  */
-static FASTENT_ALWAYS_INLINE void
+static INLINE void
 FASTENT_FN(fips_block)(const u8 * b, fastent_fips_report * r) {
   u64 W[FIPS_NW];
+  i32 i;
 
   /*  Monobit: total set bits over the raw bytes.  */
 #ifdef FASTENT_HAVE_SIMD
@@ -352,10 +308,10 @@ FASTENT_FN(fips_block)(const u8 * b, fastent_fips_report * r) {
   FASTENT_FN(fips_poker)(b, f);
 #else
   memset(f, 0, sizeof f);
-  Fi((int) FIPS_BLOCK_BYTES, f[b[i] >> 4]++;  f[b[i] & 0x0Fu]++)
+  Fi((int) FIPS_BLOCK_BYTES, f[b[i] >> 4]++;  f[b[i] & 0x0Fu]++);
 #endif
   u64 ssq = 0;
-  Fi(16, ssq += (u64) f[i] * (u64) f[i])
+  Fi(16, ssq += (u64) f[i] * (u64) f[i]);
   const f64 X = (16.0 / 5000.0) * (f64) ssq - 5000.0;
   const int poker_ok = (X > 2.16 && X < 46.17);
 
@@ -370,9 +326,10 @@ FASTENT_FN(fips_block)(const u8 * b, fastent_fips_report * r) {
   static const u32 lo_[7] = { 0, 2315, 1114, 527, 240, 103, 103 };
   static const u32 hi_[7] = { 0, 2685, 1386, 723, 384, 209, 209 };
   int runs_ok = 1;
-  Fi0(7, 1,
-      if (cnt1[i] < lo_[i] || cnt1[i] > hi_[i]) runs_ok = 0;
-      if (cnt0[i] < lo_[i] || cnt0[i] > hi_[i]) runs_ok = 0)
+  for (i = 1; i < 7; i++) {
+    if (cnt1[i] < lo_[i] || cnt1[i] > hi_[i]) runs_ok = 0;
+    if (cnt0[i] < lo_[i] || cnt0[i] > hi_[i]) runs_ok = 0;
+  }
   const int long_ok = !lr;
 
   r->blocks++;

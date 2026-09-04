@@ -1,6 +1,16 @@
-/*  fastent: analysis drivers.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "runner.h"
@@ -23,9 +33,7 @@
 #define FASTENT_FUSE_BLOCK (64u * 1024u)
 
 /*  Run `body` over [data,len) split at FASTENT_HIST_CHUNK boundaries,
-    draining the u32 order-0 banks before a chunk overflows.  Split
-    calls thread all state like one call and the drain is an order-
-    independent u64 sum: bit-identical for any cadence/driver/-j.  */
+    draining the u32 order-0 banks before a chunk overflows.  */
 static void body_drained_(
     fastent_chunk_state * st, fastent_analyze_fn body, const u8 * data,
     sz len) {
@@ -52,10 +60,9 @@ static fastent_fold_fn fused_fold_fn_(void) {
   return f;
 }
 
-/*  Cache-blocked: order-0 body then -ee extras per L1/L2-resident
-    sub-block so extras hit cache not DRAM; state threads as the stream
-    path, byte-identical to one whole pass.  Byte -ee -f folds each
-    sub-block once into scratch fed to both kernels (= in-register).  */
+/*  Cache-blocked: order-0 body then -ee extras per L1/L2-resident sub-block
+    so extras hit cache not DRAM; state threads as the stream path,
+    byte-identical to one whole pass.  */
 static void analyze_fused_(
     fastent_chunk_state * st, fastent_analyze_fn body,
     fastent_analyze_fn body_plain, const u8 * data, sz len, int extended,
@@ -63,7 +70,7 @@ static void analyze_fused_(
   if (extended < 2) { body_drained_(st, body, data, len);  return; }
 
   if (fold && !binary && body_plain) {
-    FASTENT_ALIGN(64) u8 fb[FASTENT_FUSE_BLOCK];
+    ALIGN(64) u8 fb[FASTENT_FUSE_BLOCK];
     fastent_fold_fn ff = fused_fold_fn_();
     sz off = 0;
     while (off < len) {
@@ -117,7 +124,7 @@ static void mt_worker_(sz k, void * vctx) {
   if (c->bigrams) c->states[k].bigram = c->bigrams[k];
   if (c->dg_u32s) c->states[k].dg_u32 = c->dg_u32s[k];
   analyze_fused_(&c->states[k], c->fn, c->fn_plain, c->data + start,
-                 (sz)(end - start), c->extended, c->binary, c->fold);
+                 (sz) (end - start), c->extended, c->binary, c->fold);
   /*  Settle this slab's residual u32 banks into its u64 master so the
       serial merge below sums masters (order-independent, == j1).  */
   fastent_hist_flush_(&c->states[k]);
@@ -128,35 +135,37 @@ static void run_mmap_mt_(
     fastent_analyze_fn fn, fastent_analyze_fn fn_plain, const u8 * data,
     u64 size) {
   i32 N = o->threads;
+  i32 i, k;
   fastent_set_num_threads(N);
 
   /*  6-byte-aligned slab boundaries so each thread's MC Pi state
       starts at mc_pos == 0; no cross-slab hexads.  */
-  u64 * bounds = (u64 *) malloc((sz)(N + 1) * sizeof(u64));
-  if (!bounds) { fprintf(stderr, "out of memory\n"); exit(2); }
+  u64 * bounds = (u64 *) malloc((sz) (N + 1) * sizeof (u64));
+  if (!bounds) { fastent_message("out of memory"); exit(2); }
   bounds[0] = 0;
   bounds[N] = size;
-  Fk0(N, 1,
-      u64 raw = (u64)((f64) size * (f64) k / (f64) N);
-      bounds[k] = (raw / 6ULL) * 6ULL;
-      if (bounds[k] < bounds[k - 1]) bounds[k] = bounds[k - 1])
+  for (k = 1; k < N; k++) {
+    u64 raw = (u64) ((f64) size * (f64) k / (f64) N);
+    bounds[k] = (raw / 6ULL) * 6ULL;
+    if (bounds[k] < bounds[k - 1]) bounds[k] = bounds[k - 1];
+  }
 
   fastent_chunk_state * states =
-    (fastent_chunk_state *) calloc((sz) N, sizeof(*states));
-  if (!states) { fprintf(stderr, "out of memory\n"); exit(2); }
+    (fastent_chunk_state *) calloc((sz) N, sizeof (*states));
+  if (!states) { fastent_message("out of memory"); exit(2); }
 
   /*  Per-slab digram tables (byte -ee only), summed at merge.
       Allocated up front so OOM is handled serially.  */
   u64 ** bgs = NULL;
   u32 ** dgs = NULL;
   if (o->extended >= 2 && !o->binary) {
-    bgs = (u64 **) calloc((sz) N, sizeof(*bgs));
-    dgs = (u32 **) calloc((sz) N, sizeof(*dgs));
-    if (!bgs || !dgs) { fprintf(stderr, "out of memory\n"); exit(2); }
+    bgs = (u64 **) calloc((sz) N, sizeof (*bgs));
+    dgs = (u32 **) calloc((sz) N, sizeof (*dgs));
+    if (!bgs || !dgs) { fastent_message("out of memory"); exit(2); }
     Fk(N, bgs[k] = fastent_bigram_alloc();
-          dgs[k] = fastent_dg_u32_alloc();
-          if (!bgs[k] || !dgs[k]) {
-            fprintf(stderr, "out of memory\n"); exit(2); })
+         dgs[k] = fastent_dg_u32_alloc();
+         if (!bgs[k] || !dgs[k]) {
+           fastent_message("out of memory"); exit(2); });
   }
 
   mt_ctx ctx;
@@ -167,116 +176,105 @@ static void run_mmap_mt_(
   ctx.fold = o->fold;
   fastent_parallel_for((sz) N, mt_worker_, &ctx);
 
-  /*  Fixed-order slab merge, bit-identical to -j1.  Adjacent pairs add
-      carry_byte (prev last) * first_byte (next first) to the SCC; the
-      wrap (last*first) is added in fastent_finalize.  Bit mode: those
-      are single bits so the same expression covers the bit pair.  */
+  /*  Fixed-order slab merge, bit-identical to -j1.  */
   Fk(N,
-     const fastent_chunk_state * s = &states[k];
-     if (s->total_bytes == 0) continue;
-     Fi(256, out->hist_master[i] += s->hist_master[i])
-     out->bit_hist[0] += s->bit_hist[0];
-     out->bit_hist[1] += s->bit_hist[1];
-     if (out->have_carry) {
-       out->cross_product += (i64) out->carry_byte * (i64) s->first_byte;
-     } else {
-       out->first_byte = s->first_byte;
-       out->have_first = 1;
-     }
-     out->cross_product += s->cross_product;
-     out->carry_byte    = s->last_byte;
-     out->last_byte     = s->last_byte;
-     out->have_carry    = 1;
-     out->total_bytes  += s->total_bytes;
-     out->mc_count     += s->mc_count;
-     out->mc_inside    += s->mc_inside;
-     /*  The last non-empty slab's trailing ring (non-final slabs are
-         6-aligned, so their mc_pos is 0 and this is a no-op for
-         them); robust if the final slab is empty.  */
-     out->mc_pos = s->mc_pos;
-     memcpy(out->mc_buf, s->mc_buf, sizeof(out->mc_buf)))
+    const fastent_chunk_state * s = &states[k];
+    if (s->total_bytes == 0) continue;
+    Fi(256, out->hist_master[i] += s->hist_master[i]);
+    out->bit_hist[0] += s->bit_hist[0];
+    out->bit_hist[1] += s->bit_hist[1];
+    if (out->have_carry) {
+      out->cross_product += (i64) out->carry_byte * (i64) s->first_byte;
+    } else {
+      out->first_byte = s->first_byte;
+      out->have_first = 1;
+    }
+    out->cross_product += s->cross_product;
+    out->carry_byte    = s->last_byte;
+    out->last_byte     = s->last_byte;
+    out->have_carry    = 1;
+    out->total_bytes  += s->total_bytes;
+    out->mc_count     += s->mc_count;
+    out->mc_inside    += s->mc_inside;
+    /*  The last non-empty slab's trailing ring (non-final slabs are
+        6-aligned, so their mc_pos is 0 and this is a no-op for
+        them); robust if the final slab is empty.  */
+    out->mc_pos = s->mc_pos;
+    memcpy(out->mc_buf, s->mc_buf, sizeof (out->mc_buf)));
 
-  /*  Merge -ee level-2 reductions.  Per-slab counts are partition-
-      invariant; pair/bit-run/cusum also need the symbol straddling
-      each boundary, stitched in fixed slab order so jN==j1.  Longest
-      run is a segmented merge (may span boundaries or whole slabs).  */
+  /*  Merge -ee level-2 reductions.  */
   if (o->extended >= 2) {
     u64 lr_gmax = 0, carry_len = 0;
     u32 carry_sym = 0;
     int have_run = 0, seen = 0;
     i64 cs_off = 0, cs_min = 0, cs_max = 0;
     Fk(N,
-       fastent_chunk_state * s = &states[k];
-       if (s->total_bytes == 0) continue;
-       const u64 start = bounds[k];
-       fastent_dg_drain(s);   /*  flush this slab's u32 chunk first  */
-       if (out->bigram && s->bigram)
-         Fi((int) FASTENT_BG_CELLS, out->bigram[i] += s->bigram[i])
-       if (o->binary) {
-         out->bit_bigram[0][0] += s->bit_bigram[0][0];
-         out->bit_bigram[0][1] += s->bit_bigram[0][1];
-         out->bit_bigram[1][0] += s->bit_bigram[1][0];
-         out->bit_bigram[1][1] += s->bit_bigram[1][1];
-       }
-       if (seen && start > 0) {     /*  pair straddling this boundary  */
-         /*  Fold to match the per-slab digram pass under -f.  */
-         const u32 bp = o->fold ? fastent_fold_byte(data[start - 1])
-                                 : data[start - 1];
-         const u32 bc = o->fold ? fastent_fold_byte(data[start])
-                                 : data[start];
-         if (o->binary) {
-           const u32 pb = bp & 1u;
-           const u32 cb = (bc >> 7) & 1u;
-           out->bit_bigram[pb][cb]++;
-           if (pb == cb) out->rn_count--;       /*  two runs join  */
-         } else if (out->bigram) {
-           out->bigram[(bp << 8) | bc]++;
-         }
-       }
-       {
-         const u64 imax = s->lr_cur > s->lr_max ? s->lr_cur : s->lr_max;
-         const u32 hs = s->lr_head_sym;
-         const u64 hl = s->lr_head_len;  const u64 tl = s->lr_cur;
-         const int whole = s->lr_head_open;
-         if (imax > lr_gmax) lr_gmax = imax;
-         if (have_run && carry_sym == hs) {
-           const u64 j = carry_len + hl;
-           if (j > lr_gmax) lr_gmax = j;
-           if (whole) carry_len = j;
-           else { carry_sym = s->lr_sym;  carry_len = tl; }
-         } else {
-           if (have_run && carry_len > lr_gmax) lr_gmax = carry_len;
-           if (whole) { carry_sym = hs;        carry_len = hl; }
-           else       { carry_sym = s->lr_sym; carry_len = tl; }
-           have_run = 1;
-         }
-       }
-       if (o->binary) {
-         out->rn_count += s->rn_count;  out->rn_have = 1;
-         if (cs_off + s->cs_min < cs_min) cs_min = cs_off + s->cs_min;
-         if (cs_off + s->cs_max > cs_max) cs_max = cs_off + s->cs_max;
-         cs_off += s->cs_sum;
-       }
-       seen = 1;)
+      fastent_chunk_state * s = &states[k];
+      if (s->total_bytes == 0) continue;
+      const u64 start = bounds[k];
+      fastent_dg_drain(s);   /*  flush this slab's u32 chunk first  */
+      if (out->bigram && s->bigram)
+        Fi((int) FASTENT_BG_CELLS, out->bigram[i] += s->bigram[i]);
+      if (o->binary) {
+        out->bit_bigram[0][0] += s->bit_bigram[0][0];
+        out->bit_bigram[0][1] += s->bit_bigram[0][1];
+        out->bit_bigram[1][0] += s->bit_bigram[1][0];
+        out->bit_bigram[1][1] += s->bit_bigram[1][1];
+      }
+      if (seen && start > 0) {     /*  pair straddling this boundary  */
+        /*  Fold to match the per-slab digram pass under -f.  */
+        const u32 bp = o->fold ? fastent_fold_byte(data[start - 1])
+                                : data[start - 1];
+        const u32 bc = o->fold ? fastent_fold_byte(data[start])
+                                : data[start];
+        if (o->binary) {
+          const u32 pb = bp & 1u;
+          const u32 cb = (bc >> 7) & 1u;
+          out->bit_bigram[pb][cb]++;
+          if (pb == cb) out->rn_count--;       /*  two runs join  */
+        } else if (out->bigram) {
+          out->bigram[(bp << 8) | bc]++;
+        }
+      }
+      {
+        const u64 imax = s->lr_cur > s->lr_max ? s->lr_cur : s->lr_max;
+        const u32 hs = s->lr_head_sym;
+        const u64 hl = s->lr_head_len;  const u64 tl = s->lr_cur;
+        const int whole = s->lr_head_open;
+        if (imax > lr_gmax) lr_gmax = imax;
+        if (have_run && carry_sym == hs) {
+          const u64 j = carry_len + hl;
+          if (j > lr_gmax) lr_gmax = j;
+          if (whole) carry_len = j;
+          else { carry_sym = s->lr_sym;  carry_len = tl; }
+        } else {
+          if (have_run && carry_len > lr_gmax) lr_gmax = carry_len;
+          if (whole) { carry_sym = hs;        carry_len = hl; }
+          else       { carry_sym = s->lr_sym; carry_len = tl; }
+          have_run = 1;
+        }
+      }
+      if (o->binary) {
+        out->rn_count += s->rn_count;  out->rn_have = 1;
+        if (cs_off + s->cs_min < cs_min) cs_min = cs_off + s->cs_min;
+        if (cs_off + s->cs_max > cs_max) cs_max = cs_off + s->cs_max;
+        cs_off += s->cs_sum;
+      }
+      seen = 1);
     if (have_run) {
       if (carry_len > lr_gmax) lr_gmax = carry_len;
       out->lr_have = 1;  out->lr_max = lr_gmax;  out->lr_cur = 0;
     }
-    if (o->binary) {
-      out->cs_min = cs_min;  out->cs_max = cs_max;  out->cs_sum = cs_off;
-    }
+    if (o->binary) { out->cs_min = cs_min;  out->cs_max = cs_max;  out->cs_sum = cs_off; }
   }
 
-  if (bgs) { Fk(N, fastent_bigram_free(bgs[k])) free(bgs); }
-  if (dgs) { Fk(N, fastent_dg_u32_free(dgs[k])) free(dgs); }
+  if (bgs) { Fk(N, fastent_bigram_free(bgs[k])); free(bgs); }
+  if (dgs) { Fk(N, fastent_dg_u32_free(dgs[k])); free(dgs); }
   free(states);
   free(bounds);
 }
 
-/*  SPMC stream/uring pipeline.  Mutex holder reads the next block
-    (multiple of 6 so no MC hexad straddles it), claims a monotone seq,
-    processes lock-free.  Order-free sums fold per-consumer; boundary
-    quantities stitched per-seq via run_mmap_mt_'s merge, = -j1.  */
+/*  SPMC stream/uring pipeline.  */
 
 typedef struct {
   u64 seq, n;
@@ -330,6 +328,7 @@ static sz stream_fill_(stream_ctx * c, u8 * buf) {
 static void stream_consumer_(sz k, void * vctx) {
   stream_ctx * c = (stream_ctx *) vctx;
   fastent_chunk_state * acc = &c->accs[k];
+  i32 i;
   for (;;) {
     fastent_mutex_lock(c->mtx);
     if (c->eof || c->err) { fastent_mutex_unlock(c->mtx);  break; }
@@ -360,7 +359,7 @@ static void stream_consumer_(sz k, void * vctx) {
     /*  Settle this block's u32 banks into its u64 master, then add the
         master into the per-consumer accumulator (order-independent).  */
     fastent_hist_flush_(&blk);
-    Fi(256, acc->hist_master[i] += blk.hist_master[i])
+    Fi(256, acc->hist_master[i] += blk.hist_master[i]);
     acc->bit_hist[0] += blk.bit_hist[0];
     acc->bit_hist[1] += blk.bit_hist[1];
     acc->bit_bigram[0][0] += blk.bit_bigram[0][0];
@@ -384,13 +383,13 @@ static void stream_consumer_(sz k, void * vctx) {
     e.lr_whole = blk.lr_head_open;
     e.rn_count = blk.rn_count;
     e.cs_sum = blk.cs_sum;  e.cs_min = blk.cs_min;  e.cs_max = blk.cs_max;
-    e.mc_pos = blk.mc_pos;  memcpy(e.mc_buf, blk.mc_buf, sizeof(e.mc_buf));
+    e.mc_pos = blk.mc_pos;  memcpy(e.mc_buf, blk.mc_buf, sizeof (e.mc_buf));
 
     fastent_mutex_lock(c->mtx);
     if (c->ne == c->ecap) {
       sz nc = c->ecap ? c->ecap * 2 : 64;
       stream_edge * grow =
-        (stream_edge *) realloc(c->edges, nc * sizeof(*grow));
+        (stream_edge *) realloc(c->edges, nc * sizeof (*grow));
       if (!grow) {
         c->err = ENOMEM;  c->freelist[c->free_n++] = bi;
         fastent_mutex_unlock(c->mtx);  break;
@@ -413,11 +412,13 @@ static void run_stream_mt_(
     fastent_chunk_state * out, const fastent_options * o,
     fastent_analyze_fn fn, fastent_analyze_fn fn_plain, fastent_source * src) {
   i32 W = o->threads;
+  i32 k;
+  sz i;
   fastent_set_num_threads(W);
   if (W < 2) {                          /*  no real pool: serial  */
     for (;;) {
       sz n = fastent_src_read(src);
-      if (n == (sz) -1) { perror("read");  exit(2); }
+      if (n == (sz) -1) { fastent_message("read error: %s", strerror(errno));  exit(2); }
       if (n == 0) break;
       analyze_fused_(out, fn, fn_plain, src->stream_buf, n,
                      o->extended, o->binary, o->fold);
@@ -431,67 +432,67 @@ static void run_stream_mt_(
   c.extended = o->extended;  c.binary = o->binary;  c.fold = o->fold;
   c.blocksz = (FASTENT_STREAM_BUF / 6u) * 6u;
   c.mtx = fastent_mutex_create();
-  if (!c.mtx) { fprintf(stderr, "out of memory\n"); exit(2); }
+  if (!c.mtx) { fastent_message("out of memory"); exit(2); }
 
   i32 P = W + 1;
-  c.bufs     = (u8 **) calloc((sz) P, sizeof(*c.bufs));
-  c.bufs_raw = (void **) calloc((sz) P, sizeof(*c.bufs_raw));
-  c.freelist = (i32 *) malloc((sz) P * sizeof(*c.freelist));
-  c.accs = (fastent_chunk_state *) calloc((sz) W, sizeof(*c.accs));
+  c.bufs     = (u8 **) calloc((sz) P, sizeof (*c.bufs));
+  c.bufs_raw = (void **) calloc((sz) P, sizeof (*c.bufs_raw));
+  c.freelist = (i32 *) malloc((sz) P * sizeof (*c.freelist));
+  c.accs = (fastent_chunk_state *) calloc((sz) W, sizeof (*c.accs));
   if (!c.bufs || !c.bufs_raw || !c.freelist || !c.accs) {
-    fprintf(stderr, "out of memory\n"); exit(2);
+    fastent_message("out of memory"); exit(2);
   }
   Fk(P,
-     void * raw = NULL;  void * user = NULL;
-     if (fastent_io_alloc_aligned(&raw, &user, c.blocksz) < 0) {
-       fprintf(stderr, "out of memory\n"); exit(2);
-     }
-     c.bufs[k] = (u8 *) user;  c.bufs_raw[k] = raw;
-     c.freelist[k] = k)
+    void * raw = NULL;  void * user = NULL;
+    if (fastent_io_alloc_aligned(&raw, &user, c.blocksz) < 0) {
+      fastent_message("out of memory"); exit(2);
+    }
+    c.bufs[k] = (u8 *) user;  c.bufs_raw[k] = raw;
+    c.freelist[k] = k);
   c.free_n = P;
   if (o->extended >= 2 && !o->binary)
     Fk(W,
-       c.accs[k].bigram = fastent_bigram_alloc();
-       c.accs[k].dg_u32 = fastent_dg_u32_alloc();
-       if (!c.accs[k].bigram || !c.accs[k].dg_u32) {
-         fprintf(stderr, "out of memory\n"); exit(2); })
+      c.accs[k].bigram = fastent_bigram_alloc();
+      c.accs[k].dg_u32 = fastent_dg_u32_alloc();
+      if (!c.accs[k].bigram || !c.accs[k].dg_u32) {
+        fastent_message("out of memory"); exit(2); });
 
   fastent_parallel_for((sz) W, stream_consumer_, &c);
 
   if (c.err) {
-    if (c.err == ENOMEM) fprintf(stderr, "out of memory\n");
-    else { errno = c.err;  perror("read"); }
+    if (c.err == ENOMEM) fastent_message("out of memory");
+    else fastent_message("read error: %s", strerror(c.err));
     exit(2);
   }
 
   /*  Order-independent sums.  */
   Fk(W,
-     const fastent_chunk_state * a = &c.accs[k];
-     Fi(256, out->hist_master[i] += a->hist_master[i])
-     out->bit_hist[0] += a->bit_hist[0];
-     out->bit_hist[1] += a->bit_hist[1];
-     out->bit_bigram[0][0] += a->bit_bigram[0][0];
-     out->bit_bigram[0][1] += a->bit_bigram[0][1];
-     out->bit_bigram[1][0] += a->bit_bigram[1][0];
-     out->bit_bigram[1][1] += a->bit_bigram[1][1];
-     out->cross_product += a->cross_product;
-     out->mc_count  += a->mc_count;
-     out->mc_inside += a->mc_inside;
-     out->total_bytes += a->total_bytes;
-     if (out->bigram && a->bigram)
-       Fi((int) FASTENT_BG_CELLS, out->bigram[i] += a->bigram[i]))
+    const fastent_chunk_state * a = &c.accs[k];
+    Fi(256, out->hist_master[i] += a->hist_master[i]);
+    out->bit_hist[0] += a->bit_hist[0];
+    out->bit_hist[1] += a->bit_hist[1];
+    out->bit_bigram[0][0] += a->bit_bigram[0][0];
+    out->bit_bigram[0][1] += a->bit_bigram[0][1];
+    out->bit_bigram[1][0] += a->bit_bigram[1][0];
+    out->bit_bigram[1][1] += a->bit_bigram[1][1];
+    out->cross_product += a->cross_product;
+    out->mc_count  += a->mc_count;
+    out->mc_inside += a->mc_inside;
+    out->total_bytes += a->total_bytes;
+    if (out->bigram && a->bigram)
+      Fi((int) FASTENT_BG_CELLS, out->bigram[i] += a->bigram[i]););
 
   /*  c.edges is allocated lazily on the first pushed edge; with no
       edges (empty / single-block input) it stays NULL and qsort(NULL,
       0, ...) is undefined (glibc marks the base nonnull).  */
-  if (c.ne) qsort(c.edges, c.ne, sizeof(*c.edges), stream_edge_cmp_);
+  if (c.ne) qsort(c.edges, c.ne, sizeof (*c.edges), stream_edge_cmp_);
 
   /*  Ordered boundary stitch (same algebra as run_mmap_mt_).  */
   u64 lr_gmax = 0, carry_len = 0;
   u32 carry_sym = 0;
   int have_run = 0;
   i64 cs_off = 0, cs_min = 0, cs_max = 0;
-  for (sz i = 0; i < c.ne; i++) {
+  for (i = 0; i < c.ne; i++) {
     const stream_edge * e = &c.edges[i];
     if (out->have_carry) {
       out->cross_product += (i64) out->carry_byte * (i64) e->o0_first;
@@ -535,7 +536,7 @@ static void run_stream_mt_(
   }
   if (c.ne) {     /*  trailing MC ring lives in the final block  */
     out->mc_pos = c.edges[c.ne - 1].mc_pos;
-    memcpy(out->mc_buf, c.edges[c.ne - 1].mc_buf, sizeof(out->mc_buf));
+    memcpy(out->mc_buf, c.edges[c.ne - 1].mc_buf, sizeof (out->mc_buf));
   }
   if (o->extended >= 2 && have_run) {
     if (carry_len > lr_gmax) lr_gmax = carry_len;
@@ -547,17 +548,14 @@ static void run_stream_mt_(
 
   if (o->extended >= 2 && !o->binary)
     Fk(W, fastent_bigram_free(c.accs[k].bigram);
-          fastent_dg_u32_free(c.accs[k].dg_u32))
-  Fk(P, free(c.bufs_raw[k]))
+         fastent_dg_u32_free(c.accs[k].dg_u32));
+  Fk(P, free(c.bufs_raw[k]));
   free(c.bufs);  free(c.bufs_raw);  free(c.freelist);
   free(c.accs);  free(c.edges);
   fastent_mutex_destroy(c.mtx);
 }
 
-/*  Per-worker io_uring slab driver.  run_mmap_mt_'s 6-aligned split,
-    but each worker streams its slab through a private double-buffered
-    ring (no shared feed/SPMC).  Per-slab edges merge in slab order via
-    run_stream_mt_'s stitch: bit-identical to -j1/mmap.  -1 = fallback.  */
+/*  Per-worker io_uring slab driver.  */
 typedef struct {
   int                fd;
   const char *       path;
@@ -579,7 +577,7 @@ static void uring_mt_worker_(sz k, void * vctx) {
   if (c->bigrams) acc->bigram = c->bigrams[k];
   if (c->dg_u32s) acc->dg_u32 = c->dg_u32s[k];
   stream_edge * e = &c->edges[k];
-  memset(e, 0, sizeof(*e));
+  memset(e, 0, sizeof (*e));
   e->seq = (u64) k;
   if (end <= start) return;            /*  empty slab: n stays 0  */
 
@@ -613,7 +611,7 @@ static void uring_mt_worker_(sz k, void * vctx) {
   e->lr_whole = acc->lr_head_open;
   e->rn_count = acc->rn_count;
   e->cs_sum = acc->cs_sum;  e->cs_min = acc->cs_min;  e->cs_max = acc->cs_max;
-  e->mc_pos = acc->mc_pos;  memcpy(e->mc_buf, acc->mc_buf, sizeof(e->mc_buf));
+  e->mc_pos = acc->mc_pos;  memcpy(e->mc_buf, acc->mc_buf, sizeof (e->mc_buf));
 }
 
 /*  Returns 0 on success, -1 if uring is unavailable (caller falls back
@@ -622,32 +620,34 @@ static int run_uring_mt_(
     fastent_chunk_state * out, const fastent_options * o,
     fastent_analyze_fn fn, fastent_analyze_fn fn_plain, fastent_source * src) {
   i32 N = o->threads;
+  i32 i, k;
   fastent_set_num_threads(N);
   u64 size = src->size;
 
-  u64 * bounds = (u64 *) malloc((sz)(N + 1) * sizeof(u64));
-  if (!bounds) { fprintf(stderr, "out of memory\n"); exit(2); }
+  u64 * bounds = (u64 *) malloc((sz) (N + 1) * sizeof (u64));
+  if (!bounds) { fastent_message("out of memory"); exit(2); }
   bounds[0] = 0;  bounds[N] = size;
-  Fk0(N, 1,
-      u64 raw = (u64)((f64) size * (f64) k / (f64) N);
-      bounds[k] = (raw / 6ULL) * 6ULL;
-      if (bounds[k] < bounds[k - 1]) bounds[k] = bounds[k - 1])
+  for (k = 1; k < N; k++) {
+    u64 raw = (u64) ((f64) size * (f64) k / (f64) N);
+    bounds[k] = (raw / 6ULL) * 6ULL;
+    if (bounds[k] < bounds[k - 1]) bounds[k] = bounds[k - 1];
+  }
 
   fastent_chunk_state * accs =
-    (fastent_chunk_state *) calloc((sz) N, sizeof(*accs));
+    (fastent_chunk_state *) calloc((sz) N, sizeof (*accs));
   stream_edge * edges =
-    (stream_edge *) calloc((sz) N, sizeof(*edges));
-  if (!accs || !edges) { fprintf(stderr, "out of memory\n"); exit(2); }
+    (stream_edge *) calloc((sz) N, sizeof (*edges));
+  if (!accs || !edges) { fastent_message("out of memory"); exit(2); }
 
   u64 ** bgs = NULL;  u32 ** dgs = NULL;
   if (o->extended >= 2 && !o->binary) {
-    bgs = (u64 **) calloc((sz) N, sizeof(*bgs));
-    dgs = (u32 **) calloc((sz) N, sizeof(*dgs));
-    if (!bgs || !dgs) { fprintf(stderr, "out of memory\n"); exit(2); }
+    bgs = (u64 **) calloc((sz) N, sizeof (*bgs));
+    dgs = (u32 **) calloc((sz) N, sizeof (*dgs));
+    if (!bgs || !dgs) { fastent_message("out of memory"); exit(2); }
     Fk(N, bgs[k] = fastent_bigram_alloc();
-          dgs[k] = fastent_dg_u32_alloc();
-          if (!bgs[k] || !dgs[k]) {
-            fprintf(stderr, "out of memory\n"); exit(2); })
+         dgs[k] = fastent_dg_u32_alloc();
+         if (!bgs[k] || !dgs[k]) {
+           fastent_message("out of memory"); exit(2); });
   }
 
   uring_mt_ctx c;
@@ -660,28 +660,28 @@ static int run_uring_mt_(
   fastent_parallel_for((sz) N, uring_mt_worker_, &c);
 
   if (c.failed) {                      /*  graceful fallback  */
-    if (bgs) { Fk(N, fastent_bigram_free(bgs[k])) free(bgs); }
-    if (dgs) { Fk(N, fastent_dg_u32_free(dgs[k])) free(dgs); }
+    if (bgs) { Fk(N, fastent_bigram_free(bgs[k])); free(bgs); }
+    if (dgs) { Fk(N, fastent_dg_u32_free(dgs[k])); free(dgs); }
     free(accs);  free(edges);  free(bounds);
     return -1;
   }
 
   /*  Order-independent sums (same as run_stream_mt_).  */
   Fk(N,
-     const fastent_chunk_state * a = &accs[k];
-     Fi(256, out->hist_master[i] += a->hist_master[i])
-     out->bit_hist[0] += a->bit_hist[0];
-     out->bit_hist[1] += a->bit_hist[1];
-     out->bit_bigram[0][0] += a->bit_bigram[0][0];
-     out->bit_bigram[0][1] += a->bit_bigram[0][1];
-     out->bit_bigram[1][0] += a->bit_bigram[1][0];
-     out->bit_bigram[1][1] += a->bit_bigram[1][1];
-     out->cross_product += a->cross_product;
-     out->mc_count  += a->mc_count;
-     out->mc_inside += a->mc_inside;
-     out->total_bytes += a->total_bytes;
-     if (out->bigram && a->bigram)
-       Fi((int) FASTENT_BG_CELLS, out->bigram[i] += a->bigram[i]))
+    const fastent_chunk_state * a = &accs[k];
+    Fi(256, out->hist_master[i] += a->hist_master[i]);
+    out->bit_hist[0] += a->bit_hist[0];
+    out->bit_hist[1] += a->bit_hist[1];
+    out->bit_bigram[0][0] += a->bit_bigram[0][0];
+    out->bit_bigram[0][1] += a->bit_bigram[0][1];
+    out->bit_bigram[1][0] += a->bit_bigram[1][0];
+    out->bit_bigram[1][1] += a->bit_bigram[1][1];
+    out->cross_product += a->cross_product;
+    out->mc_count  += a->mc_count;
+    out->mc_inside += a->mc_inside;
+    out->total_bytes += a->total_bytes;
+    if (out->bigram && a->bigram)
+      Fi((int) FASTENT_BG_CELLS, out->bigram[i] += a->bigram[i]););
 
   /*  Ordered boundary stitch in slab order (seq == k); same algebra as
       run_stream_mt_, edges already laid out by index so no qsort.  */
@@ -691,48 +691,48 @@ static int run_uring_mt_(
   i64 cs_off = 0, cs_min = 0, cs_max = 0;
   i32 prev = -1;
   Fk(N,
-     const stream_edge * e = &edges[k];
-     if (e->n == 0 || accs[k].total_bytes == 0) continue;
-     if (seen) {
-       out->cross_product += (i64) out->carry_byte * (i64) e->o0_first;
-       if (out->bigram)
-         out->bigram[((u32) edges[prev].raw_last << 8) | e->raw_first]++;
-       if (o->binary && o->extended >= 2) {
-         const u32 pb = edges[prev].raw_last & 1u;
-         const u32 cb = (e->raw_first >> 7) & 1u;
-         out->bit_bigram[pb][cb]++;
-         if (pb == cb) out->rn_count--;
-       }
-     } else {
-       out->first_byte = e->o0_first;  out->have_first = 1;
-     }
-     out->carry_byte = e->o0_last;  out->last_byte = e->o0_last;
-     out->have_carry = 1;
-     if (o->extended >= 2) {
-       const u64 imax = e->lr_internal;
-       if (imax > lr_gmax) lr_gmax = imax;
-       if (have_run && carry_sym == e->lr_head_sym) {
-         const u64 j = carry_len + e->lr_head_len;
-         if (j > lr_gmax) lr_gmax = j;
-         if (e->lr_whole) carry_len = j;
-         else { carry_sym = e->lr_tail_sym;  carry_len = e->lr_tail_len; }
-       } else {
-         if (have_run && carry_len > lr_gmax) lr_gmax = carry_len;
-         if (e->lr_whole) { carry_sym = e->lr_head_sym;
-                            carry_len = e->lr_head_len; }
-         else { carry_sym = e->lr_tail_sym;  carry_len = e->lr_tail_len; }
-         have_run = 1;
-       }
-       if (o->binary) {
-         out->rn_count += e->rn_count;  out->rn_have = 1;
-         if (cs_off + e->cs_min < cs_min) cs_min = cs_off + e->cs_min;
-         if (cs_off + e->cs_max > cs_max) cs_max = cs_off + e->cs_max;
-         cs_off += e->cs_sum;
-       }
-     }
-     out->mc_pos = e->mc_pos;
-     memcpy(out->mc_buf, e->mc_buf, sizeof(out->mc_buf));
-     prev = (i32) k;  seen = 1;)
+    const stream_edge * e = &edges[k];
+    if (e->n == 0 || accs[k].total_bytes == 0) continue;
+    if (seen) {
+      out->cross_product += (i64) out->carry_byte * (i64) e->o0_first;
+      if (out->bigram)
+        out->bigram[((u32) edges[prev].raw_last << 8) | e->raw_first]++;
+      if (o->binary && o->extended >= 2) {
+        const u32 pb = edges[prev].raw_last & 1u;
+        const u32 cb = (e->raw_first >> 7) & 1u;
+        out->bit_bigram[pb][cb]++;
+        if (pb == cb) out->rn_count--;
+      }
+    } else {
+      out->first_byte = e->o0_first;  out->have_first = 1;
+    }
+    out->carry_byte = e->o0_last;  out->last_byte = e->o0_last;
+    out->have_carry = 1;
+    if (o->extended >= 2) {
+      const u64 imax = e->lr_internal;
+      if (imax > lr_gmax) lr_gmax = imax;
+      if (have_run && carry_sym == e->lr_head_sym) {
+        const u64 j = carry_len + e->lr_head_len;
+        if (j > lr_gmax) lr_gmax = j;
+        if (e->lr_whole) carry_len = j;
+        else { carry_sym = e->lr_tail_sym;  carry_len = e->lr_tail_len; }
+      } else {
+        if (have_run && carry_len > lr_gmax) lr_gmax = carry_len;
+        if (e->lr_whole) { carry_sym = e->lr_head_sym;
+                           carry_len = e->lr_head_len; }
+        else { carry_sym = e->lr_tail_sym;  carry_len = e->lr_tail_len; }
+        have_run = 1;
+      }
+      if (o->binary) {
+        out->rn_count += e->rn_count;  out->rn_have = 1;
+        if (cs_off + e->cs_min < cs_min) cs_min = cs_off + e->cs_min;
+        if (cs_off + e->cs_max > cs_max) cs_max = cs_off + e->cs_max;
+        cs_off += e->cs_sum;
+      }
+    }
+    out->mc_pos = e->mc_pos;
+    memcpy(out->mc_buf, e->mc_buf, sizeof (out->mc_buf));
+    prev = (i32) k;  seen = 1;);
   if (o->extended >= 2 && have_run) {
     if (carry_len > lr_gmax) lr_gmax = carry_len;
     out->lr_have = 1;  out->lr_max = lr_gmax;  out->lr_cur = 0;
@@ -741,19 +741,17 @@ static int run_uring_mt_(
     out->cs_min = cs_min;  out->cs_max = cs_max;  out->cs_sum = cs_off;
   }
 
-  if (bgs) { Fk(N, fastent_bigram_free(bgs[k])) free(bgs); }
-  if (dgs) { Fk(N, fastent_dg_u32_free(dgs[k])) free(dgs); }
+  if (bgs) { Fk(N, fastent_bigram_free(bgs[k])); free(bgs); }
+  if (dgs) { Fk(N, fastent_dg_u32_free(dgs[k])); free(dgs); }
   free(accs);  free(edges);  free(bounds);
   return 0;
 }
 #endif
 
-/*  Grid drivers (LZ77F / linear-complexity / Maurer): the parse is
-    decomposed on the absolute 4 MiB grid (lzest.h); each block is
-    scored whole with fresh per-block state, so the accumulators
-    combine order-independent and -j1 == -jN == ref.  The three are
-    token-identical, so runner-grid.h is the single source for all
-    three, instantiated once per accumulator type below.  */
+/*  Grid drivers (LZ77F / linear-complexity / Maurer): the parse is decomposed
+    on the absolute 4 MiB grid (lzest.h); each block is scored whole with
+    fresh per-block state, so the accumulators combine order-independent and
+    -j1 == -jN == ref.  */
 
 #define FASTENT_LZ_GRID_U64 ((u64) FASTENT_LZ_GRID)
 
@@ -784,7 +782,7 @@ void fastent_run_mmap(
   fastent_analyze_fn body_plain = (!o->binary && o->fold) ? fn_byte : NULL;
 
 #ifdef FASTENT_HAVE_THREADS
-  if (o->threads > 1 && size >= (u64)(o->threads) * 1024u * 1024u) {
+  if (o->threads > 1 && size >= (u64) (o->threads) * 1024u * 1024u) {
     run_mmap_mt_(st, o, body, body_plain, data, size);
     return;
   }
@@ -821,7 +819,7 @@ void fastent_run_stream(
   for (;;) {
     sz n = fastent_src_read(src);
     if (n == (sz) -1) {
-      perror("read");
+      fastent_message("read error: %s", strerror(errno));
       exit(2);
     }
     if (n == 0) break;
@@ -830,11 +828,10 @@ void fastent_run_stream(
   }
 }
 
-/*  -eee non-mmap tee: one bounded pass feeds each chunk to the
-    order-0/-ee analyzer (analyze_fused_), the LZ77F acc, the linear-
-    complexity acc, the Maurer acc, the matrix-rank acc and the
-    permutation-entropy acc, O(chunk + grid block).  Serial on -j,
-    bit-identical to -j1/mmap.  Any acc may be NULL.  */
+/*  -eee non-mmap tee: one bounded pass feeds each chunk to the order-0/-ee
+    analyzer (analyze_fused_), the LZ77F acc, the linear-complexity acc, the
+    Maurer acc, the matrix-rank acc and the permutation-entropy acc, O(chunk +
+    grid block).  */
 void fastent_run_stream_lz_tee(
     fastent_chunk_state * st, fastent_lz_acc * lz, fastent_bm_acc * bm,
     fastent_maurer_acc * ma, fastent_mrank_acc * mr,
@@ -849,25 +846,15 @@ void fastent_run_stream_lz_tee(
 
   for (;;) {
     sz n = fastent_src_read(src);
-    if (n == (sz) -1) { perror("read");  exit(2); }
+    if (n == (sz) -1) { fastent_message("read error: %s", strerror(errno));  exit(2); }
     if (n == 0) break;
     analyze_fused_(st, body, body_plain, src->stream_buf, n,
                    o->extended, o->binary, o->fold);
-    if (lz && fastent_lz_acc_feed(lz, src->stream_buf, n) != 0) {
-      lz->oom = 1;  return;
-    }
-    if (bm && fastent_bm_acc_feed(bm, src->stream_buf, n) != 0) {
-      bm->oom = 1;  return;
-    }
-    if (ma && fastent_maurer_acc_feed(ma, src->stream_buf, n) != 0) {
-      ma->oom = 1;  return;
-    }
-    if (mr && fastent_mrank_acc_feed(mr, src->stream_buf, n) != 0) {
-      mr->oom = 1;  return;
-    }
-    if (pe && fastent_perment_acc_feed(pe, src->stream_buf, n) != 0) {
-      pe->oom = 1;  return;
-    }
+    if (lz && fastent_lz_acc_feed(lz, src->stream_buf, n) != 0) { lz->oom = 1;  return; }
+    if (bm && fastent_bm_acc_feed(bm, src->stream_buf, n) != 0) { bm->oom = 1;  return; }
+    if (ma && fastent_maurer_acc_feed(ma, src->stream_buf, n) != 0) { ma->oom = 1;  return; }
+    if (mr && fastent_mrank_acc_feed(mr, src->stream_buf, n) != 0) { mr->oom = 1;  return; }
+    if (pe && fastent_perment_acc_feed(pe, src->stream_buf, n) != 0) { pe->oom = 1;  return; }
   }
   if (lz && fastent_lz_acc_flush(lz) != 0) lz->oom = 1;
   if (bm && fastent_bm_acc_flush(bm) != 0) bm->oom = 1;
@@ -894,7 +881,7 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   fastent_source src;
   fastent_io_mode io = (fastent_io_mode) c->o->io_mode;
   if (fastent_src_open(&src, path, io) != 0) {
-    fprintf(stderr, "skip %s: %s\n", path, strerror(errno));
+    fastent_message("skip %s: %s", path, strerror(errno));
     return 0;
   }
 
@@ -903,15 +890,10 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   if (c->o->extended >= 2 && !c->o->binary) {
     st.bigram = fastent_bigram_alloc();
     st.dg_u32 = fastent_dg_u32_alloc();
-    if (!st.bigram || !st.dg_u32) {
-      fprintf(stderr, "out of memory\n"); exit(2);
-    }
+    if (!st.bigram || !st.dg_u32) { fastent_message("out of memory"); exit(2); }
   }
-  /*  Grid estimators by speed band (matches fastent.c::main): LZ77F
-      and perment ride -e; BM / Maurer / mrank stay at -eee.  mmap
-      feeds each consumer directly, a stream tees per chunk
-      (bit-identical to mmap/-j1).  Heap-allocated: every acc carries
-      a 4 MiB grid buffer (small wasm / DJGPP stacks).  */
+  /*  Grid estimators by speed band (matches fastent.c::main): LZ77F and
+      perment ride -e; BM / Maurer / mrank stay at -eee.  */
   const int do_lzp = (c->o->extended >= 1);
   const int do_bmm = (c->o->extended >= 3);
   /*  -H per-file plots: human side output in walk order before the
@@ -925,7 +907,7 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   if (do_lzp) {
     lz = (fastent_lz_acc *) malloc(sizeof *lz);
     pe = (fastent_perment_acc *) malloc(sizeof *pe);
-    if (!lz || !pe) { fprintf(stderr, "out of memory\n");  exit(2); }
+    if (!lz || !pe) { fastent_message("out of memory");  exit(2); }
     fastent_lz_acc_init(lz, 0);
     fastent_perment_acc_init(pe, 0);
   }
@@ -933,7 +915,7 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
     bm = (fastent_bm_acc *) malloc(sizeof *bm);
     ma = (fastent_maurer_acc *) malloc(sizeof *ma);
     mr = (fastent_mrank_acc *) malloc(sizeof *mr);
-    if (!bm || !ma || !mr) { fprintf(stderr, "out of memory\n");  exit(2); }
+    if (!bm || !ma || !mr) { fastent_message("out of memory");  exit(2); }
     fastent_bm_acc_init(bm, 0);
     fastent_maurer_acc_init(ma, 0);
     fastent_mrank_acc_init(mr, 0);
@@ -972,11 +954,11 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   if (do_lzp) {
     if (lz->oom || pe->oom
         || (do_bmm && (bm->oom || ma->oom || mr->oom))) {
-      fprintf(stderr, "out of memory\n"); exit(2);
+      fastent_message("out of memory"); exit(2);
     }
     if (do_plot) {
       r.lz = fastent_lz77f_tables_alloc();
-      if (!r.lz) { fprintf(stderr, "out of memory\n"); exit(2); }
+      if (!r.lz) { fastent_message("out of memory"); exit(2); }
     }
     fastent_lz_finalize(lz, st.total_bytes, &r);
     fastent_perment_finalize(pe, st.total_bytes, &r);
@@ -1005,7 +987,7 @@ static int analyse_one_(const char * path, recursive_ctx * c) {
   if (c->count == c->cap) {
     sz nc = c->cap ? c->cap * 2 : 32;
     fastent_recursive_row * nr =
-      (fastent_recursive_row *) realloc(c->rows, nc * sizeof(*nr));
+      (fastent_recursive_row *) realloc(c->rows, nc * sizeof (*nr));
     if (!nr) { errno = ENOMEM; return -1; }
     c->rows = nr;
     c->cap  = nc;
@@ -1047,8 +1029,9 @@ int fastent_run_recursive(
 }
 
 void fastent_rows_free(fastent_recursive_row * rows, sz n) {
+  sz i;
   if (!rows) return;
-  for (sz i = 0; i < n; i++) free(rows[i].path);
+  for (i = 0; i < n; i++) free(rows[i].path);
   free(rows);
 }
 
@@ -1089,9 +1072,7 @@ static int cmp_(const void * a, const void * b) {
   const fastent_recursive_row * ra = (const fastent_recursive_row *) a;
   const fastent_recursive_row * rb = (const fastent_recursive_row *) b;
   int rc;
-  if (g_sort_by_ == FASTENT_SORT_PATH) {
-    rc = strcmp(ra->path, rb->path);
-  } else {
+  if (g_sort_by_ == FASTENT_SORT_PATH) { rc = strcmp(ra->path, rb->path); } else {
     f64 ka = row_key_(ra);
     f64 kb = row_key_(rb);
     rc = (ka < kb) ? -1 : (ka > kb) ? 1 : 0;

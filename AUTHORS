@@ -1,5 +1,8 @@
-Lead development:
-  Kamila Szewczyk <k@iczelia.net>
+Lead development
+Kamila Szewczyk <k@iczelia.net>
 
-This program is released under the GNU General Public License,
-version 3 only (see COPYING).
+License
+GNU General Public License version 3.
+
+The bundled yarg command-line parser is by Kamila Szewczyk and uses the
+Zero-Clause BSD license.

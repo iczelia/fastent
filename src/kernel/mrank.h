@@ -1,6 +1,16 @@
-/*  fastent: binary matrix-rank randomness test (NIST SP800-22 sec 2.5).
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #ifndef FASTENT_MRANK_H
 #define FASTENT_MRANK_H
@@ -8,11 +18,8 @@
 #include "common.h"
 #include "lzest.h"   /*  FASTENT_LZ_GRID: the shared absolute grid  */
 
-/*  32x32 GF(2) matrix per test unit: 32 rows of 32 bits = 1024 bits =
-    128 bytes.  Row i of matrix k is the big-endian u32 at byte offset
-    128*k + 4*i; bits are MSB-first per the project convention.  128
-    divides the 4 MiB grid so matrices never straddle (exact integer
-    sum-merge, zero drift).  */
+/*  32x32 GF(2) matrix per test unit: 32 rows of 32 bits = 1024 bits = 128
+    bytes.  */
 #define FASTENT_MRANK_M  32u
 #define FASTENT_MRANK_Q  32u
 #define FASTENT_MRANK_MB 128u   /*  bytes per matrix  */

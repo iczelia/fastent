@@ -1,17 +1,16 @@
-/*  fastent: the -eee windowed Maurer universal statistical test.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    A count-only Maurer scorer: each 4 MiB absolute grid block runs a
-    fresh-table Maurer (L = 8 bits/block, Q = 10*2^L init blocks) over
-    its bits MSB-first, producing an in-order Sum log2(distance) and a
-    test-block count K.  Per-block partials reduce in absolute block
-    index order, so the f64 statistic is bit-identical for any thread
-    count, driver or host.  Drift versus a whole-stream table-carrying
-    Maurer is bounded and verdict-neutral (<= ~0.001% measured): a
-    fresh table only re-initialises the recency map at each block
-    start.  Catches compressible / repetitive sources that survive
-    order-0/-1, LZ and linear-complexity screening.
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "maurer.h"
 #include "analyze.h"
@@ -24,10 +23,7 @@
 /*  IEEE sqrt is correctly rounded, so bit-identical across hosts.  */
 static inline f64 fastent_maurer_sqrt(f64 x) { return sqrt(x); }
 
-/*  Libm-free 2^x for x <= 0 (the c factor needs K^(-3/L)).  Split
-    x = i + f with i = floor(x) <= 0 and f in [0,1); 2^x = ldexp(2^f,
-    i); 2^f via a degree-7 minimax (max rel error ~1.4e-10).  Only +,
-    *, floor, ldexp: deterministic across hosts.  */
+/*  Libm-free 2^x for x <= 0 (the c factor needs K^(-3/L)).  */
 static f64 fastent_maurer_exp2_neg(f64 x) {
   f64 fi = floor(x);
   int i = (int) fi;
@@ -50,30 +46,30 @@ static void fastent_maurer_block(
     fastent_maurer_acc * a, const u8 * src, sz n) {
   u64 nbits = (u64) n * 8u;
   u64 nblk  = nbits / FASTENT_MA_L;
+  u64 i;
   if (nblk < (u64) FASTENT_MA_Q + 1u) return;
   u64 K = nblk - FASTENT_MA_Q;
 
   u32 * T = a->tbl;
-  memset(T, 0, (sz) FASTENT_MA_TSZ * sizeof(u32));
+  memset(T, 0, (sz) FASTENT_MA_TSZ * sizeof (u32));
   volatile f64 sum = 0.0;
 
   const f64 * lt = a->logt;
-  for (u64 i = 1; i <= nblk; i++) {
+  for (i = 1; i <= nblk; i++) {
     u32 pat;
 #if FASTENT_MA_L == 8
     /*  L = 8: the block is exactly one byte, no bit assembly.  */
     pat = src[i - 1u];
 #else
     u64 bp = (i - 1u) * FASTENT_MA_L;
+    u32 b;
     pat = 0;
-    for (u32 b = 0; b < FASTENT_MA_L; b++) {
+    for (b = 0; b < FASTENT_MA_L; b++) {
       u64 q = bp + b;
       pat = (pat << 1) | ((src[q >> 3] >> (7u - (q & 7u))) & 1u);
     }
 #endif
-    if (i <= (u64) FASTENT_MA_Q) {
-      T[pat] = (u32) i;
-    } else {
+    if (i <= (u64) FASTENT_MA_Q) { T[pat] = (u32) i; } else {
       u64 d = i - (u64) T[pat];
       T[pat] = (u32) i;
       f64 l2 = d < FASTENT_MA_LOGT ? lt[d] : fastent_log2_ratio(d, 1);
@@ -87,7 +83,7 @@ static void fastent_maurer_block(
   if (a->nparts == a->cap) {
     sz nc = a->cap ? a->cap * 2u : 8u;
     fastent_maurer_part * np = (fastent_maurer_part *)
-      realloc(a->parts, nc * sizeof(*np));
+      realloc(a->parts, nc * sizeof (*np));
     if (!np) { a->oom = 1;  return; }
     a->parts = np;  a->cap = nc;
   }
@@ -98,9 +94,10 @@ static void fastent_maurer_block(
 }
 
 static int fastent_maurer_ensure(fastent_maurer_acc * a) {
+  i32 i;
   if (a->oom) return -1;
   if (!a->tbl) {
-    a->tbl = (u32 *) malloc((sz) FASTENT_MA_TSZ * sizeof(u32));
+    a->tbl = (u32 *) malloc((sz) FASTENT_MA_TSZ * sizeof (u32));
     if (!a->tbl) { a->oom = 1;  return -1; }
   }
   if (!a->blk) {
@@ -108,24 +105,24 @@ static int fastent_maurer_ensure(fastent_maurer_acc * a) {
     if (!a->blk) { a->oom = 1;  return -1; }
   }
   if (!a->logt) {
-    a->logt = (f64 *) malloc((sz) FASTENT_MA_LOGT * sizeof(f64));
+    a->logt = (f64 *) malloc((sz) FASTENT_MA_LOGT * sizeof (f64));
     if (!a->logt) { a->oom = 1;  return -1; }
-    Fi0(FASTENT_MA_LOGT, 1, a->logt[i] = fastent_log2_ratio((u64) i, 1))
+    for (i = 1; i < FASTENT_MA_LOGT; i++)
+      a->logt[i] = fastent_log2_ratio((u64) i, 1);
   }
   return 0;
 }
 
 void fastent_maurer_acc_init(fastent_maurer_acc * a, u64 abs_base) {
-  memset(a, 0, sizeof(*a));
+  memset(a, 0, sizeof (*a));
   a->abs_base = abs_base;
   a->abs_pos  = abs_base;
   a->blk_off  = abs_base;
 }
 
-/*  Rebase for the next absolute grid block while keeping the heap
-    scratch (T table, log2 memo, block buffer) so a worker that scores
-    many blocks fills the memo once.  Clears only per-block state; the
-    result is identical to free + init.  */
+/*  Rebase for the next absolute grid block while keeping the heap scratch (T
+    table, log2 memo, block buffer) so a worker that scores many blocks fills
+    the memo once.  */
 void fastent_maurer_acc_reset(fastent_maurer_acc * a, u64 abs_base) {
   a->nparts  = 0;
   a->blk_len = 0;
@@ -133,7 +130,8 @@ void fastent_maurer_acc_reset(fastent_maurer_acc * a, u64 abs_base) {
   a->abs_base = abs_base;
   a->abs_pos  = abs_base;
   a->blk_off  = abs_base;
-  Fi(FASTENT_MA_LBINS, a->lhist[i] = 0)
+  i32 i;
+  Fi(FASTENT_MA_LBINS, a->lhist[i] = 0);
 }
 
 int fastent_maurer_acc_feed(fastent_maurer_acc * a, const u8 * buf, sz len) {
@@ -143,7 +141,7 @@ int fastent_maurer_acc_feed(fastent_maurer_acc * a, const u8 * buf, sz len) {
   while (pos < len) {
     u64 abs = a->abs_pos;
     u64 next_grid = (abs / FASTENT_LZ_GRID + 1) * (u64) FASTENT_LZ_GRID;
-    sz  room = (sz)(next_grid - abs);
+    sz  room = (sz) (next_grid - abs);
     sz  take = len - pos;
     if (take > room) take = room;
     memcpy(a->blk + a->blk_len, buf + pos, take);
@@ -173,20 +171,21 @@ int fastent_maurer_acc_flush(fastent_maurer_acc * a) {
 
 void fastent_maurer_acc_merge(
     fastent_maurer_acc * dst, const fastent_maurer_acc * src) {
+  i32 i;
   if (src->oom) dst->oom = 1;
-  Fi(FASTENT_MA_LBINS, dst->lhist[i] += src->lhist[i])
+  Fi(FASTENT_MA_LBINS, dst->lhist[i] += src->lhist[i]);
   if (src->nparts == 0) return;
   sz need = dst->nparts + src->nparts;
   if (need > dst->cap) {
     sz nc = dst->cap ? dst->cap : 8u;
     while (nc < need) nc *= 2u;
     fastent_maurer_part * np = (fastent_maurer_part *)
-      realloc(dst->parts, nc * sizeof(*np));
+      realloc(dst->parts, nc * sizeof (*np));
     if (!np) { dst->oom = 1;  return; }
     dst->parts = np;  dst->cap = nc;
   }
   memcpy(dst->parts + dst->nparts, src->parts,
-         src->nparts * sizeof(*src->parts));
+         src->nparts * sizeof (*src->parts));
   dst->nparts = need;
 }
 
@@ -210,6 +209,7 @@ static int fastent_maurer_part_cmp(const void * x, const void * y) {
 
 void fastent_maurer_finalize(
     fastent_maurer_acc * a, u64 n, struct fastent_result * out) {
+  i32 i;
   (void) n;
   out->maurer_fn       = 0.0;
   out->maurer_expected = FASTENT_MA_EXPECTED;
@@ -217,17 +217,17 @@ void fastent_maurer_finalize(
   out->maurer_k        = 0;
   out->maurer_degenerate = 0;
   Fi(FASTENT_MA_LBINS, out->maurer_lhist[i] =
-     (u32)(a->lhist[i] > 0xffffffffu ? 0xffffffffu : a->lhist[i]))
+    (u32) (a->lhist[i] > 0xffffffffu ? 0xffffffffu : a->lhist[i]));
 
   if (a->nparts == 0) return;
 
   /*  Sort the per-block partials in place by absolute block index;
       no copy, so there is no allocation that could false-PASS.  */
-  qsort(a->parts, a->nparts, sizeof(*a->parts), fastent_maurer_part_cmp);
+  qsort(a->parts, a->nparts, sizeof (*a->parts), fastent_maurer_part_cmp);
 
   volatile f64 tsum = 0.0;
   u64 tk = 0;
-  Fi((int) a->nparts, tsum = tsum + a->parts[i].sum;  tk += a->parts[i].k)
+  Fi((int) a->nparts, tsum = tsum + a->parts[i].sum;  tk += a->parts[i].k);
 
   out->maurer_k = tk;
   if (tk == 0) return;

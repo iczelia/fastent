@@ -1,7 +1,16 @@
-/*  fastent: Win32 Unicode-path helpers.  Built only on Windows hosts.
-    FASTENT_WIN_LEGACY selects the narrow-API Win95 path.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "fastent-win32.h"
@@ -10,7 +19,7 @@
 
 #ifndef _WIN32_WINNT
   /*  Vista baseline; configure can override.  */
-  #define _WIN32_WINNT 0x0600
+#define _WIN32_WINNT 0x0600
 #endif
 
 #define WIN32_LEAN_AND_MEAN
@@ -31,11 +40,9 @@
 static wchar_t * utf8_to_wide(const char * s) {
   i32 n = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
   if (n <= 0) return NULL;
-  wchar_t * w = (wchar_t *) malloc((sz) n * sizeof(wchar_t));
+  wchar_t * w = (wchar_t *) malloc((sz) n * sizeof (wchar_t));
   if (!w) return NULL;
-  if (MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n) <= 0) {
-    free(w); return NULL;
-  }
+  if (MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n) <= 0) { free(w); return NULL; }
   return w;
 }
 
@@ -44,21 +51,18 @@ static char * wide_to_utf8(const wchar_t * w) {
   if (n <= 0) return NULL;
   char * s = (char *) malloc((sz) n);
   if (!s) return NULL;
-  if (WideCharToMultiByte(CP_UTF8, 0, w, -1, s, n, NULL, NULL) <= 0) {
-    free(s); return NULL;
-  }
+  if (WideCharToMultiByte(CP_UTF8, 0, w, -1, s, n, NULL, NULL) <= 0) { free(s); return NULL; }
   return s;
 }
 
-/*  MSVCRT command-line parsing: whitespace separates args outside
-    quotes; 2N backslashes before `"` become N '\\' and toggle quote
-    state, 2N+1 become N '\\' plus a literal '"'; `""` inside quotes
-    is a literal '"'.  Two-pass: count argc, then fill.  */
+/*  MSVCRT command-line parsing: whitespace separates args outside quotes; 2N
+    backslashes before `"` become N '\\' and toggle quote state, 2N+1 become N
+    '\\' plus a literal '"'; `""` inside quotes is a literal '"'.  */
 
 static int grow_buf_w(wchar_t ** pbuf, sz * pbcap) {
-  if (*pbcap > (sz) -1 / (2 * sizeof(wchar_t))) return 0;
+  if (*pbcap > (sz) -1 / (2 * sizeof (wchar_t))) return 0;
   sz nc = *pbcap * 2;
-  wchar_t * nb = (wchar_t *) realloc(*pbuf, nc * sizeof(wchar_t));
+  wchar_t * nb = (wchar_t *) realloc(*pbuf, nc * sizeof (wchar_t));
   if (!nb) return 0;
   *pbuf = nb; *pbcap = nc;
   return 1;
@@ -66,13 +70,13 @@ static int grow_buf_w(wchar_t ** pbuf, sz * pbcap) {
 
 static int split_cmdline_w(const wchar_t * cmd, wchar_t *** out_wargv) {
   int argc = 0;
-  i32 pass;
+  i32 i, j, pass;
   wchar_t ** wargv = NULL;
   wchar_t * buf = NULL;
   for (pass = 0; pass < 2; pass++) {
     const wchar_t * p = cmd;
     if (pass == 1) {
-      wargv = (wchar_t **) calloc((sz) argc + 1, sizeof(wchar_t *));
+      wargv = (wchar_t **) calloc((sz) argc + 1, sizeof (wchar_t *));
       if (!wargv) return -1;
     }
     argc = 0;
@@ -83,7 +87,7 @@ static int split_cmdline_w(const wchar_t * cmd, wchar_t *** out_wargv) {
       buf = NULL;
       if (pass == 1) {
         bcap = 64;
-        buf = (wchar_t *) malloc(bcap * sizeof(wchar_t));
+        buf = (wchar_t *) malloc(bcap * sizeof (wchar_t));
         if (!buf) goto fail;
       }
       int in_quote = 0;
@@ -160,24 +164,25 @@ int fastent_win32_argv_utf8(int * argc_out, char *** argv_out) {
   wchar_t ** wargv = NULL;
   int wargc = split_cmdline_w(GetCommandLineW(), &wargv);
   char ** argv;
+  i32 i, j;
   if (wargc < 0) return -1;
 
-  argv = (char **) calloc((sz) wargc + 1, sizeof(char *));
+  argv = (char **) calloc((sz) wargc + 1, sizeof (char *));
   if (!argv) {
     Fi(wargc, free(wargv[i]));
     free(wargv);
     return -1;
   }
   Fi(wargc,
-     argv[i] = wide_to_utf8(wargv[i]);
-     free(wargv[i]);
-     if (!argv[i]) {
-       Fj(i, free(argv[j]));
-       free(argv);
-       Fj0(wargc, i + 1, free(wargv[j]));
-       free(wargv);
-       return -1;
-     })
+    argv[i] = wide_to_utf8(wargv[i]);
+    free(wargv[i]);
+    if (!argv[i]) {
+      Fj(i, free(argv[j]));
+      free(argv);
+      for (j = i + 1; j < wargc; j++) free(wargv[j]);
+      free(wargv);
+      return -1;
+    });
   free(wargv);
   *argc_out = wargc;
   *argv_out = argv;
@@ -242,10 +247,7 @@ i64 fastent_win32_num_cpus(void) {
   return (i64) si.dwNumberOfProcessors;
 }
 
-/*  GetFileSizeEx is Win2000+; FASTENT_WIN_LEGACY uses GetFileSize.
-    Returns 0 and sets *out on success (a zero-length file is a
-    valid size 0, not an error: callers fall back to STREAM for it,
-    matching the POSIX backend); -1 only on a real query failure.  */
+/*  GetFileSizeEx is Win2000+; FASTENT_WIN_LEGACY uses GetFileSize.  */
 static int fastent_win32_filesize_(HANDLE h, u64 * out) {
 #ifdef FASTENT_WIN_LEGACY
   DWORD hi = 0;
@@ -302,11 +304,9 @@ void * fastent_win32_open_overlapped(const char * utf8_path, u64 * out_size) {
   {
     i32 n = MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, NULL, 0);
     if (n <= 0) return NULL;
-    wchar_t * w = (wchar_t *) malloc((sz) n * sizeof(wchar_t));
+    wchar_t * w = (wchar_t *) malloc((sz) n * sizeof (wchar_t));
     if (!w) return NULL;
-    if (MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, w, n) <= 0) {
-      free(w); return NULL;
-    }
+    if (MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, w, n) <= 0) { free(w); return NULL; }
     h = CreateFileW(w, GENERIC_READ, FILE_SHARE_READ, NULL,
                     OPEN_EXISTING,
                     FILE_FLAG_OVERLAPPED | FILE_FLAG_SEQUENTIAL_SCAN,
@@ -342,9 +342,7 @@ void fastent_win32_set_console_fg(int cls) {
     } else return;
   }
   WORD attr;
-  if (cls < 0) {
-    attr = initial_attrs;
-  } else {
+  if (cls < 0) { attr = initial_attrs; } else {
     /*  4th entry keeps the `cls & 3` mask in bounds; classes 0..2.  */
     static const WORD fg[4] = {
       FOREGROUND_INTENSITY,
@@ -371,9 +369,7 @@ void fastent_win32_set_console_sev(int sev) {
     } else return;
   }
   WORD attr;
-  if (sev < 0) {
-    attr = initial_attrs;
-  } else {
+  if (sev < 0) { attr = initial_attrs; } else {
     static const WORD sv[4] = {
       FOREGROUND_GREEN | FOREGROUND_INTENSITY,
       FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY,

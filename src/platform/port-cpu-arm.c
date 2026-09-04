@@ -1,6 +1,16 @@
-/*  fastent: AArch64 / ARMv7-A CPU feature probe.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "port-cpu.h"
@@ -14,10 +24,10 @@ static int                  cache_done_ = 0;
   /*  NEON is mandatory per the AArch64 procedure call standard.  */
   static inline int probe_neon_(void) { return 1; }
 #elif defined(__arm__) && defined(HAVE_SYS_AUXV_H) && defined(HAVE_GETAUXVAL)
-  #include <sys/auxv.h>
-  #ifndef HWCAP_NEON
-    #define HWCAP_NEON (1u << 12)
-  #endif
+#include <sys/auxv.h>
+#ifndef HWCAP_NEON
+#define HWCAP_NEON (1u << 12)
+#endif
   static int probe_neon_(void) {
     return (getauxval(AT_HWCAP) & HWCAP_NEON) != 0;
   }
@@ -26,39 +36,39 @@ static int                  cache_done_ = 0;
       (__ARM_NEON, set by -mfpu=neon or a mandatory-NEON target).
       Assuming NEON otherwise would SIGILL on a NEON-less ARMv7.  */
   static inline int probe_neon_(void) {
-  #if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
     return 1;
-  #else
+#else
     return 0;
-  #endif
+#endif
   }
 #endif
 
 #if defined(__aarch64__) && defined(__linux__) \
     && defined(HAVE_SYS_AUXV_H) && defined(HAVE_GETAUXVAL)
-  #include <sys/auxv.h>
-  #ifndef HWCAP2_SVE2
-    #define HWCAP2_SVE2 (1u << 1)
-  #endif
+#include <sys/auxv.h>
+#ifndef HWCAP2_SVE2
+#define HWCAP2_SVE2 (1u << 1)
+#endif
   static int probe_sve2_(void) {
     return (getauxval(AT_HWCAP2) & HWCAP2_SVE2) != 0;
   }
 #elif defined(__aarch64__) && defined(__FreeBSD__)
-  #include <sys/auxv.h>
-  #ifndef HWCAP2_SVE2
-    #define HWCAP2_SVE2 (1u << 1)
-  #endif
+#include <sys/auxv.h>
+#ifndef HWCAP2_SVE2
+#define HWCAP2_SVE2 (1u << 1)
+#endif
   static int probe_sve2_(void) {
     u64 hwcap2 = 0;
-    if (elf_aux_info(AT_HWCAP2, &hwcap2, sizeof(hwcap2)) != 0) return 0;
+    if (elf_aux_info(AT_HWCAP2, &hwcap2, sizeof (hwcap2)) != 0) return 0;
     return (hwcap2 & HWCAP2_SVE2) != 0;
   }
 #elif defined(__aarch64__) && defined(__APPLE__)
-  #include <sys/sysctl.h>
-  #include <stddef.h>
+#include <sys/sysctl.h>
+#include <stddef.h>
   static int probe_sve2_(void) {
     int    v   = 0;
-    sz     len = sizeof(v);
+    sz     len = sizeof (v);
     if (sysctlbyname("hw.optional.arm.FEAT_SVE2", &v, &len, NULL, 0) != 0)
       return 0;
     return v != 0;

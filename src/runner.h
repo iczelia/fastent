@@ -1,6 +1,16 @@
-/*  fastent: analysis driver.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #ifndef FASTENT_RUNNER_H
 #define FASTENT_RUNNER_H
@@ -27,11 +37,10 @@ void fastent_run_stream(
     fastent_analyze_fn fn_byte_fold, fastent_analyze_fn fn_bits_fold,
     fastent_source * src);
 
-/*  -eee non-mmap tee: one bounded pass feeding the order-0/-ee
-    analyzer (st), the LZ77F acc (lz), the linear-complexity acc (bm),
-    the Maurer acc (ma), the binary matrix-rank acc (mr) and the
-    permutation-entropy acc (pe); each may be NULL.  O(chunk + grid
-    block), serial on -j, bit-identical to -j1/mmap.  */
+/*  -eee non-mmap tee: one bounded pass feeding the order-0/-ee analyzer (st),
+    the LZ77F acc (lz), the linear-complexity acc (bm), the Maurer acc (ma),
+    the binary matrix-rank acc (mr) and the permutation-entropy acc (pe); each
+    may be NULL.  */
 void fastent_run_stream_lz_tee(
     fastent_chunk_state * st, fastent_lz_acc * lz, fastent_bm_acc * bm,
     fastent_maurer_acc * ma, fastent_mrank_acc * mr,
@@ -45,10 +54,7 @@ typedef struct {
   fastent_result  result;
 } fastent_recursive_row;
 
-/*  Walk `root` recursively, analysing every regular file.  Allocates
-    *out_rows on success; caller frees via fastent_rows_free.  Returns
-    0 on success, -1 on walk error (errno set).  Analysis failures on
-    individual files emit a stderr warning and skip.  */
+/*  Walk `root` recursively, analysing every regular file.  */
 int fastent_run_recursive(
     const char * root, const fastent_options * o, fastent_analyze_fn fn_byte,
     fastent_analyze_fn fn_bits, fastent_analyze_fn fn_byte_fold,
@@ -67,10 +73,7 @@ void fastent_run_lz(
 void fastent_run_bm(
     fastent_bm_acc * acc, const fastent_options * o, fastent_source * src);
 
-/*  Maurer universal test (-eee, alongside LZ77F / BM) driver.  Same
-    absolute 4 MiB-grid scheme; per-block partials reduce in absolute
-    block order so the f64 statistic is bit-identical for any -j /
-    driver / host.  */
+/*  Maurer universal test (-eee, alongside LZ77F / BM) driver.  */
 void fastent_run_maurer(
     fastent_maurer_acc * acc, const fastent_options * o,
     fastent_source * src);
@@ -82,10 +85,7 @@ void fastent_run_mrank(
     fastent_mrank_acc * acc, const fastent_options * o,
     fastent_source * src);
 
-/*  Bandt-Pompe permutation entropy (-e) driver.  Same absolute
-    4 MiB-grid scheme; the (m - 1) windows that span a grid boundary
-    are dropped (bounded drift, verdict-neutral); bit-identical for
-    any -j / driver / host.  */
+/*  Bandt-Pompe permutation entropy (-e) driver.  */
 void fastent_run_perment(
     fastent_perment_acc * acc, const fastent_options * o,
     fastent_source * src);

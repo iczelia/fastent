@@ -1,394 +1,77 @@
 2026-05-20  Kamila Szewczyk  <k@iczelia.net>
 
-	v1.3:  binary matrix-rank estimator (-eee, alongside the
-	linear-complexity and Maurer estimators).
+	add the NIST 32x32 binary matrix-rank test
 
-	A NIST SP800-22 sec 2.5 matrix-rank scorer
-	(src/kernel/mrank.c): the byte stream is partitioned into
-	disjoint 32x32 GF(2) matrices (128 bytes each); each matrix
-	rank is reduced by in-place Gauss-Jordan on 32-bit row words,
-	binned into the three pooled rank classes (r == 32, r == 31,
-	r <= 30) and chi-squared against the NIST closed-form
-	probabilities (df = 2).  The finalizer derives:
-	  - mrank_dev: headline z = sqrt(chi2), badged PASS / WEAK /
-	    FAIL.
-	  - mrank_chi: the chi-square statistic.
-	  - mrank_chi_p: NaN (df = 2 is even; fastent_chisq_tail_df
-	    consumes only odd df).
-	  - mrank_matrices: total 32x32 matrices scored.
-	  - mrank_r32 / mrank_r31 / mrank_rlo: the three rank bin
-	    counts (saturating-u32 copies of the merged acc).
-	  - mrank_underpowered: 1 if fewer than 16 matrices (skips the
-	    chi-square verdict; headline NaN).
-	128 divides the 4 MiB absolute grid so matrices never straddle:
-	the integer sum-merge is order-free and bit-identical for any
-	thread count, I/O mode and host.
+	add Bandt-Pompe permutation entropy
 
-	Surfaced in the default, terse CSV, JSON, recursive and
-	annotated output and a -H 3-bar rank histogram; sortable via
-	--sort-by=mrank-dev (which implies -eee).
+	add the windowed Maurer universal test
 
-	Scope: the matrix-rank test catches truncated-bit linear
-	recurrence sources that the byte-mode order-0 and the 512-bit
-	Berlekamp-Massey scorer can both miss (a low-bit LFSR that
-	folds onto 32-bit rows lands in the r <= 30 tail).  It does
-	not locate where the structure is and is not a substitute for
-	the per-test advisories.
+	add scalar and batched SIMD Berlekamp-Massey scorers
 
-	v1.3:  Bandt-Pompe permutation entropy estimator (-e,
-	alongside LZ77F).
+	group extended tests into measured -e, -ee, and -eee bands
 
-	A count-only ordinal-pattern scorer (src/kernel/perment.c):
-	each length-4 byte window (x[i], x[i+1], x[i+2], x[i+3]) is
-	reduced to one of 24 Lehmer-code ids via six strict
-	comparisons (ties break by index, the standard Bandt-Pompe
-	convention), and the 24-bin pattern histogram sum-merges on
-	the 4 MiB grid.  The finalizer derives:
-	  - perment_h_norm: normalised entropy in [0, 1] (1.0 for
-	    uniform patterns).
-	  - perment_deviation: headline z = (1 - H_norm) *
-	    sqrt(W * 2 * ln 2), badged PASS / WEAK / FAIL.
-	  - perment_chi: advisory chi-square over 24 bins.
-	  - perment_chi_p: its upper-tail p, df = 23 (odd; consumed by
-	    fastent_chisq_tail_df).
-	  - perment_windows: total m-tuple windows scored.
-	  - perment_hist[24]: the 24-bin Lehmer-id histogram.
-	The (m - 1) windows that would span a grid boundary are
-	dropped, capping drift at (nblocks - 1) * 3 windows out of ~n
-	total (~7.2e-7 at 4 MiB blocks, verdict-neutral, mirrors
-	LZ77F).  Histogram merge is integer-additive and order-free:
-	bit-identical for any thread count, I/O mode and host.
+	add output fields, plots, annotated verdicts, and recursive sort keys for
+	the new estimators
 
-	Surfaced in the default, terse CSV, JSON, recursive and
-	annotated output and a -H 24-bin pattern histogram; sortable
-	via --sort-by=perment-dev (which implies -e).
-
-	Scope: permutation entropy catches short-range monotone or
-	structural correlations missed by order-0 and order-1 (a
-	strictly increasing byte sequence collapses to one bin); it is
-	blind to long-range patterns by construction (m = 4).
-
-	v1.3:  windowed Maurer universal statistical test (-eee,
-	alongside LZ77F and the linear-complexity estimator).
-
-	A count-only Maurer scorer (src/kernel/maurer.c) on the bit
-	stream, MSB-first per byte.  L is fixed at 8 bits/block with
-	Q = 10*2^L init blocks; the 2^L recency table is heap.  Each
-	4 MiB absolute grid block runs a fresh-table Maurer producing
-	an in-order Sum log2(distance) and a test-block count K; the
-	per-block partials reduce in absolute block index order so the
-	f64 statistic is bit-identical for any thread count, I/O mode
-	and host.  L = 8 satisfies the NIST SP800-22 K >= 1000*2^L
-	per-window validity with a 16x margin within a 4 MiB window
-	(L = 16 would fall ~45x short); L/8 = 1 divides the grid.  The
-	finalizer derives:
-	  - maurer_fn: total Sum log2(distance) / total K.
-	  - maurer_expected: the NIST SP800-22 expected value for
-	    L = 8 (exact static constant; variance and the c
-	    correction factor likewise, the latter via a libm-free
-	    2^x so K^(-3/L) is bit-identical across hosts).
-	  - maurer_deviation: headline z = |fn - expected| /
-	    (c*sqrt(variance/K)), badged PASS / WEAK / FAIL.
-	  - maurer_degenerate: highly repetitive stream (fn far below
-	    expected), flagged like the linear-complexity note.
-	No test block anywhere yields z = 0.0 (total function); NaN is
-	the not-computed sentinel.  fastent_log2 only, the running sum
-	fused through a volatile f64 barrier.  Drift versus a textbook
-	whole-stream table-carrying Maurer is bounded and
-	verdict-neutral (<= ~0.001%, measured 0.00073% on enwik8).
-
-	Surfaced in the default, terse CSV, JSON, recursive and
-	annotated output and a -H log2-distance histogram; sortable
-	via --sort-by=maurer-deviation (which implies -eee).
-
-	Scope: Maurer catches compressible / repetitive sources
-	("how compressible under an idealised universal compressor")
-	that survive order-0/-1, LZ77F and the linear-complexity
-	screen; it is a global compressibility statistic, not a
-	structural locator and not a substitute for the per-test
-	advisories.
-
-	v1.3:  windowed linear-complexity estimator (-eee, alongside
-	LZ77F).
-
-	A windowed GF(2) Berlekamp-Massey scorer (src/kernel/bm.c)
-	reduces each whole 512-bit window to its linear complexity L;
-	the finalizer derives:
-	  - bm_mean_lc: mean per-window L; bm_mu: the NIST SP800-22
-	    random-sequence expectation (libm-free).
-	  - bm_deviation: headline z = |bm_mean_lc - bm_mu| /
-	    sqrt(VarL/W), badged PASS / WEAK / FAIL.
-	  - bm_chi / bm_chi_p: advisory NIST linear-complexity class
-	    chi-square (6 bins, df 5), kept separate from the headline.
-	  - bm_degenerate: near-constant stream (mean L below 2),
-	    flagged like the LZ77F single-dominant-match note.
-	Windows are 64 bytes and 64 divides the 4 MiB block grid, so a
-	window never straddles a block: the integer sum-merge is
-	bit-identical for any thread count, I/O mode and host with zero
-	drift.  Pure integer GF(2) recurrence; FP only at finalize.
-
-	Surfaced in the default, terse CSV, JSON, recursive and
-	annotated output and the -H histogram; sortable via
-	--sort-by=bm-deviation / bm-mean-lc (which imply -eee).
-
-	Scope: GF(2) Berlekamp-Massey catches LFSR-class and low-bit
-	linear recurrences (a maximal 16-bit LFSR scores L near 16) but
-	not a truncated-high-byte LCG.
-
-	A count-only LZ77F (acceleration 1, HLOG 13) match finder: it
-	never emits a byte and keeps no output buffer.  It produces the
-	exact count-only encoded size
-	and three raw tables (per-offset match count, per-match-length
-	count, LZ77-unmatched byte-value histogram), from which the
-	finalizer derives:
-	  - lz_cr_excess (S1): compressibility excess versus the
-	    incompressible baseline outsz_rand(n).
-	  - lz_lit_h / lz_lit_kl (S2): literal byte-value Shannon
-	    entropy and its KL divergence to uniform (8 - H_lit).
-	  - lz_match_cov (S3): fraction of bytes inside an LZ77 match.
-	  - lz_off_conc: offset concentration 1 - H(off)/log2(65535);
-	    lz_mlen_excess: mean match length minus MINMATCH.  Both
-	    take their continuous 0 limit when fewer than two matches.
-	  - lz_lit_chi: advisory literal chi-square versus uniform
-	    (df 255) with its upper-tail p, kept separate from the
-	    compressibility headline exactly as order-0 entropy and
-	    its chi-square stay separate.
-	  - lz_deviation: headline z from max(S1, S2/8, S3) over
-	    sigma0 = max(2/n, 2^-7), badged PASS / WEAK / FAIL.
-	  An exact-repeat / single dominant match (fewer than two
-	  matches with high coverage) is flagged explicitly so a
-	  zero offset/length concentration does not read as no
-	  structure; the verdict still fails via S1/S3.
-
-	The parse is keyed to a fixed 4 MiB block grid on the
-	absolute file offset with a fresh hash table per block, so
-	the count-only size and every table are exactly additive and
-	the integer sum-merge is bit-identical for any thread count,
-	I/O mode (mmap / stream / io_uring) and host.  Drift versus a
-	whole-file table-carrying serial parse is at most about
-	0.055 percent and verdict-neutral.
-
-	Surfaced in the default, terse CSV, JSON, recursive and
-	annotated output; new --sort-by columns lz-deviation, lz-cr
-	and lz-match-cov (selecting one implies -eee).  With -eee -H,
-	three extra plots follow the byte/bit plot: match offsets and
-	match lengths in log2 buckets and the literal byte-value
-	histogram (256 bins, title carries H_lit), using the same
-	Unicode-glyph / --log / axis rendering.
+	keep grid reductions stable across I/O modes and thread counts
 
 2026-05-16  Kamila Szewczyk  <k@iczelia.net>
 
-	v1.2:  extended statistics, FIPS 140-2 RNG self-tests,
-	faithfully-rounded log2 family, yarg argument parser,
-	histogram axis fixes, order-1 bigram.
+	add order-1 entropy, mutual information, runs, longest run, and bit cusum
 
-	Extended statistics (-e / --extended), all derived at
-	finalisation from the histogram and running sums at no
-	per-byte cost, bit-identical across hosts and thread counts:
-	  - min-entropy (H-infinity), collision entropy (H2) and
-	    index of coincidence.
-	  - poker test: 16-bin nibble chi-square, df = 15, generalised
-	    from the byte histogram.
-	  - variance / standard deviation, redundancy, distinct-symbol
-	    count, most / least common symbol.
-	  - per-bit-position bias P(bit k = 1): exposes structured
-	    binary (dead high bits, ASCII bit 7) that order-0 entropy
-	    and chi-square miss.
-	  - surfaced in default / terse / JSON / recursive output;
-	    new --sort-by columns; --annotate interpretive PASS / WEAK
-	    / FAIL report with a headline verdict.
+	add min-entropy, collision entropy, index of coincidence, poker, variance,
+	redundancy, symbol summaries, and bit-position bias
 
-	Order-1 bigram (-ee, repeat -e):
-	  - conditional entropy H(cur|prev) and adjacent mutual
-	    information I(prev;cur); exposes order-1 structure the
-	    order-0 measures and the linear SCC miss.
-	  - runs (0/1 runs in bit mode, median-class runs in byte
-	    mode), longest identical-symbol run, and the bit-mode
-	    cusum max excursion of the +-1 walk.
-	  - single scalar pass, deterministic, sum-mergeable; padded
-	    256x256 u64 shadow planes per thread (byte mode, ~1 MiB),
-	    2x2 in bit mode.  Split across the -j workers, the bigram
-	    pair / runs / longest run / cusum stitched at the slice
-	    boundary; stream / io_uring feed an SPMC pipeline.
-	  - surfaced in default / terse / JSON / recursive output;
-	    new --sort-by=cond-entropy / mutual-info columns.
+	add annotated PASS, WEAK, and FAIL reports
 
-	FIPS 140-2 RNG power-up self-tests (--fips-140-2):
-	  - the 4.9.1 monobit, poker, runs and long-run tests over
-	    each independent 20000-bit block, replacing the normal
-	    analysis; pass/fail report, exit status 1 on any failed
-	    block, 0 otherwise.
-	  - blocks split across the -j workers; the verdict is
-	    bit-identical regardless of thread count.  Not supported
-	    with -r.
+	add FIPS 140-2 monobit, poker, runs, and long-run tests
 
-	Numerics:
-	  - chi-square upper tail generalised to any odd df
-	    (fastent_chisq_tail_df); df = 1 / 255 paths unchanged and
-	    bit-identical.
-	  - faithfully-rounded, libm-free fastent_log2 family
-	    (fastent_log2, _ge1, _ratio, _fast) factored from the
-	    entropy core; min / collision entropy use it directly
-	    instead of the prior multiply-then-divide round trip.
-	    Shannon entropy stays bit-identical.
+	generalize the chi-square upper tail to odd degrees of freedom
 
-	Command line:
-	  - argument parsing moved to the vendored single-header yarg
-	    (github.com/iczelia/yarg), fetched and SHA-256-pinned by
-	    ./bootstrap so the zero-dependency / tarball build is
-	    preserved.
-	  - new short aliases -J/--json, -a/--annotate, -i/--io,
-	    -l/--log, -C/--color.  -e/--extended is repeatable
-	    (-ee = order-1 bigram).  --no-mmap removed (use
-	    --io=stream); --color now requires an explicit mode.
-	  - -j / --threads present only in builds with a thread
-	    backend; rejected as unknown otherwise.
-	  - all non --full-precision output kept within 80 columns;
-	    histogram X-axis labels aligned under their ticks and a
-	    Y-axis scale added.
-	  - terse CSV gains a P-Exceed column (chi-square upper-tail
-	    probability) after Chi-square, emitted with or without -e;
-	    the default and JSON classic output stay byte-identical.
+	factor the deterministic, libm-free logarithm routines
+
+	vendor yarg and simplify command-line parsing
+
+	add JSON aliases and explicit color and I/O modes
+
+	align histogram axes and keep ordinary output within 80 columns
 
 2026-05-15  Kamila Szewczyk  <k@iczelia.net>
 
-	v1.1:  recursive mode, AArch64 NEON / SVE2, AVX-512 BITALG,
-	io_uring (Linux) and IOCP (Windows), WebAssembly SIMD128,
-	histogram visualisation, DOS / Win9x support, platform port
-	abstraction.
+	add AArch64 and ARMv7 NEON kernels
 
-	New analyse variants and runtime dispatch:
-	  - AArch64 NEON (baseline) and ARMv7-A NEON (-mfpu=neon, with
-	    softfp / hardfp ABI selection at configure time).
-	  - AArch64 SVE2 with variable vector length, picked at runtime
-	    via HWCAP2_SVE2 (AT_HWCAP2 on Linux, elf_aux_info on FreeBSD,
-	    sysctlbyname("hw.optional.arm.FEAT_SVE2") on macOS).
-	  - AVX-512 BITALG variant using VPOPCNTB for the bit-mode body;
-	    F + BW remains the base tier for hosts without BITALG.
-	  - WebAssembly SIMD128 body driven by wasm_i32x4_dot_i16x8 +
-	    wasm_i8x16_popcnt; gated on -msimd128 at configure time.
+	add AArch64 SVE2 and AVX-512 BITALG kernels
 
-	I/O:
-	  - --io={auto,mmap,stream,uring} replaces the binary
-	    --no-mmap toggle (which stays as an alias for --io=stream).
-	  - io_uring backend on Linux 5.1+: four overlapping 2 MiB
-	    reads via raw __NR_io_uring_setup / __NR_io_uring_enter,
-	    no liburing dependency.  Falls back to stream on
-	    pre-5.1 kernels (ENOSYS) unless the user forced --io=uring.
-	  - IOCP backend on Windows Vista+: same four-slot pipeline
-	    over overlapped ReadFile + GetQueuedCompletionStatus.
-	    Selected by --io=uring on Windows for cross-platform
-	    symmetry; ENOSYS under --with-windows-target=win95.
+	add WebAssembly SIMD128 kernels
 
-	Output:
-	  - -H / --histogram: terminal block-plot of the byte (or bit)
-	    distribution.  Glyphs selected per console: 8-level Unicode
-	    blocks (U+2581..U+2588) by default, single-byte CP 437
-	    (0xDC / 0xDB) on DOS / Win9x consoles, ASCII '#' / ' ' for
-	    redirected output.  --color=auto|always|never picks dim /
-	    default / accent foreground per byte class (control,
-	    ASCII, high-bit).  --log toggles a logarithmic Y axis.
-	  - -r / --recursive: walk a directory; emit one CSV row per
-	    regular file (or a JSON array under --json).  Path column
-	    plus the same six summary metrics as terse mode.
-	  - --sort-by=COL[:asc|:desc] for recursive output where COL
-	    is path, samples, entropy, chisq, mean, pi, scc.
+	add io_uring on Linux and IOCP on Windows
 
-	Platforms:
-	  - WebAssembly via emscripten with -sSTANDALONE_WASM, for both
-	    wasm32 and wasm64 (-sMEMORY64).  The wasm64 binary needs a
-	    runtime with the memory64 proposal enabled (e.g. wasmtime
-	    -W memory64).
-	  - MS-DOS via DJGPP with CWSDPMI baked into the .exe.  Native
-	    console output uses CP 437 block glyphs and DJGPP <conio.h>
-	    textcolor / cputs for BIOS-attribute colour without ANSI.SYS.
-	  - Windows 95 / 98 / ME via --with-windows-target=win95
-	    (kernel32 + msvcrt only, PE subsystem 4.0, narrow path API).
-	  - Linux on alpha, sparc64, sparc, m68k, hppa, arc, sh4 (glibc
-	    static) added to the smoke-test matrix.
-	  - OpenBSD pledge(2) support via AC_CHECK_FUNCS([pledge]):
-	    "stdio rpath" before open, "stdio" after.
+	add terminal histograms and recursive CSV or JSON output
 
-	Build / portability:
-	  - Platform port layer (port-cpu, port-io, port-term, port-os,
-	    port-thread, port-walk) replaces the previous tower of
-	    #ifdef _WIN32 / __DJGPP__ inside fastent.c / analyze.c /
-	    fastent-io.c.  Each port has a header plus per-platform
-	    -posix.c / -win32.c (+ -djgpp.c for term, -arm.c / -x86.c /
-	    -other.c for cpu).  Win32 implementations cross-compile under
-	    mingw-w64; the Vista+ surface (SRWLOCK, CONDITION_VARIABLE,
-	    CancelIoEx) is gated on !FASTENT_WIN_LEGACY.
-	  - Thread pool migrated to a port (port-thread.h):  pthread on
-	    POSIX, CreateThread + SRWLOCK + CONDITION_VARIABLE on
-	    Win32 Vista+.  Win95 target keeps threads disabled.
-	  - Windows native build picks up UTF-8 paths and a UTF-8
-	    console: argv is reconstructed from GetCommandLineW with a
-	    manual MSVCRT-compatible splitter, SetConsoleOutputCP /
-	    SetConsoleCP set to CP_UTF8, file paths routed through
-	    _wopen / CreateFileW.
-	  - analyze-impl.h's V_* macro table broken out into
-	    analyze-vec-{x86,neon,wasm}.h; the inner-loop template is
-	    unchanged but the macro definitions for each ISA family now
-	    live in their own header.
-	  - Variant dispatcher is table-driven: one fastent_variant
-	    table walked by a single pick function, replacing four
-	    near-identical pick_*_variant helpers.
+	separate CPU, I/O, OS, terminal, thread, and directory-walk ports
 
-	Math:
-	  - New fastent-math entropy-term function (p * log2(1/p))
-	    based on a double-double Horner expansion + 128-entry
-	    log-table, faithfully rounded, with no libm log dependency.
-	    Replaces the previous libm log2 call so chi-square /
-	    entropy output is bit-identical across libcs and FPUs.
-	  - Split-domain rewrite (q = 1 - p exact via Sterbenz) avoids
-	    cancellation when p is close to 1.
+	add native Windows threads, UTF-8 paths, and UTF-8 console output
 
-	Misc:
-	  - TinyCC compatibility: no __atomic_* builtins, no
-	    __builtin_fma along the hot path; io_uring backend uses
-	    volatile-only ring pointers because io_uring_enter is
-	    itself the kernel-side barrier.
-	  - vzeroupper added at the AVX2 / AVX-512 tail to avoid SSE
-	    state-machine penalties when the caller returns into
-	    non-AVX code.
-	  - Explicit POPCNT inclusion in the GCC builtin gate so the
-	    bit-mode scalar walker doesn't fall through to libgcc's
-	    __popcountdi2 out-of-line helper on -mssse3-only TUs.
+	add Windows 95, DJGPP/MS-DOS, WebAssembly, and further Linux targets
+
+	replace libm entropy with stable double-double evaluation
+
+	make variant dispatch table-driven
 
 2026-05-15  Kamila Szewczyk  <k@iczelia.net>
 
-	v1.0:  Initial release of fastent.
+	initial release
 
-	Tests: Shannon entropy, chi-square (with tail probability),
-	arithmetic mean, Monte Carlo Pi, serial correlation.  Byte
-	mode by default; bit mode under -b.  In-line case fold under
-	-f, fused into the SIMD body.
+	report entropy, chi-square, mean, Monte Carlo pi, and serial correlation
 
-	Outputs: human-readable text, CSV (-t), JSON (--json), with
-	an optional per-value occurrences table (-c) and full
-	precision rendering (-p).
+	add byte and bit modes with fused case folding
 
-	Throughput: 4-way banked SIMD histogram, sign-corrected
-	PMADDUBSW serial-correlation cross-product, VPOPCNTB
-	bit-mode popcount on AVX-512 BITALG hosts with a PSHUFB
-	nibble lookup fallback, runtime CPUID dispatch across
-	scalar / SSSE3 / SSE4.1 / AVX2 / AVX-512.  Memory-mapped
-	input with MADV_SEQUENTIAL on regular files, 2 MiB read(2)
-	loop otherwise.
+	add plain, CSV, and JSON output with optional occurrence counts
 
-	Threading: optional pthread worker pool (-j N / --threads),
-	6-aligned slab partitioning, deterministic byte-identical
-	merge.  -j auto resolves to one thread per online CPU.
+	add scalar, SSSE3, SSE4.1, AVX2, and AVX-512 kernels
 
-	Platforms: Linux musl (x86_64, i386, aarch64, armhf,
-	riscv64, ppc64le, ppc64, ppc, s390x, loongarch64, mips,
-	mipsel, mips64, mips64el), Linux glibc (alpha, sparc64,
-	sparc, m68k, hppa, arc, sh4), Windows (x86_64, i686,
-	aarch64), Windows 95 (i686, kernel32+msvcrt only), macOS
-	(x86_64, aarch64), MS-DOS via DJGPP with CWSDPMI bundled.
+	add mapped and streamed input
 
-	Build: GNU autotools.  --enable-native, --enable-lto,
-	--disable-threads, --with-windows-target=vista|win95.
+	add deterministic pthread reduction
 
-	Testing: deterministic-fixture suite under make check,
-	throughput benchmark sweep under make bench.
+	add the Autotools build, test suite, benchmarks, and release targets

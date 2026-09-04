@@ -1,19 +1,16 @@
-/*  fastent: the -eee binary matrix-rank randomness test.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    NIST SP800-22 sec 2.5: partition the stream into disjoint 32x32
-    GF(2) matrices (M = Q = 32, 1024 bits = 128 bytes each), score each
-    matrix rank via in-place Gauss-Jordan elimination on 32-bit row
-    words, bin the rank into r==32 / r==31 / r<=30 and chi-square those
-    three counts against the NIST closed-form probabilities (df = 2).
-    Headline statistic is sqrt(chi2): chi-square has expectation 2
-    under H0, so sqrt(chi2) behaves as a z-equivalent with the same
-    badge boundaries as the other estimators.  128 divides the 4 MiB
-    grid so matrices never straddle (exact integer sum-merge, zero
-    drift, bit-identical for any -j / driver / host).  Catches
-    truncated-bit linear-recurrence sources that the byte-mode order-0
-    and the Berlekamp-Massey 512-bit scorer can both miss.
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "mrank.h"
 #include "analyze.h"
@@ -26,11 +23,9 @@
 /*  IEEE sqrt is correctly rounded, so bit-identical across hosts.  */
 static inline f64 fastent_mrank_sqrt(f64 x) { return sqrt(x); }
 
-/*  NIST sec 2.5 closed form for M = Q = 32:
-      P_32 = prod_{k=1..32} (1 - 2^-k)
-      P_31 = 2^-1 * prod_{i=0..30} (1 - 2^(i-32))^2 / (1 - 2^(i-31))
-      P_lo = 1 - P_32 - P_31
-    Constants are baked at full f64 precision so finalize stays
+/*  NIST sec 2.5 closed form for M = Q = 32: P_32 = prod_{k=1..32} (1 - 2^-k)
+    P_31 = 2^-1 * prod_{i=0..30} (1 - 2^(i-32))^2 / (1 - 2^(i-31)) P_lo = 1 -
+    P_32 - P_31 Constants are baked at full f64 precision so finalize stays
     cross-host bit-identical (no recomputation drift).  */
 #define FASTENT_MRANK_P32 0.28878809515384113
 #define FASTENT_MRANK_P31 0.57757619017320461
@@ -49,27 +44,24 @@ static inline u32 mrank_load_be32_(const u8 * p) {
 #endif
 }
 
-/*  Rank of one 32x32 GF(2) matrix, rows packed MSB-first into u32.
-    Column-driven Gauss-Jordan: pivot from column 31 (MSB) down to 0,
-    keep the next free pivot slot at index rank.  Scan rows[rank..31]
-    for a pivot row; if found, swap into rows[rank], XOR into every
-    later row whose pivot column bit is set, advance rank.  XOR step
-    is branch-free (cond * row mask multiply, cond in {0,1}).  Returns
-    rank in [0, 32].  Each row word is XORed only into rows below the
-    current pivot slot, so total work is ~32 * 16 row touches.  */
+/*  Rank of one 32x32 GF(2) matrix, rows packed MSB-first into u32.  */
 static u32 mrank_rank32_(u32 * rows) {
   u32 r = 0;
-  for (i32 c = 31; c >= 0; c--) {
+  i32 c, i;
+  for (c = 31; c >= 0; c--) {
     u32 mask = (u32) 1 << (u32) c;
     u32 piv = 32u;
-    Fi0(32, (i32) r, if (rows[i] & mask) { piv = (u32) i; break; })
+    for (i = (i32) r; i < 32; i++) {
+      if (rows[i] & mask) { piv = (u32) i;  break; }
+    }
     if (piv == 32u) continue;
     if (piv != r) { u32 t = rows[r];  rows[r] = rows[piv];  rows[piv] = t; }
     {
       u32 pr = rows[r];
-      Fi0(32, (i32)(r + 1u),
-          u32 cond = (rows[i] >> (u32) c) & 1u;
-          rows[i] ^= ((u32) 0 - cond) & pr)
+      for (i = (i32) (r + 1u); i < 32; i++) {
+        u32 cond = (rows[i] >> (u32) c) & 1u;
+        rows[i] ^= ((u32) 0 - cond) & pr;
+      }
     }
     r++;
   }
@@ -89,11 +81,12 @@ static inline void mrank_account_(fastent_mrank_acc * a, u32 rank) {
 static void mrank_parse_block_(
     fastent_mrank_acc * a, const u8 * src, sz n) {
   sz nm = n / FASTENT_MRANK_MB;
-  Fi0((i32) nm, 0,
-      u32 rows[32];
-      const u8 * p = src + (sz) i * FASTENT_MRANK_MB;
-      Fj(32, rows[j] = mrank_load_be32_(p + (sz) j * 4u))
-      mrank_account_(a, mrank_rank32_(rows)))
+  i32 i, j;
+  Fi((i32) nm,
+    u32 rows[32];
+    const u8 * p = src + (sz) i * FASTENT_MRANK_MB;
+    Fj(32, rows[j] = mrank_load_be32_(p + (sz) j * 4u));
+    mrank_account_(a, mrank_rank32_(rows)));
 }
 
 static int mrank_ensure_(fastent_mrank_acc * a) {
@@ -106,7 +99,7 @@ static int mrank_ensure_(fastent_mrank_acc * a) {
 }
 
 void fastent_mrank_acc_init(fastent_mrank_acc * a, u64 abs_base) {
-  memset(a, 0, sizeof(*a));
+  memset(a, 0, sizeof (*a));
   a->abs_base = abs_base;
   a->abs_pos  = abs_base;
   a->blk_off  = abs_base;
@@ -126,7 +119,7 @@ int fastent_mrank_acc_feed(fastent_mrank_acc * a, const u8 * buf, sz len) {
   while (pos < len) {
     u64 abs = a->abs_pos;
     u64 next_grid = (abs / FASTENT_LZ_GRID + 1) * (u64) FASTENT_LZ_GRID;
-    sz  room = (sz)(next_grid - abs);
+    sz  room = (sz) (next_grid - abs);
     sz  take = len - pos;
     if (take > room) take = room;
     memcpy(a->blk + a->blk_len, buf + pos, take);
@@ -154,9 +147,10 @@ int fastent_mrank_acc_flush(fastent_mrank_acc * a) {
 
 void fastent_mrank_acc_merge(
     fastent_mrank_acc * dst, const fastent_mrank_acc * src) {
+  i32 i;
   dst->matrices += src->matrices;
   if (src->oom) dst->oom = 1;
-  Fi(FASTENT_MRANK_BINS, dst->bins[i] += src->bins[i])
+  Fi(FASTENT_MRANK_BINS, dst->bins[i] += src->bins[i]);
 }
 
 void fastent_mrank_acc_free(fastent_mrank_acc * a) {
@@ -165,12 +159,13 @@ void fastent_mrank_acc_free(fastent_mrank_acc * a) {
 
 void fastent_mrank_compute(
     const fastent_mrank_acc * a, fastent_mrank_summary * s) {
+  i32 i;
   /*  Zero the whole struct including padding so a byte-equal memcmp
       between two compute runs is the determinism check.  */
-  memset(s, 0, sizeof(*s));
+  memset(s, 0, sizeof (*s));
   s->matrices = a->matrices;
-  Fi(FASTENT_MRANK_BINS, s->hist[i] = (u32)(a->bins[i] > 0xffffffffu
-                                            ? 0xffffffffu : a->bins[i]))
+  Fi(FASTENT_MRANK_BINS, s->hist[i] = (u32) (a->bins[i] > 0xffffffffu
+                                           ? 0xffffffffu : a->bins[i]));
   s->p_r32 = FASTENT_MRANK_P32;
   s->p_r31 = FASTENT_MRANK_P31;
   s->p_rlo = FASTENT_MRANK_PLO;
@@ -192,29 +187,29 @@ void fastent_mrank_compute(
   };
   volatile f64 chi = 0.0;
   Fi(FASTENT_MRANK_BINS,
-     volatile f64 e = N * P[i];
-     volatile f64 v = (f64) a->bins[i];
-     volatile f64 d = v - e;
-     volatile f64 t = (d * d) / e;
-     chi = chi + t)
+    volatile f64 e = N * P[i];
+    volatile f64 v = (f64) a->bins[i];
+    volatile f64 d = v - e;
+    volatile f64 t = (d * d) / e;
+    chi = chi + t);
   s->chi2 = chi;
   s->mrank_dev = fastent_mrank_sqrt(chi);
 }
 
-/*  Write every output field unconditionally: sentinels first (NaN for
-    f64, 0 for ints), then overwrite with real values, so a NaN sentinel
-    never escapes when underpowered.  chi-square df = 2 is even and
-    outside fastent_chisq_tail_df's odd-df contract, so p stays NaN.  */
+/*  Write every output field unconditionally: sentinels first (NaN for f64, 0
+    for ints), then overwrite with real values, so a NaN sentinel never
+    escapes when underpowered.  */
 void fastent_mrank_finalize(
     const fastent_mrank_acc * a, u64 n, struct fastent_result * out) {
+  i32 i;
   (void) n;
   out->mrank_dev = (f64) NAN;
   out->mrank_chi = (f64) NAN;
   out->mrank_chi_p = (f64) NAN;
   out->mrank_matrices = a->matrices;
-  out->mrank_r32 = (u32)(a->bins[0] > 0xffffffffu ? 0xffffffffu : a->bins[0]);
-  out->mrank_r31 = (u32)(a->bins[1] > 0xffffffffu ? 0xffffffffu : a->bins[1]);
-  out->mrank_rlo = (u32)(a->bins[2] > 0xffffffffu ? 0xffffffffu : a->bins[2]);
+  out->mrank_r32 = (u32) (a->bins[0] > 0xffffffffu ? 0xffffffffu : a->bins[0]);
+  out->mrank_r31 = (u32) (a->bins[1] > 0xffffffffu ? 0xffffffffu : a->bins[1]);
+  out->mrank_rlo = (u32) (a->bins[2] > 0xffffffffu ? 0xffffffffu : a->bins[2]);
   out->mrank_underpowered = 0;
 
   if (a->matrices < (u64) FASTENT_MRANK_MIN) {
@@ -230,11 +225,11 @@ void fastent_mrank_finalize(
   };
   volatile f64 chi = 0.0;
   Fi(FASTENT_MRANK_BINS,
-     volatile f64 e = N * P[i];
-     volatile f64 v = (f64) a->bins[i];
-     volatile f64 d = v - e;
-     volatile f64 t = (d * d) / e;
-     chi = chi + t)
+    volatile f64 e = N * P[i];
+    volatile f64 v = (f64) a->bins[i];
+    volatile f64 d = v - e;
+    volatile f64 t = (d * d) / e;
+    chi = chi + t);
   out->mrank_chi = chi;
   out->mrank_dev = fastent_mrank_sqrt(chi);
   /*  df = 2 is even; fastent_chisq_tail_df only accepts odd df, so the

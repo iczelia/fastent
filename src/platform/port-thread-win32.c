@@ -1,8 +1,16 @@
-/*  fastent: Win32-backed thread pool.  Uses CreateThread plus Vista's
-    SRWLOCK + CONDITION_VARIABLE for the same generation-counter wait
-    protocol as the POSIX backend.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "port-thread.h"
@@ -30,6 +38,7 @@ struct worker_args { i32 k; };
 
 static DWORD WINAPI worker_main(LPVOID arg) {
   i32 k = ((struct worker_args *) arg)->k;
+  sz i;
   free(arg);
 
   u64 last_gen = 0;
@@ -45,8 +54,8 @@ static DWORD WINAPI worker_main(LPVOID arg) {
     ReleaseSRWLockExclusive(&g_m);
 
     sz start = (sz) k * n / (sz) T;
-    sz end   = (sz)(k + 1) * n / (sz) T;
-    for (sz i = start; i < end; i++) fn(i, ctx);
+    sz end   = (sz) (k + 1) * n / (sz) T;
+    for (i = start; i < end; i++) fn(i, ctx);
 
     AcquireSRWLockExclusive(&g_m);
     if (--g_busy == 0) WakeAllConditionVariable(&g_work_done);
@@ -56,24 +65,22 @@ static DWORD WINAPI worker_main(LPVOID arg) {
 }
 
 static void lazy_init(void) {
+  i32 k;
   if (g_n_threads != 0) return;
   i32 T = g_pending > 0 ? g_pending : 1;
   if (T < 1) T = 1;
   if (T > 1) {
-    g_workers = (HANDLE *) malloc((sz) T * sizeof(HANDLE));
+    g_workers = (HANDLE *) malloc((sz) T * sizeof (HANDLE));
     if (!g_workers) { g_n_threads = 1; return; }
-    /*  Partial failure: keep the k workers already created and run
-        with that count so g_n_threads matches the live pool instead
-        of orphaning live workers behind a serial g_n_threads == 1
-        (k < 2 -> serial).  */
+    /*  Partial failure: keep the k workers already created and run with that
+        count so g_n_threads matches the live pool instead of orphaning live
+        workers behind a serial g_n_threads == 1 (k < 2 -> serial).  */
     Fk(T,
-       struct worker_args * a = (struct worker_args *) malloc(sizeof(*a));
-       if (!a) { g_n_threads = (k >= 2) ? k : 1;  return; }
-       a->k = k;
-       g_workers[k] = CreateThread(NULL, 0, worker_main, a, 0, NULL);
-       if (g_workers[k] == NULL) {
-         free(a);  g_n_threads = (k >= 2) ? k : 1;  return;
-       })
+      struct worker_args * a = (struct worker_args *) malloc(sizeof (*a));
+      if (!a) { g_n_threads = (k >= 2) ? k : 1;  return; }
+      a->k = k;
+      g_workers[k] = CreateThread(NULL, 0, worker_main, a, 0, NULL);
+      if (g_workers[k] == NULL) { free(a);  g_n_threads = (k >= 2) ? k : 1;  return; });
   }
   g_n_threads = T;
 }
@@ -88,10 +95,11 @@ int fastent_num_threads(void) {
 }
 
 void fastent_parallel_for(sz n, fastent_parfor_fn fn, void * ctx) {
+  sz i;
   if (n == 0) return;
   if (g_n_threads == 0) lazy_init();
   if (n == 1 || g_n_threads <= 1) {
-    for (sz i = 0; i < n; i++) fn(i, ctx);
+    for (i = 0; i < n; i++) fn(i, ctx);
     return;
   }
 
@@ -110,7 +118,7 @@ void fastent_parallel_for(sz n, fastent_parfor_fn fn, void * ctx) {
 struct fastent_mutex { SRWLOCK l; };
 
 fastent_mutex * fastent_mutex_create(void) {
-  fastent_mutex * x = (fastent_mutex *) malloc(sizeof(*x));
+  fastent_mutex * x = (fastent_mutex *) malloc(sizeof (*x));
   if (!x) return NULL;
   InitializeSRWLock(&x->l);
   return x;

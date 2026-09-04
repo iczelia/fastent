@@ -1,8 +1,16 @@
-/*  fastent: AArch64 NEON batched Berlekamp-Massey (2 windows/pass).
-    AArch64 only: the lane logic needs 64-bit integer compare/shift;
-    ARMv7-A NEON lacks them, so it stays on the scalar reference.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "bm.h"
@@ -17,17 +25,14 @@
 
 #ifdef __aarch64__
 
-/*  Two 512-bit windows run in the 2 u64 lanes of one uint64x2_t; the
-    eight polynomial words are eight vectors.  The Massey two-register
-    form carries bs_ = x^(N-mm) B advanced by a uniform 1-bit poly *x
-    per step, so the discrepancy update is the bare c ^= bs_ with no
-    per-lane variable shift, keeping the lanes independent and the
-    per-window L bit-identical to the scalar reference.  */
+/*  Two 512-bit windows run in the 2 u64 lanes of one uint64x2_t; the eight
+    polynomial words are eight vectors.  */
 
 #define WB FASTENT_BM_W64   /*  8 polynomial words  */
 
 static inline void bm_polx_(uint64x2_t v[WB]) {
-  for (u32 w = WB; w-- > 1; )
+  u32 w;
+  for (w = WB; w-- > 1; )
     v[w] = vorrq_u64(vshrq_n_u64(v[w], 1), vshlq_n_u64(v[w - 1], 63));
   v[0] = vshrq_n_u64(v[0], 1);
 }
@@ -49,18 +54,21 @@ static inline uint64x2_t bm_parmask_(uint64x2_t a) {
 /*  Pack one 64-byte window into 8 u64, MSB-first (byte i high to low,
     bit 7 of byte 0 is poly coefficient 0).  */
 static inline void bm_pack_(const u8 * src, u64 s[WB]) {
-  Fi(WB, s[i] = 0)
-  for (u32 i = 0; i < FASTENT_BM_WB; i++)
+  i32 i;
+  Fi(WB, s[i] = 0);
+  for (i = 0; i < FASTENT_BM_WB; i++)
     s[i >> 3] |= (u64) src[i] << (56u - 8u * (i & 7u));
 }
 
 /*  Process exactly 2 full M-bit windows; write their L into Lout.  */
 static void bm_batch2_(const u8 * src, u32 * Lout) {
   u64 sp[2][WB];
-  Fi(2, bm_pack_(src + (u32) i * FASTENT_BM_WB, sp[i]))
+  i32 i;
+  u32 N, w;
+  Fi(2, bm_pack_(src + (u32) i * FASTENT_BM_WB, sp[i]));
 
   uint64x2_t cv[WB], bsv[WB], rv[WB], tv[WB];
-  for (u32 w = 0; w < WB; w++) {
+  for (w = 0; w < WB; w++) {
     cv[w] = vdupq_n_u64(0);
     bsv[w] = vdupq_n_u64(0);
     rv[w] = vdupq_n_u64(0);
@@ -72,7 +80,7 @@ static void bm_batch2_(const u8 * src, u32 * Lout) {
 
   i64 L[2] = { 0, 0 };
 
-  for (u32 N = 0; N < FASTENT_BM_M; N++) {
+  for (N = 0; N < FASTENT_BM_M; N++) {
     bm_polx_(rv);
     u32 wi = N >> 6, sh = 63u - (N & 63u);
     u64 b0 = (sp[0][wi] >> sh) & 1ull, b1 = (sp[1][wi] >> sh) & 1ull;
@@ -80,12 +88,12 @@ static void bm_batch2_(const u8 * src, u32 * Lout) {
     rv[0] = vorrq_u64(rv[0], vld1q_u64(nb));
 
     uint64x2_t acc = vdupq_n_u64(0);
-    for (u32 w = 0; w < WB; w++)
+    for (w = 0; w < WB; w++)
       acc = veorq_u64(acc, vandq_u64(cv[w], rv[w]));
     uint64x2_t dmask = bm_parmask_(acc);
 
-    for (u32 w = 0; w < WB; w++) tv[w] = cv[w];
-    for (u32 w = 0; w < WB; w++)
+    for (w = 0; w < WB; w++) tv[w] = cv[w];
+    for (w = 0; w < WB; w++)
       cv[w] = veorq_u64(cv[w], vandq_u64(bsv[w], dmask));
 
     /*  Length change where d set and 2L <= N.  2L<=N is N-2L>=0;
@@ -96,7 +104,7 @@ static void bm_batch2_(const u8 * src, u32 * Lout) {
     /*  2L <= N: a true le mask, intersected with the discrepancy.  */
     uint64x2_t le = vcleq_s64(twoL, Nv);
     uint64x2_t chg = vandq_u64(dmask, le);
-    for (u32 w = 0; w < WB; w++)
+    for (w = 0; w < WB; w++)
       bsv[w] = vbslq_u64(chg, tv[w], bsv[w]);
     /*  L <- N + 1 - L where chg.  */
     int64x2_t newL = vsubq_s64(vdupq_n_s64((i64) N + 1), Lv);
@@ -107,7 +115,7 @@ static void bm_batch2_(const u8 * src, u32 * Lout) {
 
     bm_polx_(bsv);
   }
-  Fi(2, Lout[i] = (u32) L[i])
+  Fi(2, Lout[i] = (u32) L[i]);
 }
 
 /*  Score nfull full windows; NEON in groups of 2.  Returns the count
@@ -115,7 +123,8 @@ static void bm_batch2_(const u8 * src, u32 * Lout) {
     handles the 0..1 tail with the scalar reference.  */
 sz fastent_bm_windows_neon(const u8 * src, sz nfull, u32 * Lout) {
   sz g = nfull & ~(sz) 1;
-  for (sz i = 0; i < g; i += 2)
+  sz i;
+  for (i = 0; i < g; i += 2)
     bm_batch2_(src + i * FASTENT_BM_WB, Lout + i);
   return g;
 }

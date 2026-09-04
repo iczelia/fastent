@@ -1,22 +1,16 @@
-/*  fastent: FIPS 140-2 RNG power-up self-tests (4.9.1) dispatcher.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    Four tests over each independent 20000-bit (2500-byte) block:
-    monobit, poker, runs and long run.  Bits are taken MSB first
-    within each byte; the poker test's 4-bit groups are the high
-    then the low nibble of each byte.  Constants are the FIPS 140-2
-    values (the long-run threshold is 34; the rng-tools rngtest
-    utility historically uses 26).  Blocks are independent, so the
-    work parallelises with no boundary stitch and the result is a
-    pure integer reduction: byte-identical across thread count, IO
-    mode, and ISA.
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
 
-    The per-block kernel lives in fips1402-impl.h, instantiated once
-    per ISA TU (fips1402-scalar.c .. fips1402-wasm128simd.c, plus the
-    self-contained fips1402-sve2.c).  This file picks the best
-    available variant once and drives the (block-granular) threaded
-    split, mirroring analyze.c's variant dispatcher.
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common.h"
 #include "fips1402.h"
@@ -30,10 +24,7 @@
 
 #define FIPS_BLOCK_BYTES FASTENT_FIPS_BLOCK_BYTES
 
-/*  Variant table.  Order matters: dispatcher picks the LAST entry
-    whose `available` is true, so narrower (preferred) variants follow
-    their wider supersets (as analyze.c).  AVX-512 tiers: base (F+BW,
-    PSHUFB-LUT) and bitalg (+VPOPCNTB).  */
+/*  Variant table.  */
 
 #define CPU_HAS(name)      (fastent_cpu_get()->name)
 
@@ -126,8 +117,10 @@ static const fips_variant_entry fips_variants_[] = {
 
 static const fips_variant_entry * fips_pick_(void) {
   const fips_variant_entry * best = &fips_variants_[0];
-  Fi0((int) FIPS_VARIANTS_N, 1,
-      if (fips_variants_[i].available()) best = &fips_variants_[i])
+  i32 i;
+  for (i = 1; i < (i32) FIPS_VARIANTS_N; i++) {
+    if (fips_variants_[i].available()) best = &fips_variants_[i];
+  }
   return best;
 }
 
@@ -149,13 +142,14 @@ typedef struct {
 static void fips_worker_(sz k, void * vctx) {
   fips_ctx * c = (fips_ctx *) vctx;
   u64 lo = (u64) k * c->nblocks / (u64) c->T;
-  u64 hi = (u64)(k + 1) * c->nblocks / (u64) c->T;
+  u64 hi = (u64) (k + 1) * c->nblocks / (u64) c->T;
   c->run(c->buf + lo * FIPS_BLOCK_BYTES, hi - lo, &c->shards[k]);
 }
 #endif
 
 void fastent_fips140_run(
     const u8 * buf, sz len, int threads, fastent_fips_report * out) {
+  i32 k;
   memset(out, 0, sizeof *out);
   u64 nblocks = (u64) len / FIPS_BLOCK_BYTES;
   out->leftover = (u64) len - nblocks * FIPS_BLOCK_BYTES;
@@ -171,16 +165,16 @@ void fastent_fips140_run(
     fips_ctx c;
     c.buf = buf;  c.nblocks = nblocks;  c.T = T;  c.run = run;
     c.shards =
-      (fastent_fips_report *) calloc((sz) T, sizeof(*c.shards));
+      (fastent_fips_report *) calloc((sz) T, sizeof (*c.shards));
     if (c.shards) {
       fastent_parallel_for((sz) T, fips_worker_, &c);
       Fk(T,
-         out->blocks       += c.shards[k].blocks;
-         out->monobit_fail += c.shards[k].monobit_fail;
-         out->poker_fail   += c.shards[k].poker_fail;
-         out->runs_fail    += c.shards[k].runs_fail;
-         out->longrun_fail += c.shards[k].longrun_fail;
-         out->blocks_pass  += c.shards[k].blocks_pass)
+        out->blocks       += c.shards[k].blocks;
+        out->monobit_fail += c.shards[k].monobit_fail;
+        out->poker_fail   += c.shards[k].poker_fail;
+        out->runs_fail    += c.shards[k].runs_fail;
+        out->longrun_fail += c.shards[k].longrun_fail;
+        out->blocks_pass  += c.shards[k].blocks_pass);
       free(c.shards);
       return;
     }

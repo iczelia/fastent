@@ -1,12 +1,16 @@
-/*  fastent: the -eee windowed linear-complexity estimator.
+/*  Copyright (C) 2023-2026 Kamila Szewczyk
 
-    A count-only GF(2) Berlekamp-Massey scorer: each 512-bit window's
-    linear complexity L is scored on the shared 4 MiB absolute grid
-    (64 divides the grid so windows never straddle: exact integer
-    sum-merge, zero drift).  Catches LFSR-class and low-bit linear
-    recurrences, not truncated-high-byte LCGs.
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 3.
 
-    Copyright (C) 2023-2026 Kamila Szewczyk.  GPLv3-only (see COPYING).  */
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "bm.h"
 #include "analyze.h"
@@ -26,18 +30,19 @@
 static inline f64 fastent_bm_sqrt(f64 x) { return sqrt(x); }
 
 #if defined(__GNUC__) && !defined(__TINYC__)
-  #define FASTENT_PARITY64(x) ((u32) __builtin_parityll((u64)(x)))
-  #define FASTENT_FALLTHROUGH __attribute__((fallthrough))
+#define FASTENT_PARITY64(x) ((u32) __builtin_parityll((u64) (x)))
+#define FASTENT_FALLTHROUGH __attribute__((fallthrough))
 #else
-  #define FASTENT_PARITY64(x) (FASTENT_POPCOUNT64((u64)(x)) & 1u)
-  #define FASTENT_FALLTHROUGH ((void) 0)
+#define FASTENT_PARITY64(x) (FASTENT_POPCOUNT64((u64) (x)) & 1u)
+#define FASTENT_FALLTHROUGH ((void) 0)
 #endif
 
 /*  rev word w at step N: bit 63-k = source bit N-64w-k, MSB-first.  */
 static inline u64 fastent_bm_revword(const u64 * s, u32 N, u32 w) {
   i64 base = (i64) N - (i64) (w << 6);
   u64 r = 0;
-  for (u32 k = 0; k < 64u && base - (i64) k >= 0; k++) {
+  u32 k;
+  for (k = 0; k < 64u && base - (i64) k >= 0; k++) {
     i64 idx = base - (i64) k;
     r |= ((s[idx >> 6] >> (63u - ((u32) idx & 63u))) & 1ull) << (63u - k);
   }
@@ -51,18 +56,19 @@ static u32 fastent_bm_window(const u64 * s, u32 m) {
   u64 c[FASTENT_BM_W64], b[FASTENT_BM_W64], t[FASTENT_BM_W64];
   u64 rev[FASTENT_BM_W64];
   const u32 W = FASTENT_BM_W64;
-  Fi((int) W, c[i] = b[i] = rev[i] = 0)
+  i32 i;
+  u32 N, w;
+  Fi((int) W, c[i] = b[i] = rev[i] = 0);
   c[0] = b[0] = (u64) 1 << 63;
   u32 L = 0, act = 1u, bw = 0;
   i64 mm = -1;
-
-  for (u32 N = 0; N < m; N++) {
+  for (N = 0; N < m; N++) {
     /*  C has degree <= L, so only nw = L/64 + 1 words are live; rev's
         live prefix shifts in place, a newly live word is built from s. */
     u32 nw = (L >> 6) + 1u, old = act;
     u64 acc = 0;
     /*  nw is tiny (1..4); the fall-through switch drops the counter.  */
-    #define RW(w) do { rev[w] = (rev[w] >> 1) | (rev[(w) - 1] << 63); \
+#define RW(w) do { rev[w] = (rev[w] >> 1) | (rev[(w) - 1] << 63); \
                        acc ^= c[w] & rev[w]; } while (0)
     switch (old) {
       case 8: RW(7);  FASTENT_FALLTHROUGH;
@@ -74,7 +80,7 @@ static u32 fastent_bm_window(const u64 * s, u32 m) {
       case 2: RW(1);  FASTENT_FALLTHROUGH;
       default: break;
     }
-    #undef RW
+#undef RW
     rev[0] >>= 1;
     rev[0] |= ((s[N >> 6] >> (63u - (N & 63u))) & 1ull) << 63;
     acc ^= c[0] & rev[0];
@@ -87,16 +93,14 @@ static u32 fastent_bm_window(const u64 * s, u32 m) {
 
     if (d) {
       memcpy(t, c, sizeof t);
-      u32 shift = (u32)((i64) N - mm);
+      u32 shift = (u32) ((i64) N - mm);
       u32 ws = shift >> 6, bs = shift & 63u;
       /*  Clamp the XOR span to the live words of C and shifted B.  */
       u32 cw = L >> 6, bwe = bw + ws + 1u;
       u32 we = (cw > bwe ? cw : bwe) + 1u;
       if (we > W) we = W;
-      if (bs == 0) {
-        for (u32 w = we; w-- > ws; ) c[w] ^= b[w - ws];
-      } else {
-        for (u32 w = we; w-- > ws; ) {
+      if (bs == 0) { for (w = we; w-- > ws; ) c[w] ^= b[w - ws]; } else {
+        for (w = we; w-- > ws; ) {
           u64 v = b[w - ws] >> bs;
           if (w - ws > 0) v |= b[w - ws - 1] << (64u - bs);
           c[w] ^= v;
@@ -124,12 +128,13 @@ static inline u64 fastent_bm_load_be64_(const u8 * p) {
 }
 
 static void fastent_bm_pack(const u8 * src, u32 mb, u64 * s) {
+  i32 i;
   if (mb == FASTENT_BM_WB) {
-    Fi(FASTENT_BM_W64, s[i] = fastent_bm_load_be64_(src + (sz) i * 8))
+    Fi(FASTENT_BM_W64, s[i] = fastent_bm_load_be64_(src + (sz) i * 8));
     return;
   }
-  Fi(FASTENT_BM_W64, s[i] = 0)
-  for (u32 i = 0; i < mb; i++) {
+  Fi(FASTENT_BM_W64, s[i] = 0);
+  for (i = 0; i < (i32) mb; i++) {
     u32 wi = i >> 3;
     u32 sh = 56u - 8u * (i & 7u);
     s[wi] |= (u64) src[i] << sh;
@@ -140,7 +145,7 @@ static void fastent_bm_pack(const u8 * src, u32 mb, u64 * s) {
 static inline void fastent_bm_account(fastent_bm_acc * a, u32 L) {
   a->windows++;
   a->meanl_sum += L;
-  u32 bin = (u32)(((u64) L * FASTENT_BM_LBINS) / (FASTENT_BM_M + 1u));
+  u32 bin = (u32) (((u64) L * FASTENT_BM_LBINS) / (FASTENT_BM_M + 1u));
   if (bin >= FASTENT_BM_LBINS) bin = FASTENT_BM_LBINS - 1u;
   a->lhist[bin]++;
   /*  NIST T = (L - mu) + 2/9 (M even); the 7 classes pooled to 6
@@ -159,10 +164,8 @@ static inline void fastent_bm_account(fastent_bm_acc * a, u32 L) {
 
 typedef sz (*fastent_bm_scorer)(const u8 *, sz, u32 *);
 
-/*  Pick the widest batched scorer this host can run, widest first,
-    scalar (NULL) last.  Mirrors the analyse/fips dispatch order; the
-    per-window L is bit-identical by construction so any path is the
-    scalar reference's answer.  Picked once per parse_block.  */
+/*  Pick the widest batched scorer this host can run, widest first, scalar
+    (NULL) last.  */
 static fastent_bm_scorer fastent_bm_pick(void) {
 #ifdef FASTENT_BM_HAVE_VEC
   const fastent_cpu_features * c = fastent_cpu_get();
@@ -185,13 +188,11 @@ static fastent_bm_scorer fastent_bm_pick(void) {
   return NULL;
 }
 
-/*  n/64 whole windows; the remainder is the stream's tail window.
-    The batched scorer takes a lane group at a time (same per-window
-    L); its sub-lane-width tail and non-vector hosts use the scalar
-    reference.  */
+/*  n/64 whole windows; the remainder is the stream's tail window.  */
 static void fastent_bm_parse_block(fastent_bm_acc * a, const u8 * src, sz n) {
   sz nw = n / FASTENT_BM_WB;
   sz i = 0;
+  sz k;
   fastent_bm_scorer score = fastent_bm_pick();
   if (score && nw >= 2) {
     u32 Lb[FASTENT_BM_BATCH];
@@ -200,7 +201,7 @@ static void fastent_bm_parse_block(fastent_bm_acc * a, const u8 * src, sz n) {
       if (want > FASTENT_BM_BATCH) want = FASTENT_BM_BATCH;
       sz did = score(src + i * FASTENT_BM_WB, want, Lb);
       if (did == 0) break;
-      for (sz k = 0; k < did; k++) fastent_bm_account(a, Lb[k]);
+      for (k = 0; k < did; k++) fastent_bm_account(a, Lb[k]);
       i += did;
     }
   }
@@ -233,7 +234,7 @@ static int fastent_bm_ensure(fastent_bm_acc * a) {
 }
 
 void fastent_bm_acc_init(fastent_bm_acc * a, u64 abs_base) {
-  memset(a, 0, sizeof(*a));
+  memset(a, 0, sizeof (*a));
   a->abs_base = abs_base;
   a->abs_pos  = abs_base;
   a->blk_off  = abs_base;
@@ -253,7 +254,7 @@ int fastent_bm_acc_feed(fastent_bm_acc * a, const u8 * buf, sz len) {
   while (pos < len) {
     u64 abs = a->abs_pos;
     u64 next_grid = (abs / FASTENT_LZ_GRID + 1) * (u64) FASTENT_LZ_GRID;
-    sz  room = (sz)(next_grid - abs);
+    sz  room = (sz) (next_grid - abs);
     sz  take = len - pos;
     if (take > room) take = room;
     memcpy(a->blk + a->blk_len, buf + pos, take);
@@ -280,11 +281,12 @@ int fastent_bm_acc_flush(fastent_bm_acc * a) {
 }
 
 void fastent_bm_acc_merge(fastent_bm_acc * dst, const fastent_bm_acc * src) {
+  i32 i;
   dst->windows   += src->windows;
   dst->meanl_sum += src->meanl_sum;
   if (src->oom) dst->oom = 1;
-  Fi(FASTENT_BM_LBINS, dst->lhist[i] += src->lhist[i])
-  Fi(6, dst->tbin[i] += src->tbin[i])
+  Fi(FASTENT_BM_LBINS, dst->lhist[i] += src->lhist[i]);
+  Fi(6, dst->tbin[i] += src->tbin[i]);
   /*  Keep the highest-abs tail window so the merge is order-free.  */
   if (src->have_tail &&
       (!dst->have_tail || src->tail_abs >= dst->tail_abs)) {
@@ -305,12 +307,14 @@ static f64 fastent_bm_mu(u32 m) {
   f64 base = (f64) m / 2.0 + (9.0 + alt) / 36.0;
   f64 corr = ((f64) m / 3.0 + 2.0 / 9.0);
   f64 scale = 1.0;
-  for (u32 k = 0; k < m && scale > 0.0; k++) scale *= 0.5;
+  u32 k;
+  for (k = 0; k < m && scale > 0.0; k++) scale *= 0.5;
   return base - corr * scale;
 }
 
 void fastent_bm_finalize(
     const fastent_bm_acc * a, u64 n, struct fastent_result * out) {
+  i32 i;
   (void) n;
   out->bm_deviation = 0.0;
   out->bm_mean_lc   = 0.0;
@@ -319,8 +323,8 @@ void fastent_bm_finalize(
   out->bm_chi_p     = 1.0;
   out->bm_windows   = a->windows;
   out->bm_degenerate = 0;
-  Fi(FASTENT_BM_LBINS, out->bm_lhist[i] = (u32)(a->lhist[i] > 0xffffffffu
-                                                ? 0xffffffffu : a->lhist[i]))
+  Fi(FASTENT_BM_LBINS, out->bm_lhist[i] = (u32) (a->lhist[i] > 0xffffffffu
+                                               ? 0xffffffffu : a->lhist[i]));
 
   u64 W = a->windows;
   if (W == 0) {
@@ -357,11 +361,11 @@ void fastent_bm_finalize(
   };
   f64 chi = 0.0;
   Fi(6,
-     volatile f64 e = (f64) W * pi6[i];
-     volatile f64 v = (f64) a->tbin[i];
-     volatile f64 d = v - e;
-     volatile f64 term = (d * d) / e;
-     chi += term)
+    volatile f64 e = (f64) W * pi6[i];
+    volatile f64 v = (f64) a->tbin[i];
+    volatile f64 d = v - e;
+    volatile f64 term = (d * d) / e;
+    chi += term);
   out->bm_chi   = chi;
   out->bm_chi_p = fastent_chisq_tail_df(chi, 5);
 }
