@@ -50,8 +50,7 @@ static inline __m128i bm_parmask_(__m128i a) {
 static inline void bm_pack_(const u8 * src, u64 s[WB]) {
   i32 i;
   Fi(WB, s[i] = 0);
-  for (i = 0; i < FASTENT_BM_WB; i++)
-    s[i >> 3] |= (u64) src[i] << (56u - 8u * (i & 7u));
+  Fi(FASTENT_BM_WB, s[i >> 3] |= (u64) src[i] << (56u - 8u * (i & 7u)));
 }
 
 /*  Process exactly 2 full M-bit windows; write their L into Lout.  */
@@ -70,7 +69,7 @@ static void bm_batch2_(const u8 * src, u32 * Lout) {
   __m128i one63 = _mm_set1_epi64x((i64) ((u64) 1 << 63));
   cv[0] = one63;
   bsv[0] = one63;
-  bm_polx_(bsv);                 /*  bs_ at start of N=0 is x^1 * 1  */
+  bm_polx_(bsv);  /*  bs_ at start of N=0 is x^1 * 1  */
 
   i64 L[2] = { 0, 0 };
 

@@ -27,8 +27,8 @@
 #define FASTENT_SIMD_VLEN  64
 #define V_SET1_EPI8(x)       _mm512_set1_epi8((char) (x))
 #define V_SETZERO()          _mm512_setzero_si512()
-#define V_LOAD(p)            _mm512_loadu_si512((const void *)(p))
-#define V_STORE(p, v)        _mm512_storeu_si512((void *)(p), (v))
+#define V_LOAD(p)            _mm512_loadu_si512((const void *) (p))
+#define V_STORE(p, v)        _mm512_storeu_si512((void *) (p), (v))
 #define V_AND(a, b)          _mm512_and_si512((a), (b))
 #define V_OR(a, b)           _mm512_or_si512((a), (b))
 #define V_ANDNOT(a, b)       _mm512_andnot_si512((a), (b))
@@ -49,8 +49,8 @@
 #define FASTENT_SIMD_VLEN  32
 #define V_SET1_EPI8(x)       _mm256_set1_epi8((char) (x))
 #define V_SETZERO()          _mm256_setzero_si256()
-#define V_LOAD(p)            _mm256_loadu_si256((const __m256i *)(p))
-#define V_STORE(p, v)        _mm256_storeu_si256((__m256i *)(p), (v))
+#define V_LOAD(p)            _mm256_loadu_si256((const __m256i *) (p))
+#define V_STORE(p, v)        _mm256_storeu_si256((__m256i *) (p), (v))
 #define V_AND(a, b)          _mm256_and_si256((a), (b))
 #define V_OR(a, b)           _mm256_or_si256((a), (b))
 #define V_ANDNOT(a, b)       _mm256_andnot_si256((a), (b))
@@ -68,8 +68,8 @@
 #define FASTENT_SIMD_VLEN  16
 #define V_SET1_EPI8(x)       _mm_set1_epi8((char) (x))
 #define V_SETZERO()          _mm_setzero_si128()
-#define V_LOAD(p)            _mm_loadu_si128((const __m128i *)(p))
-#define V_STORE(p, v)        _mm_storeu_si128((__m128i *)(p), (v))
+#define V_LOAD(p)            _mm_loadu_si128((const __m128i *) (p))
+#define V_STORE(p, v)        _mm_storeu_si128((__m128i *) (p), (v))
 #define V_AND(a, b)          _mm_and_si128((a), (b))
 #define V_OR(a, b)           _mm_or_si128((a), (b))
 #define V_ANDNOT(a, b)       _mm_andnot_si128((a), (b))
@@ -87,8 +87,8 @@
 #define FASTENT_SIMD_VLEN  16
 #define V_SET1_EPI8(x)       _mm_set1_epi8((char) (x))
 #define V_SETZERO()          _mm_setzero_si128()
-#define V_LOAD(p)            _mm_loadu_si128((const __m128i *)(p))
-#define V_STORE(p, v)        _mm_storeu_si128((__m128i *)(p), (v))
+#define V_LOAD(p)            _mm_loadu_si128((const __m128i *) (p))
+#define V_STORE(p, v)        _mm_storeu_si128((__m128i *) (p), (v))
 #define V_AND(a, b)          _mm_and_si128((a), (b))
 #define V_OR(a, b)           _mm_or_si128((a), (b))
 #define V_ANDNOT(a, b)       _mm_andnot_si128((a), (b))

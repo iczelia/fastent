@@ -23,8 +23,8 @@
 #define FASTENT_SIMD_VLEN  16
 #define V_SET1_EPI8(x)       wasm_i8x16_splat((int8_t)(x))
 #define V_SETZERO()          wasm_i64x2_splat(0)
-#define V_LOAD(p)            wasm_v128_load((const void *)(p))
-#define V_STORE(p, v)        wasm_v128_store((void *)(p), (v))
+#define V_LOAD(p)            wasm_v128_load((const void *) (p))
+#define V_STORE(p, v)        wasm_v128_store((void *) (p), (v))
 #define V_AND(a, b)          wasm_v128_and((a), (b))
 #define V_OR(a, b)           wasm_v128_or((a), (b))
 /*  wasm_v128_andnot(x, y) = x & ~y; x86 V_ANDNOT(a, b) = ~a & b.  */

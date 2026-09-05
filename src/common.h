@@ -42,19 +42,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef uint8_t  u8;   typedef int8_t  i8;
+typedef uint8_t  u8;  typedef int8_t  i8;
 typedef uint16_t u16;  typedef int16_t i16;
 typedef uint32_t u32;  typedef int32_t i32;
 typedef uint64_t u64;  typedef int64_t i64;
-typedef size_t   sz;   typedef double  f64;
+typedef size_t   sz;  typedef double  f64;
 
 #if defined(__GNUC__) || defined(__clang__)
 #define INLINE      __inline__ __attribute__((__always_inline__))
 #define HOT         __attribute__((__hot__))
-#define NOINLINE    __attribute__((__noinline__))
 #define ALIGN(n)    __attribute__((__aligned__(n)))
-#define LIKELY(x)   __builtin_expect(!!(x), 1)
-#define UNLIKELY(x) __builtin_expect(!!(x), 0)
 #define PREFETCH(p) __builtin_prefetch((p))
 #define PREFETCH_R(p) __builtin_prefetch((p), 0, 1)
 #define RESTRICT __restrict__
@@ -62,23 +59,17 @@ typedef size_t   sz;   typedef double  f64;
 #elif defined(_MSC_VER)
 #define INLINE __forceinline
 #define HOT
-#define NOINLINE __declspec(noinline)
 #define ALIGN(n) __declspec(align(n))
-#define LIKELY(x)   (x)
-#define UNLIKELY(x) (x)
 #define PREFETCH(p) ((void) 0)
   /*  _mm_prefetch / _MM_HINT_* come from <immintrin.h>, already
       included by the SIMD TUs where PREFETCH_R is used.  */
-#define PREFETCH_R(p) _mm_prefetch((const char *)(p), _MM_HINT_T1)
+#define PREFETCH_R(p) _mm_prefetch((const char *) (p), _MM_HINT_T1)
 #define RESTRICT
 #define FASTENT_PRINTF(f, a)
 #else
 #define INLINE inline
 #define HOT
-#define NOINLINE
 #define ALIGN(n)
-#define LIKELY(x)   (x)
-#define UNLIKELY(x) (x)
 #define PREFETCH(p) ((void) 0)
 #define PREFETCH_R(p) ((void) 0)
 #define RESTRICT restrict
@@ -90,36 +81,28 @@ void fastent_message(const char * fmt, ...) FASTENT_PRINTF(1, 2);
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
-#ifndef MAX
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-#endif
 
 /*  SWAR popcount fallback: on x86 without __POPCNT__ the builtin goes
     out-of-line to libgcc __popcountdi2, costly in the hot bit-mode walker.  */
 #if defined(__GNUC__) && !defined(__TINYC__) \
     && !((defined(__i386__) || defined(__x86_64__)) && !defined(__POPCNT__))
 #define FASTENT_POPCOUNT32(x) ((u32) __builtin_popcount((u32) (x)))
-#else
-  static inline u32 fastent_popcount32_(u32 x) {
-    x = x - ((x >> 1) & 0x55555555u);
-    x = (x & 0x33333333u) + ((x >> 2) & 0x33333333u);
-    x = (x + (x >> 4)) & 0x0f0f0f0fu;
-    return (x * 0x01010101u) >> 24;
-  }
-#define FASTENT_POPCOUNT32(x) fastent_popcount32_((u32) (x))
-#endif
-
-/*  64-bit popcount: same builtin/SWAR rationale as the 32-bit form.  */
-#if defined(__GNUC__) && !defined(__TINYC__) \
-    && !((defined(__i386__) || defined(__x86_64__)) && !defined(__POPCNT__))
 #define FASTENT_POPCOUNT64(x) ((u32) __builtin_popcountll((u64) (x)))
 #else
-  static inline u32 fastent_popcount64_(u64 x) {
-    x = x - ((x >> 1) & 0x5555555555555555ull);
-    x = (x & 0x3333333333333333ull) + ((x >> 2) & 0x3333333333333333ull);
-    x = (x + (x >> 4)) & 0x0f0f0f0f0f0f0f0full;
-    return (u32) ((x * 0x0101010101010101ull) >> 56);
-  }
+static inline u32 fastent_popcount32_(u32 x) {
+  x = x - ((x >> 1) & 0x55555555u);
+  x = (x & 0x33333333u) + ((x >> 2) & 0x33333333u);
+  x = (x + (x >> 4)) & 0x0f0f0f0fu;
+  return (x * 0x01010101u) >> 24;
+}
+#define FASTENT_POPCOUNT32(x) fastent_popcount32_((u32) (x))
+
+static inline u32 fastent_popcount64_(u64 x) {
+  x = x - ((x >> 1) & 0x5555555555555555ull);
+  x = (x & 0x3333333333333333ull) + ((x >> 2) & 0x3333333333333333ull);
+  x = (x + (x >> 4)) & 0x0f0f0f0f0f0f0f0full;
+  return (u32) ((x * 0x0101010101010101ull) >> 56);
+}
 #define FASTENT_POPCOUNT64(x) fastent_popcount64_((u64) (x))
 #endif
 
@@ -127,23 +110,23 @@ void fastent_message(const char * fmt, ...) FASTENT_PRINTF(1, 2);
 #if defined(__GNUC__) && !defined(__TINYC__)
 #define FASTENT_CTZ64(x) ((u32) __builtin_ctzll((u64) (x)))
 #else
-  static inline u32 fastent_ctz64_(u64 x) {
-    return FASTENT_POPCOUNT64((x & (0ull - x)) - 1ull);
-  }
+static inline u32 fastent_ctz64_(u64 x) {
+  return FASTENT_POPCOUNT64((x & (0ull - x)) - 1ull);
+}
 #define FASTENT_CTZ64(x) fastent_ctz64_((u64) (x))
 #endif
 
 /*  64-bit count-leading-zeros, non-zero input only.  Builtin where
     available; the fallback rounds the value up to a mask of all
-    bits at and below the top set bit, then 63 - popcount.  */
+    bits at and below the top set bit, then 64 - popcount.  */
 #if defined(__GNUC__) && !defined(__TINYC__)
 #define FASTENT_CLZ64(x) ((u32) __builtin_clzll((u64) (x)))
 #else
-  static inline u32 fastent_clz64_(u64 x) {
-    x |= x >> 1;  x |= x >> 2;  x |= x >> 4;
-    x |= x >> 8;  x |= x >> 16; x |= x >> 32;
-    return 64u - FASTENT_POPCOUNT64(x);
-  }
+static inline u32 fastent_clz64_(u64 x) {
+  x |= x >> 1;  x |= x >> 2;  x |= x >> 4;
+  x |= x >> 8;  x |= x >> 16;  x |= x >> 32;
+  return 64u - FASTENT_POPCOUNT64(x);
+}
 #define FASTENT_CLZ64(x) fastent_clz64_((u64) (x))
 #endif
 
@@ -155,15 +138,15 @@ void fastent_message(const char * fmt, ...) FASTENT_PRINTF(1, 2);
 #include <stdlib.h>
 #define FASTENT_BSWAP64(x) ((u64) _byteswap_uint64((u64) (x)))
 #else
-  static inline u64 fastent_bswap64_(u64 x) {
-    x = ((x & 0x00000000FFFFFFFFull) << 32)
-      | ((x & 0xFFFFFFFF00000000ull) >> 32);
-    x = ((x & 0x0000FFFF0000FFFFull) << 16)
-      | ((x & 0xFFFF0000FFFF0000ull) >> 16);
-    x = ((x & 0x00FF00FF00FF00FFull) <<  8)
-      | ((x & 0xFF00FF00FF00FF00ull) >>  8);
-    return x;
-  }
+static inline u64 fastent_bswap64_(u64 x) {
+  x = ((x & 0x00000000FFFFFFFFull) << 32)
+    | ((x & 0xFFFFFFFF00000000ull) >> 32);
+  x = ((x & 0x0000FFFF0000FFFFull) << 16)
+    | ((x & 0xFFFF0000FFFF0000ull) >> 16);
+  x = ((x & 0x00FF00FF00FF00FFull) <<  8)
+    | ((x & 0xFF00FF00FF00FF00ull) >>  8);
+  return x;
+}
 #define FASTENT_BSWAP64(x) fastent_bswap64_((u64) (x))
 #endif
 
@@ -183,7 +166,6 @@ static inline u64 fastent_rb64_(u64 v) {
   v = ((v & 0x0F0F0F0F0F0F0F0Full) << 4) | ((v >> 4) & 0x0F0F0F0F0F0F0F0Full);
   return v;
 }
-#define FASTENT_RB64(v) fastent_rb64_((u64) (v))
 
 /*  Load 8 bytes as a little-endian u64 then per-byte bit-reverse: the
     exact MSB-first-per-byte packed word the bit -ee scan consumes,

@@ -47,25 +47,25 @@ typedef enum {
 } fastent_sort_by;
 
 typedef struct {
-  int binary;         /*  -b  */
-  int counts;         /*  -c  */
-  int fold;           /*  -f  */
-  int terse;          /*  -t  */
-  int json;           /*  --json  */
-  int full_precision; /*  -p / --full-precision  */
-  int io_mode;        /*  --io={auto,mmap,stream,uring}  */
-  int histogram;      /*  -H / --histogram  */
+  int binary;  /*  -b  */
+  int counts;  /*  -c  */
+  int fold;  /*  -f  */
+  int terse;  /*  -t  */
+  int json;  /*  --json  */
+  int full_precision;  /*  -p / --full-precision  */
+  int io_mode;  /*  --io={auto,mmap,stream,uring}  */
+  int histogram;  /*  -H / --histogram  */
   int histogram_log;  /*  --log  (log-y for the histogram)  */
-  int color;          /*  --color mode: 0=never 1=auto 2=always  */
-  int threads;        /*  -j / --threads  (0 = auto, 1 = default)  */
-  int recursive;      /*  -r / --recursive  */
-  int extended;       /*  -e / --extended level (repeatable): >=1 emits
-                          the extended stats; >=2 (-ee) also computes the
-                          order-1 bigram H(cur|prev)+MI  */
-  int annotate;       /*  --annotate (interpretive report; implies -e)  */
-  int fips140;        /*  --fips-140-2 (RNG power-up self-tests)  */
-  int sort_by;        /*  --sort-by=COL, value from fastent_sort_by  */
-  int sort_desc;      /*  1 = descending; 0 = ascending  */
+  int color;  /*  --color mode: 0=never 1=auto 2=always  */
+  int threads;  /*  -j / --threads  (0 = auto, 1 = default)  */
+  int recursive;  /*  -r / --recursive  */
+  int extended;  /*  -e / --extended level (repeatable): >=1 emits
+                     the extended stats; >=2 (-ee) also computes the
+                     order-1 bigram H(cur|prev)+MI  */
+  int annotate;  /*  --annotate (interpretive report; implies -e)  */
+  int fips140;  /*  --fips-140-2 (RNG power-up self-tests)  */
+  int sort_by;  /*  --sort-by=COL, value from fastent_sort_by  */
+  int sort_desc;  /*  1 = descending; 0 = ascending  */
   const char * path;  /*  positional (NULL = stdin)  */
 } fastent_options;
 

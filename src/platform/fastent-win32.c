@@ -42,7 +42,7 @@ static wchar_t * utf8_to_wide(const char * s) {
   if (n <= 0) return NULL;
   wchar_t * w = (wchar_t *) malloc((sz) n * sizeof (wchar_t));
   if (!w) return NULL;
-  if (MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n) <= 0) { free(w); return NULL; }
+  if (MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n) <= 0) { free(w);  return NULL; }
   return w;
 }
 
@@ -51,7 +51,7 @@ static char * wide_to_utf8(const wchar_t * w) {
   if (n <= 0) return NULL;
   char * s = (char *) malloc((sz) n);
   if (!s) return NULL;
-  if (WideCharToMultiByte(CP_UTF8, 0, w, -1, s, n, NULL, NULL) <= 0) { free(s); return NULL; }
+  if (WideCharToMultiByte(CP_UTF8, 0, w, -1, s, n, NULL, NULL) <= 0) { free(s);  return NULL; }
   return s;
 }
 
@@ -64,7 +64,7 @@ static int grow_buf_w(wchar_t ** pbuf, sz * pbcap) {
   sz nc = *pbcap * 2;
   wchar_t * nb = (wchar_t *) realloc(*pbuf, nc * sizeof (wchar_t));
   if (!nb) return 0;
-  *pbuf = nb; *pbcap = nc;
+  *pbuf = nb;  *pbcap = nc;
   return 1;
 }
 
@@ -95,7 +95,7 @@ static int split_cmdline_w(const wchar_t * cmd, wchar_t *** out_wargv) {
         if (!in_quote && (*p == L' ' || *p == L'\t')) break;
         if (*p == L'\\') {
           i32 nbs = 0;
-          while (*p == L'\\') { nbs++; p++; }
+          while (*p == L'\\') { nbs++;  p++; }
           if (*p == L'"') {
             i32 slashes = nbs / 2;
             if (pass == 1) {
@@ -146,7 +146,7 @@ static int split_cmdline_w(const wchar_t * cmd, wchar_t *** out_wargv) {
       }
       argc++;
     }
-    if (pass == 1) { *out_wargv = wargv; return argc; }
+    if (pass == 1) { *out_wargv = wargv;  return argc; }
   }
   return -1;
 fail:
@@ -196,7 +196,7 @@ void fastent_win32_init_console(void) {
 }
 
 int fastent_win32_open_utf8(const char * path, int flags) {
-  if (!path) { errno = EINVAL; return -1; }
+  if (!path) { errno = EINVAL;  return -1; }
   wchar_t * w = utf8_to_wide(path);
   if (!w) {
     errno = EINVAL;
@@ -212,7 +212,7 @@ int fastent_win32_open_utf8(const char * path, int flags) {
 #else  /*  FASTENT_WIN_LEGACY: Win95 narrow-API path  */
 
 int fastent_win32_argv_utf8(int * argc_out, char *** argv_out) {
-  (void) argc_out; (void) argv_out;
+  (void) argc_out;  (void) argv_out;
   return 0;
 }
 
@@ -221,7 +221,7 @@ void fastent_win32_init_console(void) {
 }
 
 int fastent_win32_open_utf8(const char * path, int flags) {
-  if (!path) { errno = EINVAL; return -1; }
+  if (!path) { errno = EINVAL;  return -1; }
   return _open(path, flags);
 }
 
@@ -275,7 +275,7 @@ int fastent_win32_mmap(
   h = (HANDLE) raw;
   if (GetFileType(h) != FILE_TYPE_DISK) return -1;
   if (fastent_win32_filesize_(h, &fsz) != 0) return -1;
-  if (fsz == 0) return 1;   /*  empty: cannot map; caller streams  */
+  if (fsz == 0) return 1;  /*  empty: cannot map; caller streams  */
   /*  0,0 = current file size; NULL name = anonymous.  CreateFileMappingW
       is a stub on Win9x; with a NULL name the A entry is equivalent.  */
   hm = CreateFileMappingA(h, NULL, PAGE_READONLY, 0, 0, NULL);
@@ -306,7 +306,7 @@ void * fastent_win32_open_overlapped(const char * utf8_path, u64 * out_size) {
     if (n <= 0) return NULL;
     wchar_t * w = (wchar_t *) malloc((sz) n * sizeof (wchar_t));
     if (!w) return NULL;
-    if (MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, w, n) <= 0) { free(w); return NULL; }
+    if (MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, w, n) <= 0) { free(w);  return NULL; }
     h = CreateFileW(w, GENERIC_READ, FILE_SHARE_READ, NULL,
                     OPEN_EXISTING,
                     FILE_FLAG_OVERLAPPED | FILE_FLAG_SEQUENTIAL_SCAN,
@@ -342,7 +342,8 @@ void fastent_win32_set_console_fg(int cls) {
     } else return;
   }
   WORD attr;
-  if (cls < 0) { attr = initial_attrs; } else {
+  if (cls < 0) attr = initial_attrs;
+  else {
     /*  4th entry keeps the `cls & 3` mask in bounds; classes 0..2.  */
     static const WORD fg[4] = {
       FOREGROUND_INTENSITY,
@@ -369,7 +370,8 @@ void fastent_win32_set_console_sev(int sev) {
     } else return;
   }
   WORD attr;
-  if (sev < 0) { attr = initial_attrs; } else {
+  if (sev < 0) attr = initial_attrs;
+  else {
     static const WORD sv[4] = {
       FOREGROUND_GREEN | FOREGROUND_INTENSITY,
       FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY,

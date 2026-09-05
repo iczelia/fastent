@@ -31,7 +31,7 @@ static wchar_t * utf8_to_wide_(const char * s) {
   if (n <= 0) return NULL;
   wchar_t * w = (wchar_t *) malloc((sz) n * sizeof (wchar_t));
   if (!w) return NULL;
-  if (MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n) <= 0) { free(w); return NULL; }
+  if (MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n) <= 0) { free(w);  return NULL; }
   return w;
 }
 
@@ -40,7 +40,7 @@ static char * wide_to_utf8_(const wchar_t * w) {
   if (n <= 0) return NULL;
   char * s = (char *) malloc((sz) n);
   if (!s) return NULL;
-  if (WideCharToMultiByte(CP_UTF8, 0, w, -1, s, n, NULL, NULL) <= 0) { free(s); return NULL; }
+  if (WideCharToMultiByte(CP_UTF8, 0, w, -1, s, n, NULL, NULL) <= 0) { free(s);  return NULL; }
   return s;
 }
 
@@ -88,7 +88,7 @@ static int walk_dir_w_(
     if (name[0] == L'.' && (name[1] == L'\0'
                        || (name[1] == L'.' && name[2] == L'\0'))) continue;
     wchar_t * full = join_path_w_(dir, name);
-    if (!full) { rc = -1; break; }
+    if (!full) { rc = -1;  break; }
     /*  Skip reparse-point directories (junctions / symlinks): the
         POSIX walker drops dir symlinks via lstat, and following them
         risks an unbounded self-referential loop.  */
@@ -101,7 +101,7 @@ static int walk_dir_w_(
                     | FILE_ATTRIBUTE_REPARSE_POINT))) {
       char * u8 = wide_to_utf8_(full);
       free(full);
-      if (!u8) { rc = -1; break; }
+      if (!u8) { rc = -1;  break; }
       rc = fn(u8, ctx);
       free(u8);
     } else {
@@ -114,9 +114,9 @@ static int walk_dir_w_(
 }
 
 int fastent_walk(const char * root, fastent_walk_fn fn, void * ctx) {
-  if (!root || !fn) { errno = EINVAL; return -1; }
+  if (!root || !fn) { errno = EINVAL;  return -1; }
   wchar_t * wroot = utf8_to_wide_(root);
-  if (!wroot) { errno = EINVAL; return -1; }
+  if (!wroot) { errno = EINVAL;  return -1; }
   DWORD attr = GetFileAttributesW(wroot);
   int rc;
   if (attr == INVALID_FILE_ATTRIBUTES) {
@@ -124,7 +124,8 @@ int fastent_walk(const char * root, fastent_walk_fn fn, void * ctx) {
     errno = ENOENT;
     return -1;
   }
-  if (attr & FILE_ATTRIBUTE_DIRECTORY) { rc = walk_dir_w_(wroot, fn, ctx, 0); } else {
+  if (attr & FILE_ATTRIBUTE_DIRECTORY) rc = walk_dir_w_(wroot, fn, ctx, 0);
+  else {
     rc = fn(root, ctx);
   }
   free(wroot);
@@ -135,7 +136,7 @@ int fastent_walk(const char * root, fastent_walk_fn fn, void * ctx) {
 
 int fastent_walk(const char * root, fastent_walk_fn fn, void * ctx) {
   /*  Win95 stub: no recursive walk.  */
-  (void) root; (void) fn; (void) ctx;
+  (void) root;  (void) fn;  (void) ctx;
   errno = ENOSYS;
   return -1;
 }

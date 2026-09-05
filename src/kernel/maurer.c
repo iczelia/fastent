@@ -20,10 +20,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-/*  IEEE sqrt is correctly rounded, so bit-identical across hosts.  */
+/*  Use the library square root for the standard deviation.  */
 static inline f64 fastent_maurer_sqrt(f64 x) { return sqrt(x); }
 
-/*  Libm-free 2^x for x <= 0 (the c factor needs K^(-3/L)).  */
+/*  Approximate 2^x for x <= 0 with a polynomial and power-of-two scaling.
+    The correction factor needs K^(-3/L).  */
 static f64 fastent_maurer_exp2_neg(f64 x) {
   f64 fi = floor(x);
   int i = (int) fi;
@@ -39,9 +40,9 @@ static f64 fastent_maurer_exp2_neg(f64 x) {
   return ldexp(p, i);
 }
 
-/*  Score one grid block [src,src+n): bits MSB-first, L-bit blocks,
-    first Q set T, the rest add log2(i - T[pat]) fused through the
-    volatile barrier.  Emits at most one partial record.  */
+/*  Score n bytes as L-bit blocks, most significant bit first.  The first
+    Q blocks initialise T; the rest accumulate log2(i - T[pat]) in order.
+    Store at most one partial result per grid block.  */
 static void fastent_maurer_block(
     fastent_maurer_acc * a, const u8 * src, sz n) {
   u64 nbits = (u64) n * 8u;
@@ -69,7 +70,8 @@ static void fastent_maurer_block(
       pat = (pat << 1) | ((src[q >> 3] >> (7u - (q & 7u))) & 1u);
     }
 #endif
-    if (i <= (u64) FASTENT_MA_Q) { T[pat] = (u32) i; } else {
+    if (i <= (u64) FASTENT_MA_Q) T[pat] = (u32) i;
+    else {
       u64 d = i - (u64) T[pat];
       T[pat] = (u32) i;
       f64 l2 = d < FASTENT_MA_LOGT ? lt[d] : fastent_log2_ratio(d, 1);
@@ -83,7 +85,7 @@ static void fastent_maurer_block(
   if (a->nparts == a->cap) {
     sz nc = a->cap ? a->cap * 2u : 8u;
     fastent_maurer_part * np = (fastent_maurer_part *)
-      realloc(a->parts, nc * sizeof (*np));
+      realloc(a->parts, nc * sizeof *np);
     if (!np) { a->oom = 1;  return; }
     a->parts = np;  a->cap = nc;
   }
@@ -114,15 +116,14 @@ static int fastent_maurer_ensure(fastent_maurer_acc * a) {
 }
 
 void fastent_maurer_acc_init(fastent_maurer_acc * a, u64 abs_base) {
-  memset(a, 0, sizeof (*a));
+  memset(a, 0, sizeof *a);
   a->abs_base = abs_base;
   a->abs_pos  = abs_base;
   a->blk_off  = abs_base;
 }
 
-/*  Rebase for the next absolute grid block while keeping the heap scratch (T
-    table, log2 memo, block buffer) so a worker that scores many blocks fills
-    the memo once.  */
+/*  Reset for the next grid block, retaining the table, cached logarithms
+    and input buffer.  */
 void fastent_maurer_acc_reset(fastent_maurer_acc * a, u64 abs_base) {
   a->nparts  = 0;
   a->blk_len = 0;
@@ -180,19 +181,19 @@ void fastent_maurer_acc_merge(
     sz nc = dst->cap ? dst->cap : 8u;
     while (nc < need) nc *= 2u;
     fastent_maurer_part * np = (fastent_maurer_part *)
-      realloc(dst->parts, nc * sizeof (*np));
+      realloc(dst->parts, nc * sizeof *np);
     if (!np) { dst->oom = 1;  return; }
     dst->parts = np;  dst->cap = nc;
   }
   memcpy(dst->parts + dst->nparts, src->parts,
-         src->nparts * sizeof (*src->parts));
+         src->nparts * sizeof *src->parts);
   dst->nparts = need;
 }
 
 void fastent_maurer_acc_free(fastent_maurer_acc * a) {
-  free(a->tbl);    a->tbl   = NULL;
-  free(a->logt);   a->logt  = NULL;
-  free(a->blk);    a->blk   = NULL;
+  free(a->tbl);  a->tbl   = NULL;
+  free(a->logt);  a->logt  = NULL;
+  free(a->blk);  a->blk   = NULL;
   free(a->parts);  a->parts = NULL;
   a->nparts = a->cap = 0;
 }
@@ -221,9 +222,9 @@ void fastent_maurer_finalize(
 
   if (a->nparts == 0) return;
 
-  /*  Sort the per-block partials in place by absolute block index;
-      no copy, so there is no allocation that could false-PASS.  */
-  qsort(a->parts, a->nparts, sizeof (*a->parts), fastent_maurer_part_cmp);
+  /*  Sort partial results by absolute block index before summing, so
+      rounding is independent of the worker count.  */
+  qsort(a->parts, a->nparts, sizeof *a->parts, fastent_maurer_part_cmp);
 
   volatile f64 tsum = 0.0;
   u64 tk = 0;
@@ -235,7 +236,7 @@ void fastent_maurer_finalize(
   f64 fn = (f64) tsum / (f64) tk;
   out->maurer_fn = fn;
 
-  /*  c = 0.7 - 0.8/L + (4 + 32/L) * K^(-3/L) / 15, libm-free.  */
+  /*  c = 0.7 - 0.8/L + (4 + 32/L) * K^(-3/L) / 15.  */
   f64 lk  = fastent_log2_ratio(tk, 1);
   f64 km  = fastent_maurer_exp2_neg(-(3.0 / 8.0) * lk);
   f64 c   = 0.7 - 0.8 / 8.0 + (4.0 + 32.0 / 8.0) * km / 15.0;
@@ -245,7 +246,6 @@ void fastent_maurer_finalize(
   f64 sigma = c * fastent_maurer_sqrt(FASTENT_MA_VARIANCE / (f64) tk);
   out->maurer_dev = sigma > 0.0 ? an / sigma : 0.0;
 
-  /*  fn far below expected: a near-constant / highly repetitive
-      stream; the z still fails it.  */
+  /*  Flag a statistic far below the expected value as degenerate.  */
   if (fn < FASTENT_MA_EXPECTED * 0.5) out->maurer_degenerate = 1;
 }

@@ -52,9 +52,9 @@ static int walk_dir_(
     if (name[0] == '.' && (name[1] == '\0'
                        || (name[1] == '.' && name[2] == '\0'))) continue;
     char * full = join_path_(path, name);
-    if (!full) { rc = -1; break; }
+    if (!full) { rc = -1;  break; }
     struct stat st;
-    if (lstat(full, &st) != 0) { free(full); continue; }
+    if (lstat(full, &st) != 0) { free(full);  continue; }
     if (S_ISREG(st.st_mode)) {
       rc = fn(full, ctx);
       free(full);
@@ -72,7 +72,7 @@ static int walk_dir_(
 }
 
 int fastent_walk(const char * root, fastent_walk_fn fn, void * ctx) {
-  if (!root || !fn) { errno = EINVAL; return -1; }
+  if (!root || !fn) { errno = EINVAL;  return -1; }
   struct stat st;
   if (stat(root, &st) != 0) return -1;
   if (S_ISREG(st.st_mode)) return fn(root, ctx);

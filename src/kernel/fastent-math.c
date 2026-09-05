@@ -60,7 +60,7 @@ static inline dd_t dd_mul_d_(dd_t a, f64 b) {
 
 static inline f64 fastent_qnan_(void) {
   u64 b = 0x7ff8000000000000ULL;
-  f64 r; memcpy(&r, &b, 8); return r;
+  f64 r;  memcpy(&r, &b, 8);  return r;
 }
 
 /*  log2(1 + r) via degree-12 Horner.  Passing r = -u yields log2(1 - u)
@@ -139,9 +139,9 @@ f64 fastent_entropy_term(f64 p) {
 f64 fastent_log2(f64 x) {
   u64 b;
   memcpy(&b, &x, 8);
-  if ((b >> 52 & 0x7ff) == 0x7ff)            /*  NaN or +-inf  */
+  if ((b >> 52 & 0x7ff) == 0x7ff)  /*  NaN or +-inf  */
     return (b << 1) == 0xffe0000000000000ULL ? x : fastent_qnan_();
-  if (b >> 63 || b == 0) return fastent_qnan_();   /*  x <= 0  */
+  if (b >> 63 || b == 0) return fastent_qnan_();  /*  x <= 0  */
   if (x == 1.0)          return 0.0;
   dd_t lp = (x > 0.5 && x < 1.0) ? log2_near1_dd_(x) : log2_generic_dd_(x);
   return lp.hi + lp.lo;
@@ -154,7 +154,7 @@ f64 fastent_log2_ge1(f64 x) {
     return (b << 1) == 0xffe0000000000000ULL ? x : fastent_qnan_();
   if (b >> 63 || b == 0) return fastent_qnan_();
   if (x == 1.0)          return 0.0;
-  dd_t lp = log2_generic_dd_(x);   /*  x >= 1: no split, no denormal  */
+  dd_t lp = log2_generic_dd_(x);  /*  x >= 1: no split, no denormal  */
   return lp.hi + lp.lo;
 }
 

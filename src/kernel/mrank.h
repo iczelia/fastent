@@ -35,14 +35,14 @@ typedef char fastent_mrank_grid_assert_[
     every whole 128-byte matrix with a fresh row word load, sum-merges
     the three bin counts.  */
 typedef struct {
-  u64 matrices;                       /*  total full matrices scored  */
-  u64 bins[FASTENT_MRANK_BINS];       /*  [0]=r32, [1]=r31, [2]=rlo  */
+  u64 matrices;  /*  total full matrices scored  */
+  u64 bins[FASTENT_MRANK_BINS];  /*  [0]=r32, [1]=r31, [2]=rlo  */
 
   u64 abs_base, abs_pos;
   u8 * blk;
-  sz   blk_len;
-  u64  blk_off;
-  int  oom;
+  sz blk_len;
+  u64 blk_off;
+  int oom;
 } fastent_mrank_acc;
 
 /*  feed takes any-size chunks (split at grid lines); merge is order
@@ -65,14 +65,14 @@ struct fastent_result;  /*  fwd: analyze.h includes this header  */
     integrator plumbs.  All numbers here are total functions of the
     merged acc; the headline is NaN when underpowered.  */
 typedef struct {
-  u64 matrices;                  /*  total full 32x32 matrices  */
+  u64 matrices;  /*  total full 32x32 matrices  */
   u32 hist[FASTENT_MRANK_BINS];  /*  saturating u32 copy of bin counts  */
-  f64 chi2;                      /*  chi-square statistic, df = 2  */
-  f64 mrank_dev;                 /*  headline = sqrt(chi2)  */
-  f64 p_r32;                     /*  NIST expected proportions  */
+  f64 chi2;  /*  chi-square statistic, df = 2  */
+  f64 mrank_dev;  /*  headline = sqrt(chi2)  */
+  f64 p_r32;  /*  NIST expected proportions  */
   f64 p_r31;
   f64 p_rlo;
-  i32 mrank_underpowered;        /*  1 if matrices < FASTENT_MRANK_MIN  */
+  i32 mrank_underpowered;  /*  1 if matrices < FASTENT_MRANK_MIN  */
 } fastent_mrank_summary;
 
 /*  Pure summary computation; used by the standalone bench.  Finalize

@@ -99,7 +99,7 @@ static int mrank_ensure_(fastent_mrank_acc * a) {
 }
 
 void fastent_mrank_acc_init(fastent_mrank_acc * a, u64 abs_base) {
-  memset(a, 0, sizeof (*a));
+  memset(a, 0, sizeof *a);
   a->abs_base = abs_base;
   a->abs_pos  = abs_base;
   a->blk_off  = abs_base;
@@ -162,7 +162,7 @@ void fastent_mrank_compute(
   i32 i;
   /*  Zero the whole struct including padding so a byte-equal memcmp
       between two compute runs is the determinism check.  */
-  memset(s, 0, sizeof (*s));
+  memset(s, 0, sizeof *s);
   s->matrices = a->matrices;
   Fi(FASTENT_MRANK_BINS, s->hist[i] = (u32) (a->bins[i] > 0xffffffffu
                                            ? 0xffffffffu : a->bins[i]));

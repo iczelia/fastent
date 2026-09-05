@@ -70,8 +70,7 @@ static void digram_bits_blk_(
   sz w, i;
 
   memset(W, 0, NW * sizeof (u64));
-  for (i = 0; i < cl; i++)
-    W[i >> 3] |= (u64) fastent_bitrev8_(buf[i]) << ((u32) (i & 7) * 8u);
+  Fi(cl, W[i >> 3] |= (u64) fastent_bitrev8_(buf[i]) << ((u32) (i & 7) * 8u));
 
   const u32 b0    = (u32) (W[0] & 1u);
   const sz  lbpos = M - 1;
@@ -104,12 +103,11 @@ static void digram_bits_blk_(
 
   {
     i64 o = 0, gmn = ((i64) 1 << 60), gmx = -((i64) 1 << 60);
-    for (i = 0; i < cl; i++) {
+    Fi(cl,
       const u32 v = buf[i];
       if (o + cs_mn[v] < gmn) gmn = o + cs_mn[v];
       if (o + cs_mx[v] > gmx) gmx = o + cs_mx[v];
-      o += cs_net[v];
-    }
+      o += cs_net[v]);
     const i64 cs0 = st->cs_sum;
     if (cs0 + gmn < st->cs_min) st->cs_min = cs0 + gmn;
     if (cs0 + gmx > st->cs_max) st->cs_max = cs0 + gmx;
@@ -200,7 +198,7 @@ void fastent_digram_count(
     fastent_chunk_state * st, const u8 * buf, sz len, int binary, int fold) {
   sz off;
   if (len == 0) return;
-  if (!binary && !st->bigram) return;   /*  byte mode without -ee table  */
+  if (!binary && !st->bigram) return;  /*  byte mode without -ee table  */
 
   if (!fold) {
     if (binary) digram_bits_(st, buf, len);

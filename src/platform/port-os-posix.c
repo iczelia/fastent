@@ -36,7 +36,7 @@ void fastent_os_init_console(void) {
 }
 
 int fastent_os_argv_utf8(int * argc_out, char *** argv_out) {
-  (void) argc_out; (void) argv_out;
+  (void) argc_out;  (void) argv_out;
   return 0;
 }
 

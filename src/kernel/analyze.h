@@ -75,42 +75,42 @@ typedef struct {
   u64 bit_hist[2];
 
   /*  Cross-chunk state:  */
-  u8  carry_byte;       /*  Most recent byte for SCC product carry  */
-  u8  first_byte;       /*  Very first byte of the stream (this state)  */
-  u8  last_byte;        /*  Most recent byte processed  */
-  u8  have_carry;
-  u8  have_first;
+  u8 carry_byte;  /*  Most recent byte for SCC product carry  */
+  u8 first_byte;  /*  Very first byte of the stream (this state)  */
+  u8 last_byte;  /*  Most recent byte processed  */
+  u8 have_carry;
+  u8 have_first;
 
   /*  Monte Carlo 6-byte ring:  */
-  u8  mc_buf[6];
+  u8 mc_buf[6];
   i32 mc_pos;
 
   /*  Order-1 digram: FASTENT_BG_CELLS u64, NULL unless -ee byte mode.  */
   u64 * bigram;
-  u64   bit_bigram[2][2];
-  u8    dg_prev;
-  u8    dg_have;
+  u64 bit_bigram[2][2];
+  u8 dg_prev;
+  u8 dg_have;
 
   /*  u32 chunk shadow of `bigram` (half the u64 hot set), drained every
       FASTENT_DG_U32_CHUNK bytes and before any merge.  */
   u32 * dg_u32;
-  u64   dg_chunk_bytes;
+  u64 dg_chunk_bytes;
 
   /*  -ee level-2 sequential extras (runs / longest run / cusum).  */
-  u64 lr_max;        /*  longest completed identical-symbol run  */
-  u64 lr_cur;        /*  open run length                         */
-  u8  lr_sym;        /*  open run symbol                          */
-  u8  lr_have;
-  u64 lr_head_len;   /*  length of this slab's leading run        */
-  u8  lr_head_sym;   /*  symbol of that leading run               */
-  u8  lr_head_open;  /*  set while the leading run is still the
-                         only run (whole slab is one run)         */
-  u64 rn_count;      /*  bit-runs (bit mode)                      */
-  u8  rn_last;       /*  most recent bit                          */
-  u8  rn_have;
-  i64 cs_sum;        /*  live +-1 walk position                   */
-  i64 cs_min;        /*  min of the walk (<= 0)                   */
-  i64 cs_max;        /*  max of the walk (>= 0)                   */
+  u64 lr_max;  /*  longest completed identical-symbol run  */
+  u64 lr_cur;  /*  open run length  */
+  u8 lr_sym;  /*  open run symbol  */
+  u8 lr_have;
+  u64 lr_head_len;  /*  length of this slab's leading run  */
+  u8 lr_head_sym;  /*  symbol of that leading run  */
+  u8 lr_head_open;  /*  set while the leading run is still the
+                         only run (whole slab is one run)  */
+  u64 rn_count;  /*  bit-runs (bit mode)  */
+  u8 rn_last;  /*  most recent bit  */
+  u8 rn_have;
+  i64 cs_sum;  /*  live +-1 walk position  */
+  i64 cs_min;  /*  min of the walk (<= 0)  */
+  i64 cs_max;  /*  max of the walk (>= 0)  */
 } fastent_chunk_state;
 
 /*  scc sentinel for a zero SCC denominator (undefined serial
@@ -133,81 +133,81 @@ typedef struct fastent_result {
   f64 scc;
 
   /*  Extended stats (always computed; surfaced only under -e).  */
-  f64 min_entropy;          /*  H_inf = -log2(max p_i), per sample  */
-  f64 collision_entropy;    /*  H_2 = -log2(sum p_i^2), per sample  */
-  f64 ic;                   /*  index of coincidence  */
-  f64 poker_chisq;          /*  16-bin nibble chi-square; NaN in bits  */
-  f64 poker_p;              /*  upper tail, df=15; NaN in bit mode  */
-  f64 variance;             /*  of sample value  */
+  f64 min_entropy;  /*  H_inf = -log2(max p_i), per sample  */
+  f64 collision_entropy;  /*  H_2 = -log2(sum p_i^2), per sample  */
+  f64 ic;  /*  index of coincidence  */
+  f64 poker_chisq;  /*  16-bin nibble chi-square; NaN in bits  */
+  f64 poker_p;  /*  upper tail, df=15; NaN in bit mode  */
+  f64 variance;  /*  of sample value  */
   f64 stddev;
-  f64 redundancy;           /*  1 - H/Hmax  */
-  u32 distinct;             /*  distinct symbols observed  */
-  i32 mode_value;           /*  most frequent symbol (-1 if none)  */
+  f64 redundancy;  /*  1 - H/Hmax  */
+  u32 distinct;  /*  distinct symbols observed  */
+  i32 mode_value;  /*  most frequent symbol (-1 if none)  */
   u64 mode_count;
-  i32 rarest_value;         /*  least frequent observed (-1 none)  */
+  i32 rarest_value;  /*  least frequent observed (-1 none)  */
   u64 rarest_count;
-  f64 bit_freq[8];          /*  P(bit k=1), k=0 LSB..7 MSB; byte mode  */
-  f64 bit_bias_max;         /*  max_k |bit_freq[k]-0.5|; NaN in bits  */
-  i32 bit_bias_worst;       /*  argmax k of that bias; -1 in bit mode  */
+  f64 bit_freq[8];  /*  P(bit k=1), k=0 LSB..7 MSB; byte mode  */
+  f64 bit_bias_max;  /*  max_k |bit_freq[k]-0.5|; NaN in bits  */
+  i32 bit_bias_worst;  /*  argmax k of that bias; -1 in bit mode  */
   f64 conditional_entropy;  /*  H(cur|prev); NaN if no bigram / bits  */
-  f64 mutual_information;   /*  I(prev;cur); NaN likewise  */
-  f64 runs;                 /*  bit: 0/1 runs; byte: below/>=median
-                                runs; NaN if not computed  */
-  f64 longest_run;          /*  longest identical-symbol run (bits or
-                                bytes); NaN if no samples  */
-  f64 cusum_max;            /*  max |S|, +-1 bit walk; bit mode only  */
+  f64 mutual_information;  /*  I(prev;cur); NaN likewise  */
+  f64 runs;  /*  bit: 0/1 runs; byte: below/>=median
+                 runs; NaN if not computed  */
+  f64 longest_run;  /*  longest identical-symbol run (bits or
+                        bytes); NaN if no samples  */
+  f64 cusum_max;  /*  max |S|, +-1 bit walk; bit mode only  */
 
   /*  LZ77F estimator (-e, ~2 GiB/s ST band).  */
-  f64 lz_cr_excess;         /*  S1 max(0,(outsz_rand-B)/n)  */
-  f64 lz_lit_h;             /*  S2 H_lit (literal byte entropy, bits)  */
-  f64 lz_lit_kl;            /*  S2 8 - H_lit (= KL to uniform)  */
-  f64 lz_match_cov;         /*  S3 1 - lit_bytes/n  */
-  f64 lz_off_conc;          /*  1 - H(off)/log2(65535); 0 if nmatch<2  */
-  f64 lz_mlen_excess;       /*  mean match len - 4; 0 if nmatch<2  */
-  f64 lz_lit_chi;           /*  literal chi-square vs uniform, df=255  */
-  f64 lz_lit_chi_p;         /*  its upper-tail p (advisory companion)  */
-  f64 lz_deviation;         /*  headline z = max(S1,S2/8,S3)/sigma0  */
-  u64 lz_nmatch;            /*  total LZ77 matches  */
-  i32 lz_megamatch;         /*  1 = single dominant match (mega note)  */
-  struct fastent_lz77f_tables * lz;  /*  3 raw tables; NULL unless -e */
+  f64 lz_cr_excess;  /*  S1 max(0,(outsz_rand-B)/n)  */
+  f64 lz_lit_h;  /*  S2 H_lit (literal byte entropy, bits)  */
+  f64 lz_lit_kl;  /*  S2 8 - H_lit (= KL to uniform)  */
+  f64 lz_match_cov;  /*  S3 1 - lit_bytes/n  */
+  f64 lz_off_conc;  /*  1 - H(off)/log2(65535); 0 if nmatch<2  */
+  f64 lz_mlen_excess;  /*  mean match len - 4; 0 if nmatch<2  */
+  f64 lz_lit_chi;  /*  literal chi-square vs uniform, df=255  */
+  f64 lz_lit_chi_p;  /*  its upper-tail p (advisory companion)  */
+  f64 lz_deviation;  /*  headline z = max(S1,S2/8,S3)/sigma0  */
+  u64 lz_nmatch;  /*  total LZ77 matches  */
+  i32 lz_megamatch;  /*  1 = single dominant match (mega note)  */
+  struct fastent_lz77f_tables * lz;  /*  3 raw tables; NULL unless -e  */
 
   /*  Linear-complexity estimator (-eee; ~55 MiB/s ST, the bottleneck).  */
-  f64 bm_deviation;         /*  headline z = |meanL-mu|/sqrt(VarL/W)  */
-  f64 bm_mean_lc;           /*  mean per-window linear complexity  */
-  f64 bm_mu;                /*  mu(M): random-sequence expectation  */
-  f64 bm_chi;               /*  NIST class chi-square (df=5, advisory)  */
-  f64 bm_chi_p;             /*  its upper-tail p  */
-  u64 bm_windows;           /*  full M-bit windows scored  */
-  i32 bm_degenerate;        /*  1 = meanL<2 (near-constant; note)  */
-  u32 bm_lhist[64];         /*  L_i bucket histogram (bin = L*64/513)  */
+  f64 bm_deviation;  /*  headline z = |meanL-mu|/sqrt(VarL/W)  */
+  f64 bm_mean_lc;  /*  mean per-window linear complexity  */
+  f64 bm_mu;  /*  mu(M): random-sequence expectation  */
+  f64 bm_chi;  /*  NIST class chi-square (df=5, advisory)  */
+  f64 bm_chi_p;  /*  its upper-tail p  */
+  u64 bm_windows;  /*  full M-bit windows scored  */
+  i32 bm_degenerate;  /*  1 = meanL<2 (near-constant; note)  */
+  u32 bm_lhist[64];  /*  L_i bucket histogram (bin = L*64/513)  */
 
   /*  Maurer universal test (-eee, alongside LZ77F / BM).  */
-  f64 maurer_fn;            /*  fn = Sum log2(dist) / K  */
-  f64 maurer_expected;      /*  NIST SP800-22 expected(L), L=8  */
-  f64 maurer_dev;           /*  headline z = |fn-exp|/(c*sqrt(var/K))  */
-  u64 maurer_k;             /*  total test blocks K  */
-  i32 maurer_degenerate;    /*  1 = fn << expected (repetitive; note)  */
-  u32 maurer_lhist[64];     /*  log2-distance bucket histogram  */
+  f64 maurer_fn;  /*  fn = Sum log2(dist) / K  */
+  f64 maurer_expected;  /*  NIST SP800-22 expected(L), L=8  */
+  f64 maurer_dev;  /*  headline z = |fn-exp|/(c*sqrt(var/K))  */
+  u64 maurer_k;  /*  total test blocks K  */
+  i32 maurer_degenerate;  /*  1 = fn << expected (repetitive; note)  */
+  u32 maurer_lhist[64];  /*  log2-distance bucket histogram  */
 
   /*  Binary matrix-rank estimator (-eee, NIST SP800-22 sec 2.5).  */
-  f64 mrank_dev;            /*  headline z = sqrt(chi2)  */
-  f64 mrank_chi;            /*  chi-square statistic, df = 2  */
-  f64 mrank_chi_p;          /*  advisory p (NaN: df even)  */
-  u64 mrank_matrices;       /*  total full 32x32 GF(2) matrices  */
-  u32 mrank_r32;            /*  count of matrices with rank == 32  */
-  u32 mrank_r31;            /*  count of matrices with rank == 31  */
-  u32 mrank_rlo;            /*  count of matrices with rank <= 30  */
-  i32 mrank_underpowered;   /*  1 if matrices < FASTENT_MRANK_MIN  */
+  f64 mrank_dev;  /*  headline z = sqrt(chi2)  */
+  f64 mrank_chi;  /*  chi-square statistic, df = 2  */
+  f64 mrank_chi_p;  /*  advisory p (NaN: df even)  */
+  u64 mrank_matrices;  /*  total full 32x32 GF(2) matrices  */
+  u32 mrank_r32;  /*  count of matrices with rank == 32  */
+  u32 mrank_r31;  /*  count of matrices with rank == 31  */
+  u32 mrank_rlo;  /*  count of matrices with rank <= 30  */
+  i32 mrank_underpowered;  /*  1 if matrices < FASTENT_MRANK_MIN  */
 
   /*  Bandt-Pompe permutation entropy (-e, m = 4; ~1 GiB/s ST band).  */
-  f64 perment_h_norm;       /*  normalized entropy in [0, 1]  */
-  f64 perment_deviation;    /*  headline z = (1-H_norm)*sqrt(W*2 ln 2)  */
-  f64 perment_chi;          /*  chi-square over 24 bins (advisory)  */
-  f64 perment_chi_p;        /*  upper-tail p, df = 23  */
-  u64 perment_windows;      /*  total m-tuple windows scored  */
-  u32 perment_hist[24];     /*  24-bin Lehmer-id histogram  */
+  f64 perment_h_norm;  /*  normalized entropy in [0, 1]  */
+  f64 perment_deviation;  /*  headline z = (1-H_norm)*sqrt(W*2 ln 2)  */
+  f64 perment_chi;  /*  chi-square over 24 bins (advisory)  */
+  f64 perment_chi_p;  /*  upper-tail p, df = 23  */
+  u64 perment_windows;  /*  total m-tuple windows scored  */
+  u32 perment_hist[24];  /*  24-bin Lehmer-id histogram  */
 
-  u64 hist[256];            /*  -c output; bits: hist[0]/hist[1]  */
+  u64 hist[256];  /*  -c output; bits: hist[0]/hist[1]  */
 } fastent_result;
 
 /*  Dispatch flags returned by fastent_pick_variant().  */

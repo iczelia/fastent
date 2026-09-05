@@ -64,7 +64,7 @@ static u32 fastent_bm_window(const u64 * s, u32 m) {
   i64 mm = -1;
   for (N = 0; N < m; N++) {
     /*  C has degree <= L, so only nw = L/64 + 1 words are live; rev's
-        live prefix shifts in place, a newly live word is built from s. */
+        live prefix shifts in place, a newly live word is built from s.  */
     u32 nw = (L >> 6) + 1u, old = act;
     u64 acc = 0;
     /*  nw is tiny (1..4); the fall-through switch drops the counter.  */
@@ -134,11 +134,10 @@ static void fastent_bm_pack(const u8 * src, u32 mb, u64 * s) {
     return;
   }
   Fi(FASTENT_BM_W64, s[i] = 0);
-  for (i = 0; i < (i32) mb; i++) {
+  Fi((i32) mb,
     u32 wi = i >> 3;
     u32 sh = 56u - 8u * (i & 7u);
-    s[wi] |= (u64) src[i] << sh;
-  }
+    s[wi] |= (u64) src[i] << sh);
 }
 
 /*  Fold one full window's L into the integer accumulators.  */
@@ -201,7 +200,7 @@ static void fastent_bm_parse_block(fastent_bm_acc * a, const u8 * src, sz n) {
       if (want > FASTENT_BM_BATCH) want = FASTENT_BM_BATCH;
       sz did = score(src + i * FASTENT_BM_WB, want, Lb);
       if (did == 0) break;
-      for (k = 0; k < did; k++) fastent_bm_account(a, Lb[k]);
+      Fk(did, fastent_bm_account(a, Lb[k]));
       i += did;
     }
   }
@@ -234,13 +233,13 @@ static int fastent_bm_ensure(fastent_bm_acc * a) {
 }
 
 void fastent_bm_acc_init(fastent_bm_acc * a, u64 abs_base) {
-  memset(a, 0, sizeof (*a));
+  memset(a, 0, sizeof *a);
   a->abs_base = abs_base;
   a->abs_pos  = abs_base;
   a->blk_off  = abs_base;
 }
 
-/*  Re-init for the next grid block, keeping the lazily-grown buffer. */
+/*  Re-init for the next grid block, keeping the lazily-grown buffer.  */
 void fastent_bm_acc_reset(fastent_bm_acc * a, u64 abs_base) {
   u8 * blk = a->blk;
   fastent_bm_acc_init(a, abs_base);

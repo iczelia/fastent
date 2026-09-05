@@ -79,9 +79,9 @@ static int z_badge_(f64 z) {
 }
 
 typedef struct {
-  int  worst;        /*  highest non-N/A severity seen so far  */
-  int  seen;         /*  any core metric scored yet            */
-  char who[24];      /*  copy of the metric carrying `worst`   */
+  int worst;  /*  highest non-N/A severity seen so far  */
+  int seen;  /*  any core metric scored yet  */
+  char who[24];  /*  copy of the metric carrying `worst`  */
 } verdict_acc;
 
 static void row_(
@@ -162,7 +162,8 @@ void fastent_print_annotated(
   }
 
   /*  Poker (16 nibble bins, df=15); byte mode only.  */
-  if (o->binary) { row_(o, color, &v, 0, "Poker d=15", "not applicable to bits", B_NA, ""); } else {
+  if (o->binary) row_(o, color, &v, 0, "Poker d=15", "not applicable to bits", B_NA, "");
+  else {
     int b = p_badge_(r->poker_p);
     snprintf(aux, sizeof aux, o->full_precision
              ? "%.17g  p=%.17g" : "%.4g  p=%.4f",

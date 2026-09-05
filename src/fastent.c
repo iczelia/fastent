@@ -42,7 +42,7 @@ int main(int argc, char ** argv) {
   fastent_maurer_acc * ma = NULL;
   fastent_mrank_acc * mr = NULL;
   fastent_perment_acc * pe = NULL;
-  int rc, lzp_active, bmm_active;
+  int lzp_active, bmm_active;
 
   /*  Machine output always uses decimal points.  */
   setlocale(LC_NUMERIC, "C");
@@ -52,8 +52,7 @@ int main(int argc, char ** argv) {
     return 2;
   }
 
-  rc = fastent_parse_args(argc, argv, &o);
-  if (rc != 0) return rc < 0 ? 1 : rc;
+  if (fastent_parse_args(argc, argv, &o) != 0) return 1;
 
   if (!o.path) fastent_os_set_stdin_binary();
 
@@ -188,26 +187,21 @@ int main(int argc, char ** argv) {
     fastent_mrank_acc_init(mr, 0);
   }
 
-  if (lzp_active && src.kind == FASTENT_SRC_MMAP) {
+  if (src.kind == FASTENT_SRC_MMAP) {
     fastent_run_mmap(&st, &o, fn_byte, fn_bits, fn_byte_fold, fn_bits_fold,
                      (const u8 *) src.map, src.size);
-    fastent_run_lz(lz, &o, &src);
-    fastent_run_perment(pe, &o, &src);
-    if (bmm_active) {
-      fastent_run_bm(bm, &o, &src);
-      fastent_run_maurer(ma, &o, &src);
-      fastent_run_mrank(mr, &o, &src);
+    if (lzp_active) {
+      fastent_run_lz(lz, &o, &src);
+      fastent_run_perment(pe, &o, &src);
+      if (bmm_active) {
+        fastent_run_bm(bm, &o, &src);
+        fastent_run_maurer(ma, &o, &src);
+        fastent_run_mrank(mr, &o, &src);
+      }
     }
   } else if (lzp_active) {
-    fastent_run_stream_lz_tee(&st, lz,
-                              bmm_active ? bm : NULL,
-                              bmm_active ? ma : NULL,
-                              bmm_active ? mr : NULL,
-                              pe, &o, fn_byte, fn_bits,
+    fastent_run_stream_lz_tee(&st, lz, bm, ma, mr, pe, &o, fn_byte, fn_bits,
                               fn_byte_fold, fn_bits_fold, &src);
-  } else if (src.kind == FASTENT_SRC_MMAP) {
-    fastent_run_mmap(&st, &o, fn_byte, fn_bits, fn_byte_fold, fn_bits_fold,
-                     (const u8 *) src.map, src.size);
   } else {
     fastent_run_stream(&st, &o, fn_byte, fn_bits, fn_byte_fold, fn_bits_fold,
                        &src);

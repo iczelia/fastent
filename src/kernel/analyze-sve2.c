@@ -49,18 +49,18 @@ static inline svuint8_t sve2_fold_vec(svbool_t pg, svuint8_t v) {
   return svadd_u8_m(m_fold, v, v_0x20);
 }
 
-#define SVE2_MC_COMMIT(_st)                                                \
-  do {                                                                     \
-    u32 _x = ((u32) (_st)->mc_buf[0] << 16)                                \
-           | ((u32) (_st)->mc_buf[1] <<  8)                                \
-           |  (u32) (_st)->mc_buf[2];                                      \
-    u32 _y = ((u32) (_st)->mc_buf[3] << 16)                                \
-           | ((u32) (_st)->mc_buf[4] <<  8)                                \
-           |  (u32) (_st)->mc_buf[5];                                      \
-    u64 _d = (u64) _x * (u64) _x + (u64) _y * (u64) _y;                    \
-    (_st)->mc_count++;                                                     \
-    if (_d <= FASTENT_INCIRC) (_st)->mc_inside++;                          \
-    (_st)->mc_pos = 0;                                                     \
+#define SVE2_MC_COMMIT(_st)                             \
+  do {                                                  \
+    u32 _x = ((u32) (_st)->mc_buf[0] << 16)             \
+           | ((u32) (_st)->mc_buf[1] <<  8)             \
+           |  (u32) (_st)->mc_buf[2];                   \
+    u32 _y = ((u32) (_st)->mc_buf[3] << 16)             \
+           | ((u32) (_st)->mc_buf[4] <<  8)             \
+           |  (u32) (_st)->mc_buf[5];                   \
+    u64 _d = (u64) _x * (u64) _x + (u64) _y * (u64) _y; \
+    (_st)->mc_count++;                                  \
+    if (_d <= FASTENT_INCIRC) (_st)->mc_inside++;       \
+    (_st)->mc_pos = 0;                                  \
   } while (0)
 
 static void analyze_sve2_byte_impl(
@@ -75,7 +75,8 @@ static void analyze_sve2_byte_impl(
 
   if (will_sve2) {
     u8 b0 = fold ? sve2_fold_byte(buf[0]) : buf[0];
-    if (st->have_carry) { st->cross_product += (i64) st->carry_byte * (i64) b0; } else {
+    if (st->have_carry) st->cross_product += (i64) st->carry_byte * (i64) b0;
+    else {
       st->first_byte = b0;
       st->have_first = 1;
     }
@@ -93,12 +94,11 @@ static void analyze_sve2_byte_impl(
       svuint32_t prod = svdot_u32(svdup_n_u32(0), v, v_next);
       st->cross_product += (i64) svaddv_u32(pg32, prod);
 
-      for (k = 0; k < stride; k++) {
+      Fk(stride,
         u8 b = fold ? sve2_fold_byte(buf[i + k]) : buf[i + k];
         st->bank[(u32) (i + k) & (FASTENT_BANKS - 1)][b]++;
         st->mc_buf[st->mc_pos++] = b;
-        if (st->mc_pos == 6) SVE2_MC_COMMIT(st);
-      }
+        if (st->mc_pos == 6) SVE2_MC_COMMIT(st));
       st->total_bytes += stride;
       u8 last_b = fold ? sve2_fold_byte(buf[i + stride - 1])
                        : buf[i + stride - 1];
@@ -118,7 +118,8 @@ static void analyze_sve2_byte_impl(
 
   for (; i < (u64) len; i++) {
     u8 b = fold ? sve2_fold_byte(buf[i]) : buf[i];
-    if (st->have_carry) { st->cross_product += (i64) st->carry_byte * (i64) b; } else {
+    if (st->have_carry) st->cross_product += (i64) st->carry_byte * (i64) b;
+    else {
       st->first_byte = b;
       st->have_first = 1;
     }
@@ -206,11 +207,10 @@ static void analyze_bits_sve2_impl(
     st->cross_product += (i64) adj_in + (i64) cross_in;
     st->total_bytes   += stride * 8u;
 
-    for (k = 0; k < stride; k++) {
+    Fk(stride,
       u8 mb = fold ? sve2_fold_byte(buf[i + k]) : buf[i + k];
       st->mc_buf[st->mc_pos++] = mb;
-      if (st->mc_pos == 6) SVE2_MC_COMMIT(st);
-    }
+      if (st->mc_pos == 6) SVE2_MC_COMMIT(st));
 
     u8 last_b = buf[i + stride - 1];
     if (fold) last_b = sve2_fold_byte(last_b);
@@ -259,12 +259,12 @@ void digram_bytes_sve2(
 
   sz i0;
   if (st->dg_have) { i0 = 0; } else {
-    fastent_lr_one(st, buf[0]);   /*  bootstrap: buf[0], no left pair  */
+    fastent_lr_one(st, buf[0]);  /*  bootstrap: buf[0], no left pair  */
     st->dg_prev = buf[0];
     st->dg_have = 1;
     i0 = 1;
   }
-  if (i0 >= (sz) len) { st->dg_prev = buf[len - 1]; return; }
+  if (i0 >= (sz) len) { st->dg_prev = buf[len - 1];  return; }
 
   /*  Run scan state: the run currently open starts at runstart with
       symbol runsym; closed runs are flushed to fastent_lr_run.  */
@@ -317,23 +317,22 @@ void digram_bytes_sve2(
       u32 * RESTRICT t1 = t + FASTENT_BG_TABLE;
       const u32 par = (u32) (k & 1u);
       u64 j;
-      for (j = 0; j < W; j++) {
+      Fj(W,
         u32 key = sp[j];
         if (j + 8 < W) PREFETCH(&t0[sp[j + 8]]);
         if (((u32) j ^ par) & 1u) t1[key]++;
-        else                      t0[key]++;
-      }
+        else                      t0[key]++);
     }
 
     /*  Boundary bit j (abs k..k+W-1): buf[k+j]!=buf[k+j-1].  */
     {
       int dense = 1;
       u64 j;
-      for (j = 0; j < W; j++) if (!neq[j]) { dense = 0; break; }
+      Fj(W, if (!neq[j]) { dense = 0;  break; });
       if (dense) {
         fastent_lr_run(st, runsym, (u64) ((sz) k - (sz) runstart));
         fastent_lr_run(st, buf[k], 1u);
-        st->lr_sym = buf[k + W - 2];      /*  collapse singletons  */
+        st->lr_sym = buf[k + W - 2];  /*  collapse singletons  */
         runstart = (sz) ((u64) k + W - 1);
         runsym   = buf[runstart];
       } else {

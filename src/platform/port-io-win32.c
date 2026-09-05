@@ -45,22 +45,22 @@ static int alloc_stream_buf(fastent_source * s) {
 #define FASTENT_IOCP_SLOTS 4u
 
 typedef struct {
-  u8 *       buf;
-  void *     buf_raw;
+  u8 * buf;
+  void * buf_raw;
   OVERLAPPED ov;
-  DWORD      bytes;
-  DWORD      err;
-  int        done;
+  DWORD bytes;
+  DWORD err;
+  int done;
 } iocp_slot;
 
 typedef struct {
-  HANDLE     file;
-  HANDLE     iocp;
-  u64        file_size;
-  u64        next_submit_offset;
-  i32        next_consume;
-  i32        prev_returned;
-  iocp_slot  slot[FASTENT_IOCP_SLOTS];
+  HANDLE file;
+  HANDLE iocp;
+  u64 file_size;
+  u64 next_submit_offset;
+  i32 next_consume;
+  i32 prev_returned;
+  iocp_slot slot[FASTENT_IOCP_SLOTS];
 } iocp_state;
 
 static void iocp_destroy(iocp_state * u) {
@@ -107,7 +107,7 @@ static int iocp_submit_(iocp_state * u, i32 slot) {
   }
 
   BOOL ok = ReadFile(u->file, s->buf, to_read, NULL, &s->ov);
-  if (ok) return 0;                       /*  Completes via IOCP.  */
+  if (ok) return 0;  /*  Completes via IOCP.  */
   DWORD e = GetLastError();
   if (e == ERROR_IO_PENDING) return 0;
   if (e == ERROR_HANDLE_EOF) {
@@ -146,17 +146,17 @@ static int iocp_wait_(iocp_state * u, i32 target) {
 }
 
 static iocp_state * iocp_setup(const char * path) {
-  iocp_state * u = calloc(1, sizeof (*u));
+  iocp_state * u = calloc(1, sizeof *u);
   i32 i;
   if (!u) return NULL;
 
   u64 sz_out = 0;
   u->file = (HANDLE) fastent_win32_open_overlapped(path, &sz_out);
-  if (!u->file) { iocp_destroy(u); return NULL; }
+  if (!u->file) { iocp_destroy(u);  return NULL; }
   u->file_size = sz_out;
 
   u->iocp = CreateIoCompletionPort(u->file, NULL, 0, 1);
-  if (!u->iocp) { iocp_destroy(u); return NULL; }
+  if (!u->iocp) { iocp_destroy(u);  return NULL; }
 
   Fi((int) FASTENT_IOCP_SLOTS,
     void * raw = NULL;
@@ -182,7 +182,7 @@ static iocp_state * iocp_setup(const char * path) {
 
 int fastent_src_open(
     fastent_source * s, const char * path, fastent_io_mode mode) {
-  memset(s, 0, sizeof (*s));
+  memset(s, 0, sizeof *s);
   s->kind = FASTENT_SRC_NONE;
   s->fd = -1;
   s->opened_fd = 0;
@@ -201,7 +201,7 @@ int fastent_src_open(
   if (mode == FASTENT_IO_URING) {
 #ifndef FASTENT_WIN_LEGACY
     iocp_state * u = iocp_setup(path);
-    if (!u) { errno = EIO; return -1; }
+    if (!u) { errno = EIO;  return -1; }
     s->kind           = FASTENT_SRC_URING;
     s->size           = u->file_size;
     s->stream_buf_cap = FASTENT_STREAM_BUF;
@@ -308,7 +308,7 @@ sz fastent_src_read(fastent_source * s) {
     if (iocp_wait_(u, slot) < 0) return (sz) -1;
 
     iocp_slot * sl = &u->slot[slot];
-    if (sl->err) { errno = EIO; return (sz) -1; }
+    if (sl->err) { errno = EIO;  return (sz) -1; }
 
     s->stream_buf    = sl->buf;
     u->prev_returned = slot;
@@ -353,15 +353,15 @@ void fastent_src_close(fastent_source * s) {
 #define FASTENT_SLAB_SLOTS 2u
 
 struct fastent_uring_slab {
-  HANDLE     h;
-  HANDLE     ev;
-  u64        next_off;
-  u64        end_off;
+  HANDLE h;
+  HANDLE ev;
+  u64 next_off;
+  u64 end_off;
   OVERLAPPED ov[FASTENT_SLAB_SLOTS];
-  u8 *       buf[FASTENT_SLAB_SLOTS];
-  void *     buf_raw[FASTENT_SLAB_SLOTS];
-  i32        inflight;
-  int        started;
+  u8 * buf[FASTENT_SLAB_SLOTS];
+  void * buf_raw[FASTENT_SLAB_SLOTS];
+  i32 inflight;
+  int started;
 };
 
 static int slab_submit(struct fastent_uring_slab * r, i32 slot) {
@@ -389,13 +389,13 @@ fastent_uring_slab * fastent_uring_slab_open(
   i32 i;
   (void) fd;
   if (!path || len == 0) return NULL;
-  struct fastent_uring_slab * r = calloc(1, sizeof (*r));
+  struct fastent_uring_slab * r = calloc(1, sizeof *r);
   if (!r) return NULL;
   u64 fsz = 0;
   r->h = (HANDLE) fastent_win32_open_overlapped(path, &fsz);
-  if (!r->h) { free(r); return NULL; }
+  if (!r->h) { free(r);  return NULL; }
   r->ev = CreateEventA(NULL, TRUE, FALSE, NULL);
-  if (!r->ev) { CloseHandle(r->h); free(r); return NULL; }
+  if (!r->ev) { CloseHandle(r->h);  free(r);  return NULL; }
   r->next_off = off;
   r->end_off  = off + len;
   r->inflight = -1;

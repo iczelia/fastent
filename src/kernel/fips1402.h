@@ -24,13 +24,13 @@
     block is tested independently per FIPS 140-2 4.9.1; trailing
     bytes that do not fill a block are not tested.  */
 typedef struct {
-  u64 blocks;        /*  full 2500-byte blocks tested        */
-  u64 leftover;      /*  trailing untested bytes             */
-  u64 monobit_fail;  /*  blocks failing each sub-test        */
+  u64 blocks;  /*  full 2500-byte blocks tested  */
+  u64 leftover;  /*  trailing untested bytes  */
+  u64 monobit_fail;  /*  blocks failing each sub-test  */
   u64 poker_fail;
   u64 runs_fail;
   u64 longrun_fail;
-  u64 blocks_pass;   /*  blocks passing all four sub-tests    */
+  u64 blocks_pass;  /*  blocks passing all four sub-tests  */
 } fastent_fips_report;
 
 /*  Run the four FIPS 140-2 RNG tests over buf[0..len).  */
@@ -48,9 +48,9 @@ typedef void (* fastent_fips_run_fn)(const u8 * buf, u64 nblocks,
     via the per-ISA runner, finish reports the residue.  */
 typedef struct {
   fastent_fips_report * out;
-  fastent_fips_run_fn   run;
-  u8                    carry[FASTENT_FIPS_BLOCK_BYTES];
-  sz                    fill;    /*  bytes currently in carry        */
+  fastent_fips_run_fn run;
+  u8 carry[FASTENT_FIPS_BLOCK_BYTES];
+  sz fill;  /*  bytes currently in carry  */
 } fastent_fips_stream;
 
 void fastent_fips140_stream_init(

@@ -22,7 +22,7 @@
 #include <string.h>
 
 void fastent_chunk_state_init(fastent_chunk_state * st) {
-  memset(st, 0, sizeof (*st));
+  memset(st, 0, sizeof *st);
 }
 
 /*  Order-1 bigram shadow planes (zeroed).  NULL return = OOM; caller
@@ -76,7 +76,7 @@ void fastent_lr_one(fastent_chunk_state * st, u32 s) {
   } else {
     if (st->lr_cur > st->lr_max) st->lr_max = st->lr_cur;
     st->lr_sym = (u8) s;  st->lr_cur = 1;
-    st->lr_head_open = 0;        /*  leading run closed; head frozen  */
+    st->lr_head_open = 0;  /*  leading run closed; head frozen  */
   }
 }
 
@@ -124,7 +124,7 @@ void fastent_finalize(
     fastent_chunk_state * RESTRICT st, int binary,
     fastent_result * RESTRICT out) {
   i32 i, j;
-  memset(out, 0, sizeof (*out));
+  memset(out, 0, sizeof *out);
 
   /*  Flush any pending u32 digram chunk into the u64 master before
       the order-1 reduction reads st->bigram.  No-op when the chunk
@@ -180,8 +180,8 @@ void fastent_finalize(
     sum_c2 += (f64) c * (f64) c;
     if (c) {
       distinct++;
-      if (c > max_count) { max_count = c; mode_value   = i; }
-      if (c < min_count) { min_count = c; rarest_value = i; }
+      if (c > max_count) { max_count = c;  mode_value   = i; }
+      if (c < min_count) { min_count = c;  rarest_value = i; }
     });
   out->chi_square = chisq;  out->entropy = entropy;
 
@@ -215,7 +215,8 @@ void fastent_finalize(
   out->ic = (out->total_samples >= 2)
             ? (sum_c2 - totalc) / (totalc * (totalc - 1.0)) : NAN;
 
-  if (binary || out->total_samples == 0) { out->poker_chisq = out->poker_p = NAN; } else {
+  if (binary || out->total_samples == 0) out->poker_chisq = out->poker_p = NAN;
+  else {
     u64 nib[16];
     memset(nib, 0, sizeof (nib));
     Fi(256,
@@ -224,7 +225,7 @@ void fastent_finalize(
       nib[(i >> 4) & 15] += c);
     const f64 ek = totalc / 8.0;  /*  2*N nibbles / 16 bins  */
     f64 pk = 0.0;
-    Fi(16, const f64 d = (f64) nib[i] - ek; pk += (d * d) / ek);
+    Fi(16, const f64 d = (f64) nib[i] - ek;  pk += (d * d) / ek);
     out->poker_chisq = pk;
     out->poker_p     = fastent_chisq_tail_df(pk, 15);
   }
@@ -246,7 +247,7 @@ void fastent_finalize(
       const f64 f = (f64) ones[i] / totalc;
       out->bit_freq[i] = f;
       const f64 d = f < 0.5 ? 0.5 - f : f - 0.5;
-      if (d > worst) { worst = d; wk = i; });
+      if (d > worst) { worst = d;  wk = i; });
     out->bit_bias_max   = worst;
     out->bit_bias_worst = wk;
   }
@@ -262,7 +263,7 @@ void fastent_finalize(
     f64 M = 0.0;
     Fi(FASTENT_BG_TABLE,
       const u64 c = bg_cell_(bg, i);
-      if (c) { R[i >> 8] += c; S[i & 0xFF] += c; M += (f64) c; });
+      if (c) { R[i >> 8] += c;  S[i & 0xFF] += c;  M += (f64) c; });
     if (M >= 1.0) {
       f64 hj = 0.0, hp = 0.0, hc = 0.0;
       Fi(FASTENT_BG_TABLE,
@@ -271,16 +272,16 @@ void fastent_finalize(
       Fi(256,
         if (R[i]) hp += fastent_entropy_term((f64) R[i] / M);
         if (S[i]) hc += fastent_entropy_term((f64) S[i] / M));
-      out->conditional_entropy = hj - hp;          /*  H(cur|prev)  */
-      out->mutual_information  = hp + hc - hj;      /*  I(prev;cur)  */
+      out->conditional_entropy = hj - hp;  /*  H(cur|prev)  */
+      out->mutual_information  = hp + hc - hj;  /*  I(prev;cur)  */
     }
   } else if (binary) {
     const u64 c00 = st->bit_bigram[0][0], c01 = st->bit_bigram[0][1];
     const u64 c10 = st->bit_bigram[1][0], c11 = st->bit_bigram[1][1];
     const f64 M = (f64) c00 + (f64) c01 + (f64) c10 + (f64) c11;
-    if (M >= 1.0) {          /*  all-zero => -ee bit mode did not run  */
-      const u64 R0 = c00 + c01, R1 = c10 + c11;   /*  prev marginal  */
-      const u64 S0 = c00 + c10, S1 = c01 + c11;   /*  cur  marginal  */
+    if (M >= 1.0) {  /*  all-zero => -ee bit mode did not run  */
+      const u64 R0 = c00 + c01, R1 = c10 + c11;  /*  prev marginal  */
+      const u64 S0 = c00 + c10, S1 = c01 + c11;  /*  cur  marginal  */
       f64 hj = 0.0, hp = 0.0, hc = 0.0;
       if (c00) hj += fastent_entropy_term((f64) c00 / M);
       if (c01) hj += fastent_entropy_term((f64) c01 / M);
@@ -309,12 +310,13 @@ void fastent_finalize(
     }
   }
   if (!binary && st->bigram && out->total_samples >= 1) {
-    if (out->total_samples == 1) { out->runs = 1.0; } else {
+    if (out->total_samples == 1) out->runs = 1.0;
+    else {
       const u64 * bg = st->bigram;
       u64 acc = 0, chg = 0;
       const u64 half = (out->total_samples + 1) / 2;
       i32 m = 0;
-      Fi(256, acc += out->hist[i];  if (acc >= half) { m = i; break; });
+      Fi(256, acc += out->hist[i];  if (acc >= half) { m = i;  break; });
       Fi(FASTENT_BG_TABLE,
         const u64 c = bg_cell_(bg, i);
         if (c && (((i >> 8) >= m) != ((i & 0xFF) >= m))) chg += c);
@@ -366,14 +368,14 @@ void fastent_finalize(
 #define CPU_HAS(name)      (fastent_cpu_get()->name)
 
 typedef struct {
-  fastent_variant     variant;
-  const char *        name;
+  fastent_variant variant;
+  const char * name;
   int               (*available)(void);
-  fastent_analyze_fn  byte;
-  fastent_analyze_fn  bits;
-  fastent_analyze_fn  fold_byte;
-  fastent_analyze_fn  fold_bits;
-  fastent_fold_fn     fold;
+  fastent_analyze_fn byte;
+  fastent_analyze_fn bits;
+  fastent_analyze_fn fold_byte;
+  fastent_analyze_fn fold_bits;
+  fastent_fold_fn fold;
   fastent_digram_byte_fn digram_byte;
   fastent_digram_bits_fn digram_bits;
 } variant_entry;
@@ -409,20 +411,20 @@ static int avail_sve2_(void)    { return CPU_HAS(sve2); }
 static int avail_wasm128_(void) { return CPU_HAS(wasm128); }
 #endif
 
-#define ENTRY(VARIANT, NAME, AVAIL, SUFFIX)                           \
-  { FASTENT_VAR_##VARIANT, NAME, AVAIL,                               \
-    analyze_##SUFFIX,           analyze_bits_##SUFFIX,                \
-    analyze_fold_##SUFFIX,      analyze_bits_fold_##SUFFIX,           \
-    fold_##SUFFIX,             digram_bytes_##SUFFIX,                 \
+#define ENTRY(VARIANT, NAME, AVAIL, SUFFIX)                 \
+  { FASTENT_VAR_##VARIANT, NAME, AVAIL,                     \
+    analyze_##SUFFIX,           analyze_bits_##SUFFIX,      \
+    analyze_fold_##SUFFIX,      analyze_bits_fold_##SUFFIX, \
+    fold_##SUFFIX,             digram_bytes_##SUFFIX,       \
     digram_bits_blk_##SUFFIX }
 
 /*  analyze-sve2.c is self-contained (no analyze-impl.h), so it emits no
     digram_bits_blk_sve2.  */
-#define ENTRY_DGSCALAR(VARIANT, NAME, AVAIL, SUFFIX)                  \
-  { FASTENT_VAR_##VARIANT, NAME, AVAIL,                               \
-    analyze_##SUFFIX,           analyze_bits_##SUFFIX,                \
-    analyze_fold_##SUFFIX,      analyze_bits_fold_##SUFFIX,           \
-    fold_##SUFFIX,             digram_bytes_##SUFFIX,                 \
+#define ENTRY_DGSCALAR(VARIANT, NAME, AVAIL, SUFFIX)        \
+  { FASTENT_VAR_##VARIANT, NAME, AVAIL,                     \
+    analyze_##SUFFIX,           analyze_bits_##SUFFIX,      \
+    analyze_fold_##SUFFIX,      analyze_bits_fold_##SUFFIX, \
+    fold_##SUFFIX,             digram_bytes_##SUFFIX,       \
     digram_bits_blk_scalar }
 
 static const variant_entry variants_[] = {

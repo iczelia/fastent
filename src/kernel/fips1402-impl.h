@@ -129,17 +129,17 @@ static void FASTENT_FN(fips_runs_side)(
     int hit = 0;
     for (w = 0; w < (i32) FIPS_NW; w++) D[w] = P[w];
     FASTENT_FN(fips_succn)(D, E, 1u);
-    for (w = 0; w < (i32) FIPS_NW; w++) D[w] &= E[w];   /*  2  */
+    for (w = 0; w < (i32) FIPS_NW; w++) D[w] &= E[w];  /*  2  */
     for (w = 0; w < (i32) FIPS_NW; w++) D2[w] = D[w];
     for (win = 2u; win < 32u; win <<= 1) {
       FASTENT_FN(fips_succn)(D, E, win);
-      for (w = 0; w < (i32) FIPS_NW; w++) D[w] &= E[w]; /*  4,8,16,32  */
+      for (w = 0; w < (i32) FIPS_NW; w++) D[w] &= E[w];  /*  4,8,16,32  */
     }
     /*  D is now the 32-equal-window mask.  AND with the 2-window
         shifted 32 later to require 34 consecutive equal bits.  */
     FASTENT_FN(fips_succn)(D2, E, 32u);
     for (w = 0; w < (i32) FIPS_NW; w++)
-      if (D[w] & E[w]) { hit = 1; break; }
+      if (D[w] & E[w]) { hit = 1;  break; }
     *lr34 = hit;
   }
 }
@@ -155,7 +155,7 @@ static void FASTENT_FN(fips_runs)(
   int lr1, lr0;
   i32 i, w;
   for (w = 0; w < (i32) FIPS_NW; w++) C[w] = ~W[w];
-  C[FIPS_NW - 1] &= FIPS_LAST_MASK_BE;     /*  drop dead tail bits  */
+  C[FIPS_NW - 1] &= FIPS_LAST_MASK_BE;  /*  drop dead tail bits  */
   FASTENT_FN(fips_runs_side)(W, ge1, &lr1);
   FASTENT_FN(fips_runs_side)(C, ge0, &lr0);
   for (i = 1; i < 7; i++) {
@@ -174,7 +174,7 @@ FASTENT_FN(fips_hsum_epi64)(FASTENT_SIMD_VEC v) {
   u64 s = 0;
   i32 i;
   V_STORE(lanes, v);
-  for (i = 0; i < (i32) (FASTENT_SIMD_VLEN / 8); i++) s += lanes[i];
+  Fi((i32) (FASTENT_SIMD_VLEN / 8), s += lanes[i]);
   return s;
 }
 
@@ -344,6 +344,5 @@ FASTENT_FN(fips_block)(const u8 * b, fastent_fips_report * r) {
 void FASTENT_FN(fastent_fips_run_blocks)(
     const u8 * buf, u64 nblocks, fastent_fips_report * r) {
   u64 i;
-  for (i = 0; i < nblocks; i++)
-    FASTENT_FN(fips_block)(buf + i * FIPS_BLOCK_BYTES, r);
+  Fi(nblocks, FASTENT_FN(fips_block)(buf + i * FIPS_BLOCK_BYTES, r));
 }

@@ -46,16 +46,16 @@ typedef struct {
     fresh-table Maurer over it and appends one partial record.  */
 typedef struct {
   fastent_maurer_part * parts;  /*  one per scored grid block  */
-  sz   nparts, cap;
-  u64  lhist[FASTENT_MA_LBINS];
+  sz nparts, cap;
+  u64 lhist[FASTENT_MA_LBINS];
 
-  u64   abs_base, abs_pos;
-  u8 *  blk;
-  sz    blk_len;
-  u64   blk_off;
-  u32 * tbl;                    /*  2^L block indices, lazily allocated  */
-  f64 * logt;                   /*  memoised log2(d), lazily allocated  */
-  int   oom;
+  u64 abs_base, abs_pos;
+  u8 * blk;
+  sz blk_len;
+  u64 blk_off;
+  u32 * tbl;  /*  2^L block indices, lazily allocated  */
+  f64 * logt;  /*  memoised log2(d), lazily allocated  */
+  int oom;
 } fastent_maurer_acc;
 
 /*  feed takes any-size chunks (split at grid lines); merge concatenates

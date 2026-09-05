@@ -16,7 +16,7 @@
 #include "port-cpu.h"
 
 #if !defined(__i386__) && !defined(__x86_64__) \
-    && !defined(_M_IX86) && !defined(_M_X64) \
+    && !defined(_M_IX86) && !defined(_M_X64)   \
     && !defined(__aarch64__) && !defined(__arm__)
 
 static fastent_cpu_features cache_;

@@ -36,15 +36,15 @@ typedef enum {
 
 typedef struct {
   fastent_src_kind kind;
-  int          fd;
-  void *       map;
-  u64          size;
-  void *       map_handle;
-  u8 *         stream_buf;
-  void *       stream_buf_raw;
-  sz           stream_buf_cap;
-  int          opened_fd;
-  void *       uring_state;
+  int fd;
+  void * map;
+  u64 size;
+  void * map_handle;
+  u8 * stream_buf;
+  void * stream_buf_raw;
+  sz stream_buf_cap;
+  int opened_fd;
+  void * uring_state;
 } fastent_source;
 
 /*  AUTO/STREAM never fail for I/O-mode reasons; MMAP/URING error out

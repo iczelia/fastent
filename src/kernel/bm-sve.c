@@ -34,23 +34,23 @@
 
 /*  poly *x on the 8-word MSB-first polynomial named V0..V7: word w
     gets (w>>1) | (w-1 << 63), word 0 just >>1.  */
-#define BM_POLX(pg, V)                                                  \
-  do {                                                                  \
-    V##7 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##7, 1),                   \
-                       svlsl_n_u64_x(pg, V##6, 63));                     \
-    V##6 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##6, 1),                   \
-                       svlsl_n_u64_x(pg, V##5, 63));                     \
-    V##5 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##5, 1),                   \
-                       svlsl_n_u64_x(pg, V##4, 63));                     \
-    V##4 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##4, 1),                   \
-                       svlsl_n_u64_x(pg, V##3, 63));                     \
-    V##3 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##3, 1),                   \
-                       svlsl_n_u64_x(pg, V##2, 63));                     \
-    V##2 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##2, 1),                   \
-                       svlsl_n_u64_x(pg, V##1, 63));                     \
-    V##1 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##1, 1),                   \
-                       svlsl_n_u64_x(pg, V##0, 63));                     \
-    V##0 = svlsr_n_u64_x(pg, V##0, 1);                                   \
+#define BM_POLX(pg, V)                                 \
+  do {                                                 \
+    V##7 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##7, 1), \
+                       svlsl_n_u64_x(pg, V##6, 63));   \
+    V##6 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##6, 1), \
+                       svlsl_n_u64_x(pg, V##5, 63));   \
+    V##5 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##5, 1), \
+                       svlsl_n_u64_x(pg, V##4, 63));   \
+    V##4 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##4, 1), \
+                       svlsl_n_u64_x(pg, V##3, 63));   \
+    V##3 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##3, 1), \
+                       svlsl_n_u64_x(pg, V##2, 63));   \
+    V##2 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##2, 1), \
+                       svlsl_n_u64_x(pg, V##1, 63));   \
+    V##1 = svorr_u64_x(pg, svlsr_n_u64_x(pg, V##1, 1), \
+                       svlsl_n_u64_x(pg, V##0, 63));   \
+    V##0 = svlsr_n_u64_x(pg, V##0, 1);                 \
   } while (0)
 
 /*  Per-lane parity of a u64 vector, broadcast to a full-lane mask
@@ -72,22 +72,20 @@ static inline svuint64_t bm_parmask_(svbool_t pg, svuint64_t a) {
 static inline void bm_pack_(const u8 * src, u64 s[WB]) {
   i32 i;
   Fi((int) WB, s[i] = 0);
-  for (i = 0; i < FASTENT_BM_WB; i++)
-    s[i >> 3] |= (u64) src[i] << (56u - 8u * (i & 7u));
+  Fi(FASTENT_BM_WB, s[i >> 3] |= (u64) src[i] << (56u - 8u * (i & 7u)));
 }
 
-/*  Process `lanes` (<= svcntd) full M-bit windows; write L into Lout. */
+/*  Process `lanes` (<= svcntd) full M-bit windows; write L into Lout.  */
 static void bm_batch_(const u8 * src, sz lanes, u32 * Lout) {
-  u64 (*sp)[WB] = (u64 (*)[WB]) malloc((sz) lanes * sizeof (*sp));
+  u64 (*sp)[WB] = (u64 (*)[WB]) malloc((sz) lanes * sizeof *sp);
   u64 * nbuf = (u64 *) malloc((sz) lanes * sizeof (u64));
   i64 * L = (i64 *) malloc((sz) lanes * sizeof (i64));
   sz i;
   u32 N;
   if (!sp || !nbuf || !L) { free(sp);  free(nbuf);  free(L);  return; }
-  for (i = 0; i < lanes; i++) {
+  Fi(lanes,
     bm_pack_(src + i * FASTENT_BM_WB, sp[i]);
-    L[i] = 0;
-  }
+    L[i] = 0);
 
   const svbool_t pg = svwhilelt_b64((u64) 0, (u64) lanes);
   const svuint64_t Z = svdup_n_u64(0);
@@ -98,13 +96,12 @@ static void bm_batch_(const u8 * src, sz lanes, u32 * Lout) {
   svuint64_t one63 = svdup_n_u64((u64) 1 << 63);
   c0 = one63;
   s0 = one63;
-  BM_POLX(pg, s);                /*  bs_ at start of N=0 is x^1 * 1  */
+  BM_POLX(pg, s);  /*  bs_ at start of N=0 is x^1 * 1  */
 
   for (N = 0; N < FASTENT_BM_M; N++) {
     BM_POLX(pg, r);
     u32 wi = N >> 6, sh = 63u - (N & 63u);
-    for (i = 0; i < lanes; i++)
-      nbuf[i] = ((sp[i][wi] >> sh) & 1ull) << 63;
+    Fi(lanes, nbuf[i] = ((sp[i][wi] >> sh) & 1ull) << 63);
     r0 = svorr_u64_x(pg, r0, svld1_u64(pg, nbuf));
 
     svuint64_t acc = Z;
@@ -141,7 +138,7 @@ static void bm_batch_(const u8 * src, sz lanes, u32 * Lout) {
 
     BM_POLX(pg, s);
   }
-  for (i = 0; i < lanes; i++) Lout[i] = (u32) L[i];
+  Fi(lanes, Lout[i] = (u32) L[i]);
   free(sp);  free(nbuf);  free(L);
 }
 

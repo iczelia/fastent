@@ -29,10 +29,10 @@
 #define CPU_HAS(name)      (fastent_cpu_get()->name)
 
 typedef struct {
-  fastent_variant      variant;
-  const char *         name;
+  fastent_variant variant;
+  const char * name;
   int                (*available)(void);
-  fastent_fips_run_fn  run;
+  fastent_fips_run_fn run;
 } fips_variant_entry;
 
 static int favail_scalar_(void)  { return 1; }
@@ -132,11 +132,11 @@ fastent_fips_run_fn fastent_pick_fips_variant(fastent_variant * which) {
 
 #ifdef FASTENT_HAVE_THREADS
 typedef struct {
-  const u8 *            buf;
-  u64                   nblocks;
-  i32                   T;
+  const u8 * buf;
+  u64 nblocks;
+  i32 T;
   fastent_fips_report * shards;
-  fastent_fips_run_fn   run;
+  fastent_fips_run_fn run;
 } fips_ctx;
 
 static void fips_worker_(sz k, void * vctx) {
@@ -149,7 +149,6 @@ static void fips_worker_(sz k, void * vctx) {
 
 void fastent_fips140_run(
     const u8 * buf, sz len, int threads, fastent_fips_report * out) {
-  i32 k;
   memset(out, 0, sizeof *out);
   u64 nblocks = (u64) len / FIPS_BLOCK_BYTES;
   out->leftover = (u64) len - nblocks * FIPS_BLOCK_BYTES;
@@ -159,13 +158,13 @@ void fastent_fips140_run(
 
 #ifdef FASTENT_HAVE_THREADS
   if (threads > 1) {
-    i32 T = threads;
+    i32 T = threads, k;
     if ((u64) T > nblocks) T = (i32) nblocks;
     fastent_set_num_threads(T);
     fips_ctx c;
     c.buf = buf;  c.nblocks = nblocks;  c.T = T;  c.run = run;
     c.shards =
-      (fastent_fips_report *) calloc((sz) T, sizeof (*c.shards));
+      (fastent_fips_report *) calloc((sz) T, sizeof *c.shards);
     if (c.shards) {
       fastent_parallel_for((sz) T, fips_worker_, &c);
       Fk(T,

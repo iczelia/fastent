@@ -48,7 +48,7 @@ static void lz_off_flush(fastent_lz_acc * a) {
 
 /*  Parse one grid block [src,src+n) with a fresh table.  n <=
     FASTENT_LZ_GRID; src has >=32 slack bytes for count_eq's word
-    over-read, the partial tail takes the scalar loop (no over-read). */
+    over-read, the partial tail takes the scalar loop (no over-read).  */
 static void lz_parse_block(fastent_lz_acc * a, const u8 * src, sz n) {
   u32 * RESTRICT tbl = a->tbl;
   const u8 * p;
@@ -87,11 +87,11 @@ static void lz_parse_block(fastent_lz_acc * a, const u8 * src, sz n) {
           overlaps this iter's rd32(match).  Pure hint, bit-exact.  */
       PREFETCH(src + tbl[forwardH]);
       match = src + mi;
-      if (mi + FASTENT_LZ_DISTMAX < cur) continue;     /*  out of win  */
-      if (lz_rd32(match) == lz_rd32(ip)) break;        /*  4-byte key  */
+      if (mi + FASTENT_LZ_DISTMAX < cur) continue;  /*  out of win  */
+      if (lz_rd32(match) == lz_rd32(ip)) break;  /*  4-byte key  */
     }
 
-    {                                            /*  literal run        */
+    {  /*  literal run  */
       sz litlen = (sz) (ip - anchor);
       a->outsz += 1;
       if (litlen >= 15) a->outsz += 1 + (litlen - 15) / 255;
@@ -99,7 +99,7 @@ static void lz_parse_block(fastent_lz_acc * a, const u8 * src, sz n) {
       a->lit_bytes += litlen;  a->nlit_run++;
       for (p = anchor; p < ip; p++) a->lit_byte[*p]++;
     }
-    {                                            /*  match              */
+    {  /*  match  */
       u32 offset = (u32) (ip - match);
       sz mlen = lz_count_eq(ip + FASTENT_LZ_MINMATCH,
                             match + FASTENT_LZ_MINMATCH, matchlimit);
@@ -146,7 +146,7 @@ static int lz_ensure(fastent_lz_acc * a) {
 }
 
 void fastent_lz_acc_init(fastent_lz_acc * a, u64 abs_base) {
-  memset(a, 0, sizeof (*a));
+  memset(a, 0, sizeof *a);
   a->abs_base = abs_base;
   a->abs_pos  = abs_base;
   a->blk_off  = abs_base;
@@ -336,7 +336,7 @@ void fastent_lz_finalize(
     f64 dev = s1 > s2 ? s1 : s2;
     if (s3 > dev) dev = s3;
     f64 sg = 2.0 / (f64) n;
-    const f64 floor_sg = 1.0 / 128.0;     /*  2^-7  */
+    const f64 floor_sg = 1.0 / 128.0;  /*  2^-7  */
     if (sg < floor_sg) sg = floor_sg;
     out->lz_deviation = dev / sg;
   }

@@ -46,7 +46,7 @@ void fastent_term_set_fg(int cls) {
       out-of-contract class; valid classes are 0..2.  */
   static const char * const ansi[4] =
     { "\x1b[2m", "\x1b[0m", "\x1b[36m", "\x1b[0m" };
-  if (cls < 0) { fputs("\x1b[0m", stdout); return; }
+  if (cls < 0) { fputs("\x1b[0m", stdout);  return; }
   fputs(ansi[cls & 3], stdout);
 }
 
@@ -54,7 +54,7 @@ void fastent_term_set_sev(int sev) {
   static const char * const ansi[4] = {
     "\x1b[32m", "\x1b[33m", "\x1b[31m", "\x1b[2m"
   };
-  if (sev < 0) { fputs("\x1b[0m", stdout); return; }
+  if (sev < 0) { fputs("\x1b[0m", stdout);  return; }
   fputs(ansi[sev & 3], stdout);
 }
 

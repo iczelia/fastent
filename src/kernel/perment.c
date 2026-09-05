@@ -71,7 +71,7 @@ static int fastent_perment_ensure(fastent_perment_acc * a) {
 }
 
 void fastent_perment_acc_init(fastent_perment_acc * a, u64 abs_base) {
-  memset(a, 0, sizeof (*a));
+  memset(a, 0, sizeof *a);
   a->abs_base = abs_base;
   a->abs_pos  = abs_base;
   a->blk_off  = abs_base;

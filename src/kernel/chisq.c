@@ -114,8 +114,8 @@ static inline dd_t dd_sqrt_d(f64 x) {
 /*  DD exp: reduce x=k*ln2+r, |r|<=ln2/2, Taylor on r, 2^k via ldexp.  */
 
 static const dd_t LN2_DD = {
-  0.6931471805599453,        /*  ln(2) high  */
-  2.3190468138462996e-17     /*  ln(2) - high  */
+  0.6931471805599453,  /*  ln(2) high  */
+  2.3190468138462996e-17  /*  ln(2) - high  */
 };
 static const f64 INV_LN2 = 1.4426950408889634;
 
@@ -124,8 +124,8 @@ static dd_t dd_exp_d_scaled(f64 x, int * k_out) {
   int i, k;
   dd_t kln2, r, res, term;
 
-  if (x < -1500.0) { *k_out = -1500; return dd_of(0.0); }
-  if (x >  1500.0) { *k_out =  1500; return dd_of((f64) INFINITY); }
+  if (x < -1500.0) { *k_out = -1500;  return dd_of(0.0); }
+  if (x >  1500.0) { *k_out =  1500;  return dd_of((f64) INFINITY); }
   k_d = round(x * INV_LN2);
   k = (int) k_d;
   kln2 = dd_mul_d(LN2_DD, k_d);
@@ -180,11 +180,10 @@ static dd_t Q_05_series_dd(f64 z) {
   /*  term_0 = 1 / 0.5 = 2; term_{n+1} = term_n * z / (n + 1.5).  */
   dd_t term = dd_of(2.0);
   dd_t sum  = term;
-  for (i = 0; i < 256; i++) {
+  Fi(256,
     term = dd_div_d(dd_mul_d(term, z), (f64) i + 1.5);
     sum = dd_add(sum, term);
-    if (i >= 4 && fabs(term.hi) < fabs(sum.hi) * 1e-33) break;
-  }
+    if (i >= 4 && fabs(term.hi) < fabs(sum.hi) * 1e-33) break);
   dd_t P = dd_mul(pref, sum);
   return dd_sub(dd_of(1.0), P);
 }
@@ -243,11 +242,10 @@ static dd_t Q_halfint_dd(f64 z, int m) {
 
   /*  U = sum_{k=0..m-1} T_k.  All values normal-range.  */
   dd_t U = T;
-  for (i = 0; i < m - 1; i++) {
+  Fi(m - 1,
     T = dd_mul_d(T, 2.0 * z);
     T = dd_div_d(T, (f64) (2 * i + 3));
-    U = dd_add(U, T);
-  }
+    U = dd_add(U, T));
 
   /*  Multiply by 2 * e^-z, keeping the 2^k scale separate until
       after the U * mantissa product lands in normal range.  */

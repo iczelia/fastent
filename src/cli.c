@@ -39,14 +39,14 @@ static void banner(FILE * to) {
     "License GNU GPL version 3.\n");
 }
 
-void fastent_print_version(void) {
+static void fastent_print_version(void) {
   banner(stdout);
   printf("Copyright (C) 2023-2026 Kamila Szewczyk.\n"
          "This is free software: you are free to change and redistribute it.\n"
          "There is NO WARRANTY, to the extent permitted by law.\n");
 }
 
-void fastent_print_help(void) {
+static void fastent_print_help(void) {
   banner(stdout);
   fprintf(stdout,
     "\n"
@@ -84,9 +84,8 @@ static int parse_int(const char * s, int * out) {
   i64 v;
   if (!s || !*s) return -1;
   if (!strcmp(s, "auto")) { *out = -1;  return 0; }
-  end = NULL;
   v = strtol(s, &end, 10);
-  if (end == s || (end && *end)) return -1;
+  if (end == s || *end) return -1;
   if (v < 0 || v > 1024) return -1;
   *out = (int) v;
   return 0;
@@ -187,7 +186,7 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
   int rc;
   i32 k;
 
-  memset(o, 0, sizeof (*o));
+  memset(o, 0, sizeof *o);
   o->threads = 1;
   o->color   = 1;
 
@@ -199,7 +198,7 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
     return -1;
   }
   if (r->error) {
-    fprintf(stderr, "fastent: %s", r->error);   /*  error ends in \n  */
+    fprintf(stderr, "fastent: %s", r->error);  /*  error ends in \n  */
     yarg_destroy(r);
     return -1;
   }
@@ -214,17 +213,17 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
     const yarg_option * a = &r->args[k];
     const char * v = a->arg;
     switch (a->opt) {
-      case 'b': o->binary = 1; break;
-      case 'c': o->counts = 1; break;
-      case 'f': o->fold = 1; break;
-      case 't': o->terse = 1; break;
-      case 'J': o->json = 1; break;
-      case 'p': o->full_precision = 1; break;
-      case 'H': o->histogram = 1; break;
-      case 'l': o->histogram_log = 1; break;
-      case 'e': o->extended++; break;
-      case 'a': o->annotate = 1; if (o->extended < 1) o->extended = 1; break;
-      case 'r': o->recursive = 1; break;
+      case 'b': o->binary = 1;  break;
+      case 'c': o->counts = 1;  break;
+      case 'f': o->fold = 1;  break;
+      case 't': o->terse = 1;  break;
+      case 'J': o->json = 1;  break;
+      case 'p': o->full_precision = 1;  break;
+      case 'H': o->histogram = 1;  break;
+      case 'l': o->histogram_log = 1;  break;
+      case 'e': o->extended++;  break;
+      case 'a': o->annotate = 1;  if (o->extended < 1) o->extended = 1;  break;
+      case 'r': o->recursive = 1;  break;
       case 'C':
         if      (v && !strcmp(v, "auto"))   o->color = 1;
         else if (v && !strcmp(v, "always")) o->color = 2;
@@ -254,7 +253,7 @@ int fastent_parse_args(int argc, char ** argv, fastent_options * o) {
       case OPT_SORT_BY:
         if (!v || parse_sort_by_(v, o) != 0) rc = -1;
         break;
-      case OPT_FIPS140: o->fips140 = 1; break;
+      case OPT_FIPS140: o->fips140 = 1;  break;
       default: break;
     }
   }

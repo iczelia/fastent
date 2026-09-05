@@ -144,7 +144,8 @@ static void hist_byte_(const fastent_result * r, const fastent_options * o) {
       char buf[8];
       i32 n = snprintf(buf, sizeof (buf), "%d", c * group);
       if (n > tick_every) n = tick_every;
-      if (c + tick_every >= cols) { printf("%.*s", n, buf); } else {
+      if (c + tick_every >= cols) printf("%.*s", n, buf);
+      else {
         printf("%-*.*s", tick_every, n, buf);
       }
     }
@@ -153,7 +154,7 @@ static void hist_byte_(const fastent_result * r, const fastent_options * o) {
     Fi(gw + 2, putchar(' '));
     printf("0 1\n");
   }
-  Fi(bins, if (r->hist[i] > raw_peak) { raw_peak = r->hist[i]; peak_v = i; });
+  Fi(bins, if (r->hist[i] > raw_peak) { raw_peak = r->hist[i];  peak_v = i; });
   printf("(peak %" PRIu64 " sample%s at byte %d",
          (u64) raw_peak,
          raw_peak == 1 ? "" : "s",

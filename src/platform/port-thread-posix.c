@@ -72,12 +72,12 @@ static void lazy_init(void) {
   if (T < 1) T = 1;
   if (T > 1) {
     g_workers = (pthread_t *) malloc((sz) T * sizeof (pthread_t));
-    if (!g_workers) { g_n_threads = 1; return; }
+    if (!g_workers) { g_n_threads = 1;  return; }
     /*  Partial failure: keep the k workers already created and run with that
         count so g_n_threads matches the live pool instead of orphaning live
         workers behind a serial g_n_threads == 1 (k < 2 -> serial).  */
     Fk(T,
-      struct worker_args * a = (struct worker_args *) malloc(sizeof (*a));
+      struct worker_args * a = (struct worker_args *) malloc(sizeof *a);
       if (!a) { g_n_threads = (k >= 2) ? k : 1;  return; }
       a->k = k;
       if (pthread_create(&g_workers[k], NULL, worker_main, a) != 0) {
@@ -101,7 +101,7 @@ void fastent_parallel_for(sz n, fastent_parfor_fn fn, void * ctx) {
   if (n == 0) return;
   if (g_n_threads == 0) lazy_init();
   if (n == 1 || g_n_threads <= 1) {
-    for (i = 0; i < n; i++) fn(i, ctx);
+    Fi(n, fn(i, ctx));
     return;
   }
 
@@ -118,7 +118,7 @@ void fastent_parallel_for(sz n, fastent_parfor_fn fn, void * ctx) {
 struct fastent_mutex { pthread_mutex_t m; };
 
 fastent_mutex * fastent_mutex_create(void) {
-  fastent_mutex * x = (fastent_mutex *) malloc(sizeof (*x));
+  fastent_mutex * x = (fastent_mutex *) malloc(sizeof *x);
   if (!x) return NULL;
   if (pthread_mutex_init(&x->m, NULL) != 0) { free(x);  return NULL; }
   return x;

@@ -37,10 +37,8 @@ void fastent_run_stream(
     fastent_analyze_fn fn_byte_fold, fastent_analyze_fn fn_bits_fold,
     fastent_source * src);
 
-/*  -eee non-mmap tee: one bounded pass feeding the order-0/-ee analyzer (st),
-    the LZ77F acc (lz), the linear-complexity acc (bm), the Maurer acc (ma),
-    the binary matrix-rank acc (mr) and the permutation-entropy acc (pe); each
-    may be NULL.  */
+/*  Feed the histogram, -ee tests and active grid estimators in one stream
+    pass.  Estimator pointers may be NULL; st is required.  */
 void fastent_run_stream_lz_tee(
     fastent_chunk_state * st, fastent_lz_acc * lz, fastent_bm_acc * bm,
     fastent_maurer_acc * ma, fastent_mrank_acc * mr,
@@ -50,8 +48,8 @@ void fastent_run_stream_lz_tee(
     fastent_source * src);
 
 typedef struct {
-  char *          path;
-  fastent_result  result;
+  char * path;
+  fastent_result result;
 } fastent_recursive_row;
 
 /*  Walk `root` recursively, analysing every regular file.  */
@@ -61,31 +59,29 @@ int fastent_run_recursive(
     fastent_analyze_fn fn_bits_fold, fastent_recursive_row ** out_rows,
     sz * out_n);
 
-/*  LZ77F (-e) driver.  Runs the absolute 4 MiB-grid LZ77F parse
-    over `src` and writes the merged accumulator into *acc (already
-    init'd).  Result is bit-identical for any -j / driver / host.  */
+/*  The grid drivers require a mapped source and an initialised accumulator;
+    streams use the tee above.  Each driver scores absolute 4 MiB blocks.
+    LZ77F (-e).  */
 void fastent_run_lz(
     fastent_lz_acc * acc, const fastent_options * o, fastent_source * src);
 
-/*  Linear-complexity (-eee) driver.  Same absolute 4 MiB-grid scheme
-    as fastent_run_lz; 64 divides the grid so windows never straddle,
-    giving zero-drift bit-identical output for any -j / driver / host. */
+/*  Linear complexity (-eee).  The 64-byte windows divide the grid
+    exactly, so no window crosses a block boundary.  */
 void fastent_run_bm(
     fastent_bm_acc * acc, const fastent_options * o, fastent_source * src);
 
-/*  Maurer universal test (-eee, alongside LZ77F / BM) driver.  */
+/*  Maurer universal test (-eee).  */
 void fastent_run_maurer(
     fastent_maurer_acc * acc, const fastent_options * o,
     fastent_source * src);
 
-/*  Binary matrix-rank (-eee) driver.  Same absolute 4 MiB-grid scheme
-    as fastent_run_lz; 128 divides the grid so matrices never straddle,
-    giving bit-identical integer output for any -j / driver / host.  */
+/*  Binary matrix rank (-eee).  The 128-byte matrices divide the grid
+    exactly, so no matrix crosses a block boundary.  */
 void fastent_run_mrank(
     fastent_mrank_acc * acc, const fastent_options * o,
     fastent_source * src);
 
-/*  Bandt-Pompe permutation entropy (-e) driver.  */
+/*  Bandt-Pompe permutation entropy (-e).  */
 void fastent_run_perment(
     fastent_perment_acc * acc, const fastent_options * o,
     fastent_source * src);

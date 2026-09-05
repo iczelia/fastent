@@ -81,36 +81,36 @@ FASTENT_FN(fold_vec_inline)(FASTENT_SIMD_VEC c) {
 /*  HIST_N's landing bank per byte is irrelevant for correctness:
     finalize sums all FASTENT_BANKS banks per value.  */
 #if FASTENT_BANKS == 8
-#define FASTENT_HIST_DECL                                              \
-  u32 * RESTRICT b0 = st->bank[0];                             \
-  u32 * RESTRICT b1 = st->bank[1];                             \
-  u32 * RESTRICT b2 = st->bank[2];                             \
-  u32 * RESTRICT b3 = st->bank[3];                             \
-  u32 * RESTRICT b4 = st->bank[4];                             \
-  u32 * RESTRICT b5 = st->bank[5];                             \
-  u32 * RESTRICT b6 = st->bank[6];                             \
+#define FASTENT_HIST_DECL          \
+  u32 * RESTRICT b0 = st->bank[0]; \
+  u32 * RESTRICT b1 = st->bank[1]; \
+  u32 * RESTRICT b2 = st->bank[2]; \
+  u32 * RESTRICT b3 = st->bank[3]; \
+  u32 * RESTRICT b4 = st->bank[4]; \
+  u32 * RESTRICT b5 = st->bank[5]; \
+  u32 * RESTRICT b6 = st->bank[6]; \
   u32 * RESTRICT b7 = st->bank[7]
-#define HIST_N(p, o)                                                   \
-  do {                                                                 \
-    u64 w_ = fastent_ld64_((const u8 *)(p) + (o));                     \
-    b0[ w_        & 0xffu]++; b1[(w_ >>  8) & 0xffu]++;                 \
-    b2[(w_ >> 16) & 0xffu]++; b3[(w_ >> 24) & 0xffu]++;                 \
-    b4[(w_ >> 32) & 0xffu]++; b5[(w_ >> 40) & 0xffu]++;                 \
-    b6[(w_ >> 48) & 0xffu]++; b7[ w_ >> 56        ]++;                  \
+#define HIST_N(p, o)                                     \
+  do {                                                   \
+    u64 w_ = fastent_ld64_((const u8 *) (p) + (o));      \
+    b0[ w_        & 0xffu]++;  b1[(w_ >>  8) & 0xffu]++; \
+    b2[(w_ >> 16) & 0xffu]++;  b3[(w_ >> 24) & 0xffu]++; \
+    b4[(w_ >> 32) & 0xffu]++;  b5[(w_ >> 40) & 0xffu]++; \
+    b6[(w_ >> 48) & 0xffu]++;  b7[ w_ >> 56        ]++;  \
   } while (0)
 #else
-#define FASTENT_HIST_DECL                                              \
-  u32 * RESTRICT b0 = st->bank[0];                             \
-  u32 * RESTRICT b1 = st->bank[1];                             \
-  u32 * RESTRICT b2 = st->bank[2];                             \
+#define FASTENT_HIST_DECL          \
+  u32 * RESTRICT b0 = st->bank[0]; \
+  u32 * RESTRICT b1 = st->bank[1]; \
+  u32 * RESTRICT b2 = st->bank[2]; \
   u32 * RESTRICT b3 = st->bank[3 & (FASTENT_BANKS - 1)]
-#define HIST_N(p, o)                                                   \
-  do {                                                                 \
-    u64 w_ = fastent_ld64_((const u8 *)(p) + (o));                     \
-    b0[ w_        & 0xffu]++; b1[(w_ >>  8) & 0xffu]++;                 \
-    b2[(w_ >> 16) & 0xffu]++; b3[(w_ >> 24) & 0xffu]++;                 \
-    b0[(w_ >> 32) & 0xffu]++; b1[(w_ >> 40) & 0xffu]++;                 \
-    b2[(w_ >> 48) & 0xffu]++; b3[ w_ >> 56        ]++;                  \
+#define HIST_N(p, o)                                     \
+  do {                                                   \
+    u64 w_ = fastent_ld64_((const u8 *) (p) + (o));      \
+    b0[ w_        & 0xffu]++;  b1[(w_ >>  8) & 0xffu]++; \
+    b2[(w_ >> 16) & 0xffu]++;  b3[(w_ >> 24) & 0xffu]++; \
+    b0[(w_ >> 32) & 0xffu]++;  b1[(w_ >> 40) & 0xffu]++; \
+    b2[(w_ >> 48) & 0xffu]++;  b3[ w_ >> 56        ]++;  \
   } while (0)
 #endif
 
@@ -120,7 +120,8 @@ FASTENT_FN(fold_vec_inline)(FASTENT_SIMD_VEC c) {
 static inline void FASTENT_FN(consume_byte)(
     fastent_chunk_state * st, u8 b, u32 bank_idx) {
   st->bank[bank_idx & (FASTENT_BANKS - 1)][b]++;
-  if (st->have_carry) { st->cross_product += (i64) st->carry_byte * (i64) b; } else {
+  if (st->have_carry) st->cross_product += (i64) st->carry_byte * (i64) b;
+  else {
     st->first_byte = b;
     st->have_first = 1;
     st->have_carry = 1;
@@ -151,10 +152,9 @@ FASTENT_FN(scalar_body_impl)(
     fastent_chunk_state * st, const u8 * RESTRICT buf, sz len,
     sz start_bank, int fold) {
   sz i;
-  for (i = 0; i < len; i++) {
+  Fi(len,
     u8 b = fold ? FASTENT_FN(fold_byte_inline)(buf[i]) : buf[i];
-    FASTENT_FN(consume_byte)(st, b, start_bank + i);
-  }
+    FASTENT_FN(consume_byte)(st, b, start_bank + i));
   return i;
 }
 
@@ -188,14 +188,14 @@ FASTENT_FN(simd_body_impl)(
       mode scalar seeds use folded values to match the SIMD loop.  */
   u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
 
-  if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
+  if (!st->have_first) { st->first_byte = b0_user;  st->have_first = 1; }
   if (st->have_carry)
     st->cross_product += (i64) st->carry_byte * (i64) b0_user;
   st->have_carry = 1;
 
   const __m256i sign_xor   = _mm256_set1_epi8((char) 0x80);
   const __m256i zero       = _mm256_setzero_si256();
-  __m256i scc_acc64        = _mm256_setzero_si256(); /*  4 i64 lanes  */
+  __m256i scc_acc64        = _mm256_setzero_si256();  /*  4 i64 lanes  */
   __m256i lhs_sad          = _mm256_setzero_si256();
 
   FASTENT_HIST_DECL;
@@ -278,35 +278,35 @@ FASTENT_FN(simd_body_impl)(
     } else {
       p = buf + i;
     }
-    HIST_N(p,  0); HIST_N(p,  8); HIST_N(p, 16); HIST_N(p, 24);
-    HIST_N(p, 32); HIST_N(p, 40); HIST_N(p, 48); HIST_N(p, 56);
+    HIST_N(p,  0);  HIST_N(p,  8);  HIST_N(p, 16);  HIST_N(p, 24);
+    HIST_N(p, 32);  HIST_N(p, 40);  HIST_N(p, 48);  HIST_N(p, 56);
 
     /*  MC Pi: drain ring, then bulk hexads. Two accumulators (mi_a,
         mi_b) break the sbb serial dependency.  */
     u64 mi_a = 0, mi_b = 0;
     int drain_fired = 0;
 #define MC_HIT(d, acc) acc += ((d) <= FASTENT_INCIRC)
-#define MC_DRAIN() do { \
+#define MC_DRAIN() do {                                       \
       u32 _x = ((u32) m0 << 16) | ((u32) m1 << 8) | (u32) m2; \
       u32 _y = ((u32) m3 << 16) | ((u32) m4 << 8) | (u32) m5; \
-      u64 _d = (u64) _x * (u64) _x + (u64) _y * (u64) _y; \
-      MC_HIT(_d, mi_a); \
-      drain_fired = 1; \
+      u64 _d = (u64) _x * (u64) _x + (u64) _y * (u64) _y;     \
+      MC_HIT(_d, mi_a);                                       \
+      drain_fired = 1;                                        \
     } while (0)
 
     u32 p_idx;
     switch (mc_pos) {
-      case 0: p_idx = 0; break;
-      case 1: m1 = p[0]; m2 = p[1]; m3 = p[2]; m4 = p[3]; m5 = p[4];
-              MC_DRAIN(); p_idx = 5; break;
-      case 2: m2 = p[0]; m3 = p[1]; m4 = p[2]; m5 = p[3];
-              MC_DRAIN(); p_idx = 4; break;
-      case 3: m3 = p[0]; m4 = p[1]; m5 = p[2];
-              MC_DRAIN(); p_idx = 3; break;
-      case 4: m4 = p[0]; m5 = p[1];
-              MC_DRAIN(); p_idx = 2; break;
+      case 0: p_idx = 0;  break;
+      case 1: m1 = p[0];  m2 = p[1];  m3 = p[2];  m4 = p[3];  m5 = p[4];
+              MC_DRAIN();  p_idx = 5;  break;
+      case 2: m2 = p[0];  m3 = p[1];  m4 = p[2];  m5 = p[3];
+              MC_DRAIN();  p_idx = 4;  break;
+      case 3: m3 = p[0];  m4 = p[1];  m5 = p[2];
+              MC_DRAIN();  p_idx = 3;  break;
+      case 4: m4 = p[0];  m5 = p[1];
+              MC_DRAIN();  p_idx = 2;  break;
       default: m5 = p[0];
-              MC_DRAIN(); p_idx = 1; break;
+              MC_DRAIN();  p_idx = 1;  break;
     }
 
     u32 n_hexads = (64u - p_idx) / 6u;
@@ -319,10 +319,10 @@ FASTENT_FN(simd_body_impl)(
     u32 k = 0;
     for (; k + 2 <= n_hexads; k += 2) {
       __m128i v   = _mm_loadu_si128((const __m128i *) (q + k * 6u));
-      __m128i xy  = _mm_shuffle_epi8(v, mc_shuf);          /*  [x0,y0,x1,y1]  */
-      __m128i xs  = _mm_mul_epu32(xy, xy);        /*  x^2 (u64)  */
+      __m128i xy  = _mm_shuffle_epi8(v, mc_shuf);  /*  [x0,y0,x1,y1]  */
+      __m128i xs  = _mm_mul_epu32(xy, xy);  /*  x^2 (u64)  */
       __m128i yshr = _mm_srli_epi64(xy, 32);
-      __m128i ys  = _mm_mul_epu32(yshr, yshr);    /*  y^2 (u64)  */
+      __m128i ys  = _mm_mul_epu32(yshr, yshr);  /*  y^2 (u64)  */
       __m128i d   = _mm_add_epi64(xs, ys);
       __m128i mask = _mm_cmpgt_epi64(mc_lim, d);
       int bits = _mm_movemask_pd(_mm_castsi128_pd(mask));
@@ -382,12 +382,12 @@ FASTENT_FN(simd_body_impl)(
 
     /*  MC: push b into the live ring, maybe fire one hexad.  */
     switch (mc_pos) {
-      case 0: m0 = b; break;
-      case 1: m1 = b; break;
-      case 2: m2 = b; break;
-      case 3: m3 = b; break;
-      case 4: m4 = b; break;
-      default: m5 = b; break;
+      case 0: m0 = b;  break;
+      case 1: m1 = b;  break;
+      case 2: m2 = b;  break;
+      case 3: m3 = b;  break;
+      case 4: m4 = b;  break;
+      default: m5 = b;  break;
     }
     mc_pos++;
     if (mc_pos == 6) {
@@ -402,8 +402,8 @@ FASTENT_FN(simd_body_impl)(
 
   /*  Save MC state back.  */
   st->mc_pos = mc_pos;
-  st->mc_buf[0] = m0; st->mc_buf[1] = m1; st->mc_buf[2] = m2;
-  st->mc_buf[3] = m3; st->mc_buf[4] = m4; st->mc_buf[5] = m5;
+  st->mc_buf[0] = m0;  st->mc_buf[1] = m1;  st->mc_buf[2] = m2;
+  st->mc_buf[3] = m3;  st->mc_buf[4] = m4;  st->mc_buf[5] = m5;
   st->mc_count  = mc_count;
   st->mc_inside = mc_inside;
 
@@ -429,14 +429,14 @@ FASTENT_FN(simd_body_impl)(
   const sz body_end = iters * 128;
 
   u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
-  if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
+  if (!st->have_first) { st->first_byte = b0_user;  st->have_first = 1; }
   if (st->have_carry)
     st->cross_product += (i64) st->carry_byte * (i64) b0_user;
   st->have_carry = 1;
 
   const __m512i sign_xor = _mm512_set1_epi8((char) 0x80);
   const __m512i zero512  = _mm512_setzero_si512();
-  __m512i scc_acc64      = _mm512_setzero_si512(); /*  8 i64 lanes  */
+  __m512i scc_acc64      = _mm512_setzero_si512();  /*  8 i64 lanes  */
   __m512i lhs_sad        = _mm512_setzero_si512();
 
   FASTENT_HIST_DECL;
@@ -533,37 +533,37 @@ FASTENT_FN(simd_body_impl)(
     }
 
     /*  128 inc-mem across FASTENT_BANKS banks.  */
-    HIST_N(p,   0); HIST_N(p,   8); HIST_N(p,  16); HIST_N(p,  24);
-    HIST_N(p,  32); HIST_N(p,  40); HIST_N(p,  48); HIST_N(p,  56);
-    HIST_N(p,  64); HIST_N(p,  72); HIST_N(p,  80); HIST_N(p,  88);
-    HIST_N(p,  96); HIST_N(p, 104); HIST_N(p, 112); HIST_N(p, 120);
+    HIST_N(p,   0);  HIST_N(p,   8);  HIST_N(p,  16);  HIST_N(p,  24);
+    HIST_N(p,  32);  HIST_N(p,  40);  HIST_N(p,  48);  HIST_N(p,  56);
+    HIST_N(p,  64);  HIST_N(p,  72);  HIST_N(p,  80);  HIST_N(p,  88);
+    HIST_N(p,  96);  HIST_N(p, 104);  HIST_N(p, 112);  HIST_N(p, 120);
 
     /*  MC Pi: AVX2 drain + bulk + stash, sized for the 128-byte
         stride (up to 21 hexads/iter).  */
     u64 mi_a = 0, mi_b = 0;
     int drain_fired = 0;
 #define MC_HIT(d, acc) acc += ((d) <= FASTENT_INCIRC)
-#define MC_DRAIN() do { \
+#define MC_DRAIN() do {                                       \
       u32 _x = ((u32) m0 << 16) | ((u32) m1 << 8) | (u32) m2; \
       u32 _y = ((u32) m3 << 16) | ((u32) m4 << 8) | (u32) m5; \
-      u64 _d = (u64) _x * (u64) _x + (u64) _y * (u64) _y; \
-      MC_HIT(_d, mi_a); \
-      drain_fired = 1; \
+      u64 _d = (u64) _x * (u64) _x + (u64) _y * (u64) _y;     \
+      MC_HIT(_d, mi_a);                                       \
+      drain_fired = 1;                                        \
     } while (0)
 
     u32 p_idx;
     switch (mc_pos) {
-      case 0: p_idx = 0; break;
-      case 1: m1 = p[0]; m2 = p[1]; m3 = p[2]; m4 = p[3]; m5 = p[4];
-              MC_DRAIN(); p_idx = 5; break;
-      case 2: m2 = p[0]; m3 = p[1]; m4 = p[2]; m5 = p[3];
-              MC_DRAIN(); p_idx = 4; break;
-      case 3: m3 = p[0]; m4 = p[1]; m5 = p[2];
-              MC_DRAIN(); p_idx = 3; break;
-      case 4: m4 = p[0]; m5 = p[1];
-              MC_DRAIN(); p_idx = 2; break;
+      case 0: p_idx = 0;  break;
+      case 1: m1 = p[0];  m2 = p[1];  m3 = p[2];  m4 = p[3];  m5 = p[4];
+              MC_DRAIN();  p_idx = 5;  break;
+      case 2: m2 = p[0];  m3 = p[1];  m4 = p[2];  m5 = p[3];
+              MC_DRAIN();  p_idx = 4;  break;
+      case 3: m3 = p[0];  m4 = p[1];  m5 = p[2];
+              MC_DRAIN();  p_idx = 3;  break;
+      case 4: m4 = p[0];  m5 = p[1];
+              MC_DRAIN();  p_idx = 2;  break;
       default: m5 = p[0];
-              MC_DRAIN(); p_idx = 1; break;
+              MC_DRAIN();  p_idx = 1;  break;
     }
 
     u32 n_hexads = (128u - p_idx) / 6u;
@@ -640,12 +640,12 @@ FASTENT_FN(simd_body_impl)(
     st->last_byte  = b;
 
     switch (mc_pos) {
-      case 0: m0 = b; break;
-      case 1: m1 = b; break;
-      case 2: m2 = b; break;
-      case 3: m3 = b; break;
-      case 4: m4 = b; break;
-      default: m5 = b; break;
+      case 0: m0 = b;  break;
+      case 1: m1 = b;  break;
+      case 2: m2 = b;  break;
+      case 3: m3 = b;  break;
+      case 4: m4 = b;  break;
+      default: m5 = b;  break;
     }
     mc_pos++;
     if (mc_pos == 6) {
@@ -659,8 +659,8 @@ FASTENT_FN(simd_body_impl)(
   }
 
   st->mc_pos = mc_pos;
-  st->mc_buf[0] = m0; st->mc_buf[1] = m1; st->mc_buf[2] = m2;
-  st->mc_buf[3] = m3; st->mc_buf[4] = m4; st->mc_buf[5] = m5;
+  st->mc_buf[0] = m0;  st->mc_buf[1] = m1;  st->mc_buf[2] = m2;
+  st->mc_buf[3] = m3;  st->mc_buf[4] = m4;  st->mc_buf[5] = m5;
   st->mc_count  = mc_count;
   st->mc_inside = mc_inside;
 
@@ -683,7 +683,7 @@ FASTENT_FN(simd_body_impl)(
   const sz body_end = iters * 32;
 
   u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
-  if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
+  if (!st->have_first) { st->first_byte = b0_user;  st->have_first = 1; }
   if (st->have_carry)
     st->cross_product += (i64) st->carry_byte * (i64) b0_user;
   st->have_carry = 1;
@@ -763,30 +763,30 @@ FASTENT_FN(simd_body_impl)(
     } else {
       p = buf + i;
     }
-    HIST_N(p,  0); HIST_N(p,  8); HIST_N(p, 16); HIST_N(p, 24);
+    HIST_N(p,  0);  HIST_N(p,  8);  HIST_N(p, 16);  HIST_N(p, 24);
 
     /*  MC Pi: scalar drain + bulk + stash (32-byte stride).  */
-#define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
+#define MC_HEXAD(x0, x1, x2, y0, y1, y2) do {                      \
       u32 x = ((u32) (x0) << 16) | ((u32) (x1) << 8) | (u32) (x2); \
       u32 y = ((u32) (y0) << 16) | ((u32) (y1) << 8) | (u32) (y2); \
-      u64 d = (u64) x * (u64) x + (u64) y * (u64) y; \
-      mc_count++; \
-      mc_inside += (d <= FASTENT_INCIRC); \
+      u64 d = (u64) x * (u64) x + (u64) y * (u64) y;               \
+      mc_count++;                                                  \
+      mc_inside += (d <= FASTENT_INCIRC);                          \
     } while (0)
 
     u32 p_idx;
     switch (mc_pos) {
-      case 0: p_idx = 0; break;
-      case 1: m1=p[0]; m2=p[1]; m3=p[2]; m4=p[3]; m5=p[4];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 5; break;
-      case 2: m2=p[0]; m3=p[1]; m4=p[2]; m5=p[3];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 4; break;
-      case 3: m3=p[0]; m4=p[1]; m5=p[2];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 3; break;
-      case 4: m4=p[0]; m5=p[1];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 2; break;
+      case 0: p_idx = 0;  break;
+      case 1: m1=p[0];  m2=p[1];  m3=p[2];  m4=p[3];  m5=p[4];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 5;  break;
+      case 2: m2=p[0];  m3=p[1];  m4=p[2];  m5=p[3];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 4;  break;
+      case 3: m3=p[0];  m4=p[1];  m5=p[2];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 3;  break;
+      case 4: m4=p[0];  m5=p[1];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 2;  break;
       default: m5=p[0];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 1;  break;
     }
     i32 n_hexads = (i32) ((32u - p_idx) / 6u);
     Fk(n_hexads,
@@ -822,12 +822,12 @@ FASTENT_FN(simd_body_impl)(
     st->bank[(u32) (st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
     st->total_bytes++;
     switch (mc_pos) {
-      case 0: m0 = b; break;
-      case 1: m1 = b; break;
-      case 2: m2 = b; break;
-      case 3: m3 = b; break;
-      case 4: m4 = b; break;
-      default: m5 = b; break;
+      case 0: m0 = b;  break;
+      case 1: m1 = b;  break;
+      case 2: m2 = b;  break;
+      case 3: m3 = b;  break;
+      case 4: m4 = b;  break;
+      default: m5 = b;  break;
     }
     mc_pos++;
     if (mc_pos == 6) {
@@ -841,8 +841,8 @@ FASTENT_FN(simd_body_impl)(
   }
 
   st->mc_pos = mc_pos;
-  st->mc_buf[0] = m0; st->mc_buf[1] = m1; st->mc_buf[2] = m2;
-  st->mc_buf[3] = m3; st->mc_buf[4] = m4; st->mc_buf[5] = m5;
+  st->mc_buf[0] = m0;  st->mc_buf[1] = m1;  st->mc_buf[2] = m2;
+  st->mc_buf[3] = m3;  st->mc_buf[4] = m4;  st->mc_buf[5] = m5;
   st->mc_count  = mc_count;
   st->mc_inside = mc_inside;
 
@@ -870,7 +870,7 @@ FASTENT_FN(simd_body_impl)(
   const sz body_end = iters * 32;
 
   u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
-  if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
+  if (!st->have_first) { st->first_byte = b0_user;  st->have_first = 1; }
   if (st->have_carry)
     st->cross_product += (i64) st->carry_byte * (i64) b0_user;
   st->have_carry = 1;
@@ -953,30 +953,30 @@ FASTENT_FN(simd_body_impl)(
     } else {
       p = buf + i;
     }
-    HIST_N(p,  0); HIST_N(p,  8); HIST_N(p, 16); HIST_N(p, 24);
+    HIST_N(p,  0);  HIST_N(p,  8);  HIST_N(p, 16);  HIST_N(p, 24);
 
     /*  MC Pi: scalar drain + scalar bulk + scalar stash.  */
-#define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
+#define MC_HEXAD(x0, x1, x2, y0, y1, y2) do {                      \
       u32 x = ((u32) (x0) << 16) | ((u32) (x1) << 8) | (u32) (x2); \
       u32 y = ((u32) (y0) << 16) | ((u32) (y1) << 8) | (u32) (y2); \
-      u64 d = (u64) x * (u64) x + (u64) y * (u64) y; \
-      mc_count++; \
-      mc_inside += (d <= FASTENT_INCIRC); \
+      u64 d = (u64) x * (u64) x + (u64) y * (u64) y;               \
+      mc_count++;                                                  \
+      mc_inside += (d <= FASTENT_INCIRC);                          \
     } while (0)
 
     u32 p_idx;
     switch (mc_pos) {
-      case 0: p_idx = 0; break;
-      case 1: m1=p[0]; m2=p[1]; m3=p[2]; m4=p[3]; m5=p[4];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 5; break;
-      case 2: m2=p[0]; m3=p[1]; m4=p[2]; m5=p[3];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 4; break;
-      case 3: m3=p[0]; m4=p[1]; m5=p[2];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 3; break;
-      case 4: m4=p[0]; m5=p[1];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 2; break;
+      case 0: p_idx = 0;  break;
+      case 1: m1=p[0];  m2=p[1];  m3=p[2];  m4=p[3];  m5=p[4];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 5;  break;
+      case 2: m2=p[0];  m3=p[1];  m4=p[2];  m5=p[3];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 4;  break;
+      case 3: m3=p[0];  m4=p[1];  m5=p[2];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 3;  break;
+      case 4: m4=p[0];  m5=p[1];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 2;  break;
       default: m5=p[0];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 1;  break;
     }
     i32 n_hexads = (i32) ((32u - p_idx) / 6u);
     Fk(n_hexads,
@@ -1008,12 +1008,12 @@ FASTENT_FN(simd_body_impl)(
     st->bank[(u32) (st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
     st->total_bytes++;
     switch (mc_pos) {
-      case 0: m0 = b; break;
-      case 1: m1 = b; break;
-      case 2: m2 = b; break;
-      case 3: m3 = b; break;
-      case 4: m4 = b; break;
-      default: m5 = b; break;
+      case 0: m0 = b;  break;
+      case 1: m1 = b;  break;
+      case 2: m2 = b;  break;
+      case 3: m3 = b;  break;
+      case 4: m4 = b;  break;
+      default: m5 = b;  break;
     }
     mc_pos++;
     if (mc_pos == 6) {
@@ -1027,8 +1027,8 @@ FASTENT_FN(simd_body_impl)(
   }
 
   st->mc_pos = mc_pos;
-  st->mc_buf[0] = m0; st->mc_buf[1] = m1; st->mc_buf[2] = m2;
-  st->mc_buf[3] = m3; st->mc_buf[4] = m4; st->mc_buf[5] = m5;
+  st->mc_buf[0] = m0;  st->mc_buf[1] = m1;  st->mc_buf[2] = m2;
+  st->mc_buf[3] = m3;  st->mc_buf[4] = m4;  st->mc_buf[5] = m5;
   st->mc_count  = mc_count;
   st->mc_inside = mc_inside;
 
@@ -1057,7 +1057,7 @@ FASTENT_FN(simd_body_impl)(
   const sz body_end = iters * 32;
 
   u8 b0_user = fold ? FASTENT_FN(fold_byte_inline)(buf[0]) : buf[0];
-  if (!st->have_first) { st->first_byte = b0_user; st->have_first = 1; }
+  if (!st->have_first) { st->first_byte = b0_user;  st->have_first = 1; }
   if (st->have_carry)
     st->cross_product += (i64) st->carry_byte * (i64) b0_user;
   st->have_carry = 1;
@@ -1139,30 +1139,30 @@ FASTENT_FN(simd_body_impl)(
     } else {
       p = buf + i;
     }
-    HIST_N(p,  0); HIST_N(p,  8); HIST_N(p, 16); HIST_N(p, 24);
+    HIST_N(p,  0);  HIST_N(p,  8);  HIST_N(p, 16);  HIST_N(p, 24);
 
     /*  MC Pi: all-scalar (NEON-style).  */
-#define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
+#define MC_HEXAD(x0, x1, x2, y0, y1, y2) do {                      \
       u32 x = ((u32) (x0) << 16) | ((u32) (x1) << 8) | (u32) (x2); \
       u32 y = ((u32) (y0) << 16) | ((u32) (y1) << 8) | (u32) (y2); \
-      u64 d = (u64) x * (u64) x + (u64) y * (u64) y; \
-      mc_count++; \
-      mc_inside += (d <= FASTENT_INCIRC); \
+      u64 d = (u64) x * (u64) x + (u64) y * (u64) y;               \
+      mc_count++;                                                  \
+      mc_inside += (d <= FASTENT_INCIRC);                          \
     } while (0)
 
     u32 p_idx;
     switch (mc_pos) {
-      case 0: p_idx = 0; break;
-      case 1: m1=p[0]; m2=p[1]; m3=p[2]; m4=p[3]; m5=p[4];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 5; break;
-      case 2: m2=p[0]; m3=p[1]; m4=p[2]; m5=p[3];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 4; break;
-      case 3: m3=p[0]; m4=p[1]; m5=p[2];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 3; break;
-      case 4: m4=p[0]; m5=p[1];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 2; break;
+      case 0: p_idx = 0;  break;
+      case 1: m1=p[0];  m2=p[1];  m3=p[2];  m4=p[3];  m5=p[4];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 5;  break;
+      case 2: m2=p[0];  m3=p[1];  m4=p[2];  m5=p[3];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 4;  break;
+      case 3: m3=p[0];  m4=p[1];  m5=p[2];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 3;  break;
+      case 4: m4=p[0];  m5=p[1];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 2;  break;
       default: m5=p[0];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 1;  break;
     }
     i32 n_hexads = (i32) ((32u - p_idx) / 6u);
     Fk(n_hexads,
@@ -1196,12 +1196,12 @@ FASTENT_FN(simd_body_impl)(
     st->bank[(u32) (st->total_bytes) & (FASTENT_BANKS - 1)][b]++;
     st->total_bytes++;
     switch (mc_pos) {
-      case 0: m0 = b; break;
-      case 1: m1 = b; break;
-      case 2: m2 = b; break;
-      case 3: m3 = b; break;
-      case 4: m4 = b; break;
-      default: m5 = b; break;
+      case 0: m0 = b;  break;
+      case 1: m1 = b;  break;
+      case 2: m2 = b;  break;
+      case 3: m3 = b;  break;
+      case 4: m4 = b;  break;
+      default: m5 = b;  break;
     }
     mc_pos++;
     if (mc_pos == 6) {
@@ -1215,8 +1215,8 @@ FASTENT_FN(simd_body_impl)(
   }
 
   st->mc_pos = mc_pos;
-  st->mc_buf[0] = m0; st->mc_buf[1] = m1; st->mc_buf[2] = m2;
-  st->mc_buf[3] = m3; st->mc_buf[4] = m4; st->mc_buf[5] = m5;
+  st->mc_buf[0] = m0;  st->mc_buf[1] = m1;  st->mc_buf[2] = m2;
+  st->mc_buf[3] = m3;  st->mc_buf[4] = m4;  st->mc_buf[5] = m5;
   st->mc_count  = mc_count;
   st->mc_inside = mc_inside;
 
@@ -1292,8 +1292,8 @@ void FASTENT_FN(fold)(u8 * buf, sz len) {
 #ifdef FASTENT_HAVE_SIMD
   if (len >= FASTENT_SIMD_VLEN) {
     const FASTENT_SIMD_VEC zero    = V_SETZERO();
-    const FASTENT_SIMD_VEC v_amin  = V_SET1_EPI8('A');      /*  0x41  */
-    const FASTENT_SIMD_VEC v_zmax  = V_SET1_EPI8('Z');      /*  0x5A  */
+    const FASTENT_SIMD_VEC v_amin  = V_SET1_EPI8('A');  /*  0x41  */
+    const FASTENT_SIMD_VEC v_zmax  = V_SET1_EPI8('Z');  /*  0x5A  */
     const FASTENT_SIMD_VEC v_c0min = V_SET1_EPI8(0xC0);
     const FASTENT_SIMD_VEC v_demax = V_SET1_EPI8(0xDE);
     const FASTENT_SIMD_VEC v_d7    = V_SET1_EPI8(0xD7);
@@ -1381,7 +1381,7 @@ FASTENT_FN(bits_simd_body_impl)(
     0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
 #endif
 #if !((defined(FASTENT_VARIANT_AVX512) && defined(FASTENT_AVX512_HAVE_BITALG)) \
-      || defined(FASTENT_VARIANT_NEON) \
+      || defined(FASTENT_VARIANT_NEON)                                         \
       || defined(FASTENT_VARIANT_WASM128))
   const FASTENT_SIMD_VEC nibble_mask = V_SET1_EPI8(0x0F);
 #endif
@@ -1477,26 +1477,26 @@ FASTENT_FN(bits_simd_body_impl)(
     } else {
       p = buf + i;
     }
-#define MC_HEXAD(x0, x1, x2, y0, y1, y2) do { \
+#define MC_HEXAD(x0, x1, x2, y0, y1, y2) do {                      \
       u32 x = ((u32) (x0) << 16) | ((u32) (x1) << 8) | (u32) (x2); \
       u32 y = ((u32) (y0) << 16) | ((u32) (y1) << 8) | (u32) (y2); \
-      u64 d = (u64) x * (u64) x + (u64) y * (u64) y; \
-      mc_count++; \
-      mc_inside += (d <= FASTENT_INCIRC); \
+      u64 d = (u64) x * (u64) x + (u64) y * (u64) y;               \
+      mc_count++;                                                  \
+      mc_inside += (d <= FASTENT_INCIRC);                          \
     } while (0)
     u32 p_idx;
     switch (mc_pos) {
-      case 0: p_idx = 0; break;
-      case 1: m1=p[0]; m2=p[1]; m3=p[2]; m4=p[3]; m5=p[4];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 5; break;
-      case 2: m2=p[0]; m3=p[1]; m4=p[2]; m5=p[3];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 4; break;
-      case 3: m3=p[0]; m4=p[1]; m5=p[2];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 3; break;
-      case 4: m4=p[0]; m5=p[1];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 2; break;
+      case 0: p_idx = 0;  break;
+      case 1: m1=p[0];  m2=p[1];  m3=p[2];  m4=p[3];  m5=p[4];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 5;  break;
+      case 2: m2=p[0];  m3=p[1];  m4=p[2];  m5=p[3];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 4;  break;
+      case 3: m3=p[0];  m4=p[1];  m5=p[2];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 3;  break;
+      case 4: m4=p[0];  m5=p[1];
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 2;  break;
       default: m5=p[0];
-              MC_HEXAD(m0,m1,m2,m3,m4,m5); p_idx = 1; break;
+              MC_HEXAD(m0,m1,m2,m3,m4,m5);  p_idx = 1;  break;
     }
     u32 n_hexads = ((u32) FASTENT_SIMD_VLEN - p_idx) / 6u;
     /*  SIMD bulk (byte-mode pattern); mi_simd counts hits, mc_count
@@ -1544,7 +1544,7 @@ FASTENT_FN(bits_simd_body_impl)(
       mi_simd += (u64) FASTENT_POPCOUNT32(bits);
     }
 #elif !defined(FASTENT_VARIANT_NEON) && !defined(FASTENT_VARIANT_WASM128)
-    (void) mc_shuf; (void) mc_lim;
+    (void) mc_shuf;  (void) mc_lim;
 #endif
     /*  Scalar tail (0/1 hexad on AVX2+SSE41; full on SSSE3).  */
     for (; k < n_hexads; k++) {
@@ -1628,12 +1628,12 @@ FASTENT_FN(bits_simd_body_impl)(
     st->total_bytes += 8;
 
     switch (mc_pos) {
-      case 0: m0 = b; break;
-      case 1: m1 = b; break;
-      case 2: m2 = b; break;
-      case 3: m3 = b; break;
-      case 4: m4 = b; break;
-      default: m5 = b; break;
+      case 0: m0 = b;  break;
+      case 1: m1 = b;  break;
+      case 2: m2 = b;  break;
+      case 3: m3 = b;  break;
+      case 4: m4 = b;  break;
+      default: m5 = b;  break;
     }
     mc_pos++;
     if (mc_pos == 6) {
@@ -1647,8 +1647,8 @@ FASTENT_FN(bits_simd_body_impl)(
   }
 
   st->mc_pos = mc_pos;
-  st->mc_buf[0] = m0; st->mc_buf[1] = m1; st->mc_buf[2] = m2;
-  st->mc_buf[3] = m3; st->mc_buf[4] = m4; st->mc_buf[5] = m5;
+  st->mc_buf[0] = m0;  st->mc_buf[1] = m1;  st->mc_buf[2] = m2;
+  st->mc_buf[3] = m3;  st->mc_buf[4] = m4;  st->mc_buf[5] = m5;
   st->mc_count  = mc_count;
   st->mc_inside = mc_inside;
 
@@ -1674,7 +1674,7 @@ FASTENT_FN(bits_scalar_body_impl)(
     fastent_chunk_state * st, const u8 * RESTRICT buf, sz len,
     int fold) {
   sz i;
-  for (i = 0; i < len; i++) {
+  Fi(len,
     const u8 byte = fold ? FASTENT_FN(fold_byte_inline)(buf[i]) : buf[i];
     const u32 ones_in_byte = (u32) FASTENT_POPCOUNT32(byte);
     st->bit_hist[1] += ones_in_byte;
@@ -1704,8 +1704,7 @@ FASTENT_FN(bits_scalar_body_impl)(
       st->mc_count++;
       st->mc_inside += (d <= FASTENT_INCIRC);
       st->mc_pos = 0;
-    }
-  }
+    });
 }
 
 static inline void FASTENT_FN(bits_scalar_body)(
@@ -1762,7 +1761,8 @@ FASTENT_FN(digram_scalar_run)(
   u32 * RESTRICT t = st->dg_u32;
   u32 prev;
   sz i = 0;
-  if (st->dg_have) { prev = st->dg_prev; } else {
+  if (st->dg_have) prev = st->dg_prev;
+  else {
     prev = buf[0];
     fastent_lr_one(st, prev);
     i = 1;
@@ -1825,12 +1825,12 @@ void FASTENT_FN(digram_bytes)(
 
   sz i0;
   if (st->dg_have) { i0 = 0; } else {
-    fastent_lr_one(st, buf[0]);   /*  bootstrap: buf[0], no left pair  */
+    fastent_lr_one(st, buf[0]);  /*  bootstrap: buf[0], no left pair  */
     st->dg_prev = buf[0];
     st->dg_have = 1;
     i0 = 1;
   }
-  if (i0 >= len) { st->dg_prev = buf[len - 1]; return; }
+  if (i0 >= len) { st->dg_prev = buf[len - 1];  return; }
 
   /*  Run scan state: the run currently open starts at runstart with
       symbol runsym; closed runs are flushed to fastent_lr_run.  */
@@ -1852,8 +1852,8 @@ void FASTENT_FN(digram_bytes)(
     u64 bnd;
 #if defined(FASTENT_VARIANT_AVX512)
     {
-      __m512i v  = _mm512_loadu_si512((const void *)(buf + k));
-      __m512i vp = _mm512_loadu_si512((const void *)(buf + k - 1));
+      __m512i v  = _mm512_loadu_si512((const void *) (buf + k));
+      __m512i vp = _mm512_loadu_si512((const void *) (buf + k - 1));
       bnd = ~(u64) _mm512_cmpeq_epi8_mask(v, vp);
     }
 #elif FASTENT_SIMD_VLEN == 64
@@ -1896,7 +1896,7 @@ void FASTENT_FN(digram_bytes)(
     if (bnd == ~(u64) 0) {
       FASTENT_FN(lr_run_i)(st, runsym, (u64) (k - runstart));
       FASTENT_FN(lr_run_i)(st, buf[k], 1u);
-      st->lr_sym = buf[k + 62];   /*  collapse singletons 2..63  */
+      st->lr_sym = buf[k + 62];  /*  collapse singletons 2..63  */
       runstart = k + 63;
       runsym   = buf[k + 63];
     } else {
@@ -1948,7 +1948,7 @@ FASTENT_FN(maxgap_in_word)(u64 t, u32 lo, u32 hi) {
   himask = ((u64) 1 << hi) - 1ull;
   z = (~t) & lomask & himask;
   y = z;  k = 0;
-  while (y) { y &= y << 1; k++; }
+  while (y) { y &= y << 1;  k++; }
   return (u64) k + 1ull;
 }
 
@@ -2007,7 +2007,7 @@ FASTENT_FN(cusum_full_words)(
   __m512i vmin = _mm512_set1_epi64(g1);
   __m512i vmax = _mm512_set1_epi64(g2);
   for (w = 0; w + LW <= nfull; w += LW) {
-    __m512i a   = _mm512_loadu_si512((const void *)(W + w));
+    __m512i a   = _mm512_loadu_si512((const void *) (W + w));
     __m512i lo  = _mm512_and_si512(a, m0f);
     __m512i hi  = _mm512_and_si512(_mm512_srli_epi16(a, 4), m0f);
     __m512i nl  = _mm512_shuffle_epi8(Lnet, lo);
@@ -2060,10 +2060,10 @@ FASTENT_FN(cusum_full_words)(
   (void) nnet;  (void) nmn;  (void) nmx;
   for (w = 0; w + LW <= nfull; w += LW) {
     int k;
-    for (k = 0; k < LW; k++) {
+    Fk(LW,
       const u64 a = W[w + k];
       int j;  i64 r = 0;
-      for (j = 0; j < 8; j++) {
+      Fj(8,
         const u32 v = (u32) ((a >> (j * 8)) & 0xFFu);
         const i32 lo = v & 15u, hi = (v >> 4) & 15u;
         const i32 cn = nnet[lo] + nnet[hi];
@@ -2073,10 +2073,8 @@ FASTENT_FN(cusum_full_words)(
         if (nnet[lo] + nmx[hi] > cmx) cmx = nnet[lo] + nmx[hi];
         if (o + r + cmn < g1) g1 = o + r + cmn;
         if (o + r + cmx > g2) g2 = o + r + cmx;
-        r += cn;
-      }
-      o += r;
-    }
+        r += cn);
+      o += r);
   }
   *po = o;  *pgmn = g1;  *pgmx = g2;
   return w;
@@ -2177,7 +2175,7 @@ FASTENT_FN(longest_run1)(__m512i zv) {
   b.mx   = _mm512_shuffle_epi8(Lmx,  hi);
   b.full = _mm512_shuffle_epi8(Lful, hi);
   b.wid  = _mm512_set1_epi8(4);
-  s = FASTENT_FN(lr_cmb)(a, b);                /*  per-byte, wid 8  */
+  s = FASTENT_FN(lr_cmb)(a, b);  /*  per-byte, wid 8  */
   for (sh = 1; sh < 8; sh <<= 1) {
     FASTENT_FN(lrstate) hib;
     hib.pre  = _mm512_srli_epi64(s.pre,  sh * 8);
@@ -2201,8 +2199,8 @@ FASTENT_FN(maxgap_full_words)(
   int have = *phave;
   sz w;
   for (w = 0; w + 8 <= ntw; w += 8) {
-    __m512i a  = _mm512_loadu_si512((const void *)(W + w));
-    __m512i nx = _mm512_loadu_si512((const void *)(W + w + 1));
+    __m512i a  = _mm512_loadu_si512((const void *) (W + w));
+    __m512i nx = _mm512_loadu_si512((const void *) (W + w + 1));
     __m512i t  = _mm512_xor_si512(a,
         _mm512_or_si512(_mm512_srli_epi64(a, 1),
                         _mm512_slli_epi64(nx, 63)));
@@ -2228,7 +2226,7 @@ FASTENT_FN(maxgap_full_words)(
       _mm512_storeu_si512((void *) LO,  lo);
       _mm512_storeu_si512((void *) HI,  hi);
       _mm512_storeu_si512((void *) WG,  wg);
-      for (k = 0; k < 8; k++) {
+      Fk(8,
         if (!TWv[k]) continue;
         {
           const i64 fp = (i64) (w + k) * 64 + LO[k];
@@ -2239,8 +2237,7 @@ FASTENT_FN(maxgap_full_words)(
           } else { first = fp;  have = 1; }
           if ((u64) WG[k] > gap) gap = (u64) WG[k];
           last = lp;
-        }
-      }
+        });
     }
   }
   *pgap = gap;  *pfirst = first;  *plast = last;  *phave = have;
@@ -2256,7 +2253,7 @@ static INLINE void
 FASTENT_FN(lr_runs_summary)(
     fastent_chunk_state * st, u32 head_sym, u64 head_len, u64 internal_max,
     u32 tail_sym, u64 tail_len, int multi) {
-  if (!multi) { FASTENT_FN(lr_run_i)(st, head_sym, head_len); return; }
+  if (!multi) { FASTENT_FN(lr_run_i)(st, head_sym, head_len);  return; }
   FASTENT_FN(lr_run_i)(st, head_sym, head_len);
   if (st->lr_cur > st->lr_max) st->lr_max = st->lr_cur;
   if (internal_max > st->lr_max) st->lr_max = internal_max;
@@ -2283,7 +2280,7 @@ void FASTENT_FN(digram_bits_blk)(
       last |= (u64) fastent_bitrev8_(buf[i]) << ((u32) (i & 7) * 8u);
     W[cw] = last;
   }
-  for (i = NW; i < NW + 8; i++) W[i] = 0ull;   /*  succ-load pad  */
+  for (i = NW; i < NW + 8; i++) W[i] = 0ull;  /*  succ-load pad  */
 
   const u32 b0    = (u32) (W[0] & 1u);
   const sz  lbpos = M - 1;
@@ -2303,8 +2300,8 @@ void FASTENT_FN(digram_bits_blk)(
     __m512i z     = _mm512_setzero_si512();
     __m512i acc11 = z, acctr = z, acc10 = z;
     for (w = 0; w < wv; w += 8) {
-      __m512i a  = _mm512_loadu_si512((const void *)(W + w));
-      __m512i nx = _mm512_loadu_si512((const void *)(W + w + 1));
+      __m512i a  = _mm512_loadu_si512((const void *) (W + w));
+      __m512i nx = _mm512_loadu_si512((const void *) (W + w + 1));
       __m512i sa = _mm512_or_si512(_mm512_srli_epi64(a, 1),
                                    _mm512_slli_epi64(nx, 63));
       acc11 = _mm512_add_epi64(acc11, _mm512_sad_epu8(
@@ -2392,23 +2389,21 @@ void FASTENT_FN(digram_bits_blk)(
       if (full) {
         i64 r = 0;
         u32 j;
-        for (j = 0; j < 8; j++) {
+        Fj(8,
           const u32 v = (u32) ((a >> (j * 8)) & 0xFFu);
           const i64 base = o + r;
           if (base + cs_mn[v] < gmn) gmn = base + cs_mn[v];
           if (base + cs_mx[v] > gmx) gmx = base + cs_mx[v];
-          r += cs_net[v];
-        }
+          r += cs_net[v]);
         o += 2 * (i64) FASTENT_POPCOUNT64(a) - 64;
       } else {
         const u32 jb = (u32) (cl - w * 8);
         u32 j;
-        for (j = 0; j < jb; j++) {
+        Fj(jb,
           const u32 v = (u32) ((a >> (j * 8)) & 0xFFu);
           if (o + cs_mn[v] < gmn) gmn = o + cs_mn[v];
           if (o + cs_mx[v] > gmx) gmx = o + cs_mx[v];
-          o += cs_net[v];
-        }
+          o += cs_net[v]);
       }
     }
   }

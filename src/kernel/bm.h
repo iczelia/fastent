@@ -40,20 +40,20 @@ typedef struct {
   u64 windows;
   u64 meanl_sum;
   u64 lhist[FASTENT_BM_LBINS];
-  u64 tbin[6];                  /*  NIST T-class histogram, df = 5  */
+  u64 tbin[6];  /*  NIST T-class histogram, df = 5  */
 
   /*  At most one partial tail window per stream; merged by a
       fixed-order pick on tail_abs.  */
   u64 tail_abs;
-  u32 tail_bits;                /*  m' (0 = none)  */
+  u32 tail_bits;  /*  m' (0 = none)  */
   u32 tail_l;
-  u8  have_tail;
+  u8 have_tail;
 
   u64 abs_base, abs_pos;
   u8 * blk;
-  sz   blk_len;
-  u64  blk_off;
-  int  oom;
+  sz blk_len;
+  u64 blk_off;
+  int oom;
 } fastent_bm_acc;
 
 /*  feed takes any-size chunks (split at grid lines); merge is order

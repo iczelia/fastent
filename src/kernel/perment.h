@@ -30,13 +30,13 @@ typedef char fastent_perment_grid_assert_[
     histogram.  */
 typedef struct {
   u64 hist[FASTENT_PERMENT_BINS];
-  u64 windows;                /*  full m-tuples scored (no boundary)   */
+  u64 windows;  /*  full m-tuples scored (no boundary)  */
 
   u64 abs_base, abs_pos;
   u8 * blk;
-  sz   blk_len;
-  u64  blk_off;
-  int  oom;
+  sz blk_len;
+  u64 blk_off;
+  int oom;
 } fastent_perment_acc;
 
 /*  feed takes any-size chunks (split at grid lines); merge sum-folds

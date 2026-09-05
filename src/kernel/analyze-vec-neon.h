@@ -30,20 +30,20 @@
 #define FASTENT_SIMD_VLEN  16
 #define V_SET1_EPI8(x)       vdupq_n_u8((uint8_t)(x))
 #define V_SETZERO()          vdupq_n_u8(0)
-#define V_LOAD(p)            vld1q_u8((const uint8_t *)(p))
-#define V_STORE(p, v)        vst1q_u8((uint8_t *)(p), (v))
+#define V_LOAD(p)            vld1q_u8((const uint8_t *) (p))
+#define V_STORE(p, v)        vst1q_u8((uint8_t *) (p), (v))
 #define V_AND(a, b)          vandq_u8((a), (b))
 #define V_OR(a, b)           vorrq_u8((a), (b))
 /*  x86 V_ANDNOT(a, b) = (~a) & b; NEON's BIC is b & (~a), so the
     argument order flips.  */
 #define V_ANDNOT(a, b)       vbicq_u8((b), (a))
 #define V_ADD_EPI8(a, b)     vaddq_u8((a), (b))
-#define V_ADD_EPI64(a, b)    vreinterpretq_u8_u64(             \
-                               vaddq_u64(vreinterpretq_u64_u8(a),\
+#define V_ADD_EPI64(a, b)    vreinterpretq_u8_u64(                \
+                               vaddq_u64(vreinterpretq_u64_u8(a), \
                                          vreinterpretq_u64_u8(b)))
 #define V_SUBS_EPU8(a, b)    vqsubq_u8((a), (b))
 #define V_CMPEQ_EPI8(a, b)   vceqq_u8((a), (b))
-#define V_SRLI_EPI16(a, n)   vreinterpretq_u8_u16(             \
+#define V_SRLI_EPI16(a, n)   vreinterpretq_u8_u16( \
                                vshrq_n_u16(vreinterpretq_u16_u8(a), (n)))
 
 static __attribute__((always_inline)) inline uint8x16_t

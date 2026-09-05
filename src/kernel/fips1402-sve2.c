@@ -52,7 +52,7 @@ static void fips_runs_sve2(
   i32 i, w;
   u32 run_len = 0, cur_bit = 0;
   int have = 0;
-  Fi(7, cnt1[i] = 0; cnt0[i] = 0);
+  Fi(7, cnt1[i] = 0;  cnt0[i] = 0);
   *lr = 0;
   for (w = 0; w < (i32) FIPS_NW; w++) {
     u64 v = W[w];
@@ -60,19 +60,19 @@ static void fips_runs_sve2(
     u32 pos;
     for (pos = 0; pos < nbits; pos++) {
       u32 bit = (u32) ((v >> (63 - pos)) & 1u);
-      if (!have) { cur_bit = bit; run_len = 1; have = 1; }
+      if (!have) { cur_bit = bit;  run_len = 1;  have = 1; }
       else if (bit == cur_bit) { run_len++; }
       else {
         u32 idx = run_len < 6u ? run_len : 6u;
-        if (cur_bit) cnt1[idx]++; else cnt0[idx]++;
+        if (cur_bit) cnt1[idx]++;  else cnt0[idx]++;
         if (run_len >= FIPS_LONGRUN) *lr = 1;
-        cur_bit = bit; run_len = 1;
+        cur_bit = bit;  run_len = 1;
       }
     }
   }
   if (have) {
     u32 idx = run_len < 6u ? run_len : 6u;
-    if (cur_bit) cnt1[idx]++; else cnt0[idx]++;
+    if (cur_bit) cnt1[idx]++;  else cnt0[idx]++;
     if (run_len >= FIPS_LONGRUN) *lr = 1;
   }
 }
@@ -132,6 +132,5 @@ static void fips_block_sve2(const u8 * b, fastent_fips_report * r) {
 void fastent_fips_run_blocks_sve2(
     const u8 * buf, u64 nblocks, fastent_fips_report * r) {
   u64 i;
-  for (i = 0; i < nblocks; i++)
-    fips_block_sve2(buf + i * FIPS_BLOCK_BYTES, r);
+  Fi(nblocks, fips_block_sve2(buf + i * FIPS_BLOCK_BYTES, r));
 }

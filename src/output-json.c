@@ -26,7 +26,7 @@
 /*  JSON has no NaN/Infinity literal, so non-finite values render
     as null.  */
 static void jnum_(const char * fmt, f64 v) {
-  if (!isfinite(v)) { fputs("null", stdout); return; }
+  if (!isfinite(v)) { fputs("null", stdout);  return; }
   printf(fmt, v);
 }
 
@@ -52,17 +52,17 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   printf("{\n");
   printf("  \"unit\": \"%s\",\n", samp);
   printf("  \"samples\": %" PRIu64 ",\n", (u64) r->total_samples);
-  printf("  \"entropy\": "); jnum_(fmt_fp, r->entropy); printf(",\n");
+  printf("  \"entropy\": ");  jnum_(fmt_fp, r->entropy);  printf(",\n");
   printf("  \"optimum_compression_percent\": %d,\n", comp_pct);
   printf("  \"chi_square\": {\n");
-  printf("    \"statistic\": "); jnum_(fmt_fp, r->chi_square); printf(",\n");
+  printf("    \"statistic\": ");  jnum_(fmt_fp, r->chi_square);  printf(",\n");
   printf("    \"df\": %d,\n", o->binary ? 1 : 255);
   printf("    \"p_exceed\": ");
   jnum_(fmt_fp, r->chi_probability);  printf("\n");
   printf("  },\n");
-  printf("  \"arithmetic_mean\": "); jnum_(fmt_fp, r->mean); printf(",\n");
+  printf("  \"arithmetic_mean\": ");  jnum_(fmt_fp, r->mean);  printf(",\n");
   printf("  \"monte_carlo_pi\": {\n");
-  printf("    \"value\": "); jnum_(fmt_fp, r->monte_pi); printf(",\n");
+  printf("    \"value\": ");  jnum_(fmt_fp, r->monte_pi);  printf(",\n");
   printf("    \"error_percent\": ");
   jnum_(fmt_fp, 100.0 * (fabs(M_PI - r->monte_pi) / M_PI));
   printf("\n  },\n");
@@ -70,19 +70,20 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   if (!FASTENT_SCC_DEFINED(r->scc)) printf("null");
   else                 jnum_(fmt_fp, r->scc);
   if (o->extended) {
-    printf(",\n  \"min_entropy\": ");          jnum_(fmt_fp, r->min_entropy);
+    printf(",\n  \"min_entropy\": ");  jnum_(fmt_fp, r->min_entropy);
     printf(",\n  \"collision_entropy\": ");
     jnum_(fmt_fp, r->collision_entropy);
-    printf(",\n  \"index_of_coincidence\": "); jnum_(fmt_fp, r->ic);
+    printf(",\n  \"index_of_coincidence\": ");  jnum_(fmt_fp, r->ic);
     printf(",\n  \"poker\": ");
-    if (!(r->poker_chisq == r->poker_chisq)) { fputs("null", stdout); } else {
-      printf("{ \"statistic\": "); jnum_(fmt_fp, r->poker_chisq);
-      printf(", \"df\": 15, \"p_exceed\": "); jnum_(fmt_fp, r->poker_p);
+    if (!(r->poker_chisq == r->poker_chisq)) fputs("null", stdout);
+    else {
+      printf("{ \"statistic\": ");  jnum_(fmt_fp, r->poker_chisq);
+      printf(", \"df\": 15, \"p_exceed\": ");  jnum_(fmt_fp, r->poker_p);
       printf(" }");
     }
-    printf(",\n  \"variance\": ");        jnum_(fmt_fp, r->variance);
-    printf(",\n  \"stddev\": ");          jnum_(fmt_fp, r->stddev);
-    printf(",\n  \"redundancy\": ");      jnum_(fmt_fp, r->redundancy);
+    printf(",\n  \"variance\": ");  jnum_(fmt_fp, r->variance);
+    printf(",\n  \"stddev\": ");  jnum_(fmt_fp, r->stddev);
+    printf(",\n  \"redundancy\": ");  jnum_(fmt_fp, r->redundancy);
     printf(",\n  \"distinct_symbols\": %u", r->distinct);
     printf(",\n  \"most_common\": ");
     if (r->mode_value < 0) fputs("null", stdout);
@@ -93,39 +94,41 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
     else printf("{ \"value\": %d, \"count\": %" PRIu64 " }",
                 r->rarest_value, (u64) r->rarest_count);
     printf(",\n  \"bit_frequencies\": ");
-    if (r->bit_bias_worst < 0) { fputs("null", stdout); } else {
+    if (r->bit_bias_worst < 0) fputs("null", stdout);
+    else {
       putchar('[');
-      Fi(8, if (i) putchar(','); putchar(' '); jnum_(fmt_fp, r->bit_freq[i]));
+      Fi(8, if (i) putchar(',');  putchar(' ');  jnum_(fmt_fp, r->bit_freq[i]));
       fputs(" ]", stdout);
     }
     printf(",\n  \"bit_bias\": ");
     if (r->bit_bias_worst < 0) fputs("null", stdout);
-    else { printf("{ \"max\": "); jnum_(fmt_fp, r->bit_bias_max);
+    else { printf("{ \"max\": ");  jnum_(fmt_fp, r->bit_bias_max);
            printf(", \"worst_bit\": %d }", r->bit_bias_worst); }
     printf(",\n  \"conditional_entropy\": ");
     jnum_(fmt_fp, r->conditional_entropy);
     printf(",\n  \"mutual_information\": ");
     jnum_(fmt_fp, r->mutual_information);
-    printf(",\n  \"runs\": ");          jint_(r->runs);
-    printf(",\n  \"longest_run\": ");   jint_(r->longest_run);
-    printf(",\n  \"cusum_max\": ");     jint_(r->cusum_max);
+    printf(",\n  \"runs\": ");  jint_(r->runs);
+    printf(",\n  \"longest_run\": ");  jint_(r->longest_run);
+    printf(",\n  \"cusum_max\": ");  jint_(r->cusum_max);
   }
   if (o->extended >= 1) {
     printf(",\n  \"lz77f\": ");
-    if (r->lz_deviation != r->lz_deviation) { fputs("null", stdout); } else {
-      printf("{\n    \"cr_excess\": ");      jnum_(fmt_fp, r->lz_cr_excess);
-      printf(",\n    \"literal_entropy\": "); jnum_(fmt_fp, r->lz_lit_h);
-      printf(",\n    \"literal_kl\": ");      jnum_(fmt_fp, r->lz_lit_kl);
+    if (r->lz_deviation != r->lz_deviation) fputs("null", stdout);
+    else {
+      printf("{\n    \"cr_excess\": ");  jnum_(fmt_fp, r->lz_cr_excess);
+      printf(",\n    \"literal_entropy\": ");  jnum_(fmt_fp, r->lz_lit_h);
+      printf(",\n    \"literal_kl\": ");  jnum_(fmt_fp, r->lz_lit_kl);
       printf(",\n    \"match_coverage\": ");  jnum_(fmt_fp, r->lz_match_cov);
       printf(",\n    \"offset_concentration\": ");
       jnum_(fmt_fp, r->lz_off_conc);
-      printf(",\n    \"mlen_excess\": ");     jnum_(fmt_fp, r->lz_mlen_excess);
+      printf(",\n    \"mlen_excess\": ");  jnum_(fmt_fp, r->lz_mlen_excess);
       printf(",\n    \"literal_chi_square\": { \"statistic\": ");
       jnum_(fmt_fp, r->lz_lit_chi);
       printf(", \"df\": 255, \"p_exceed\": ");
       jnum_(fmt_fp, r->lz_lit_chi_p);
       printf(" }");
-      printf(",\n    \"deviation\": ");       jnum_(fmt_fp, r->lz_deviation);
+      printf(",\n    \"deviation\": ");  jnum_(fmt_fp, r->lz_deviation);
       printf(",\n    \"matches\": %" PRIu64, (u64) r->lz_nmatch);
       printf(",\n    \"single_dominant_match\": %s",
              r->lz_megamatch ? "true" : "false");
@@ -134,25 +137,27 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   }
   if (o->extended >= 3) {
     printf(",\n  \"linear_complexity\": ");
-    if (r->bm_deviation != r->bm_deviation) { fputs("null", stdout); } else {
-      printf("{\n    \"mean_lc\": ");          jnum_(fmt_fp, r->bm_mean_lc);
-      printf(",\n    \"mu\": ");               jnum_(fmt_fp, r->bm_mu);
+    if (r->bm_deviation != r->bm_deviation) fputs("null", stdout);
+    else {
+      printf("{\n    \"mean_lc\": ");  jnum_(fmt_fp, r->bm_mean_lc);
+      printf(",\n    \"mu\": ");  jnum_(fmt_fp, r->bm_mu);
       printf(",\n    \"class_chi_square\": { \"statistic\": ");
       jnum_(fmt_fp, r->bm_chi);
       printf(", \"df\": 5, \"p_exceed\": ");
       jnum_(fmt_fp, r->bm_chi_p);
       printf(" }");
-      printf(",\n    \"deviation\": ");        jnum_(fmt_fp, r->bm_deviation);
+      printf(",\n    \"deviation\": ");  jnum_(fmt_fp, r->bm_deviation);
       printf(",\n    \"windows\": %" PRIu64, (u64) r->bm_windows);
       printf(",\n    \"near_constant\": %s",
              r->bm_degenerate ? "true" : "false");
       printf("\n  }");
     }
     printf(",\n  \"maurer_universal\": ");
-    if (r->maurer_dev != r->maurer_dev) { fputs("null", stdout); } else {
-      printf("{\n    \"fn\": ");                jnum_(fmt_fp, r->maurer_fn);
-      printf(",\n    \"expected\": ");          jnum_(fmt_fp, r->maurer_expected);
-      printf(",\n    \"deviation\": ");         jnum_(fmt_fp, r->maurer_dev);
+    if (r->maurer_dev != r->maurer_dev) fputs("null", stdout);
+    else {
+      printf("{\n    \"fn\": ");  jnum_(fmt_fp, r->maurer_fn);
+      printf(",\n    \"expected\": ");  jnum_(fmt_fp, r->maurer_expected);
+      printf(",\n    \"deviation\": ");  jnum_(fmt_fp, r->maurer_dev);
       printf(",\n    \"test_blocks\": %" PRIu64, (u64) r->maurer_k);
       printf(",\n    \"repetitive\": %s",
              r->maurer_degenerate ? "true" : "false");
@@ -161,24 +166,26 @@ void fastent_print_json(const fastent_result * r, const fastent_options * o) {
   }
   if (o->extended >= 1) {
     printf(",\n  \"permutation_entropy\": ");
-    if (r->perment_deviation != r->perment_deviation) { fputs("null", stdout); } else {
-      printf("{\n    \"h_norm\": ");            jnum_(fmt_fp, r->perment_h_norm);
-      printf(",\n    \"deviation\": ");         jnum_(fmt_fp, r->perment_deviation);
-      printf(",\n    \"chi_square\": ");        jnum_(fmt_fp, r->perment_chi);
-      printf(",\n    \"chi_p\": ");             jnum_(fmt_fp, r->perment_chi_p);
+    if (r->perment_deviation != r->perment_deviation) fputs("null", stdout);
+    else {
+      printf("{\n    \"h_norm\": ");  jnum_(fmt_fp, r->perment_h_norm);
+      printf(",\n    \"deviation\": ");  jnum_(fmt_fp, r->perment_deviation);
+      printf(",\n    \"chi_square\": ");  jnum_(fmt_fp, r->perment_chi);
+      printf(",\n    \"chi_p\": ");  jnum_(fmt_fp, r->perment_chi_p);
       printf(",\n    \"windows\": %" PRIu64,    (u64) r->perment_windows);
       printf(",\n    \"histogram\": [");
-      Fi(24, if (i) putchar(','); printf(" %u", r->perment_hist[i]));
+      Fi(24, if (i) putchar(',');  printf(" %u", r->perment_hist[i]));
       fputs(" ]", stdout);
       printf("\n  }");
     }
   }
   if (o->extended >= 3) {
     printf(",\n  \"binary_matrix_rank\": ");
-    if (r->mrank_dev != r->mrank_dev) { fputs("null", stdout); } else {
-      printf("{\n    \"deviation\": ");         jnum_(fmt_fp, r->mrank_dev);
-      printf(",\n    \"chi_square\": ");        jnum_(fmt_fp, r->mrank_chi);
-      printf(",\n    \"chi_p\": ");             jnum_(fmt_fp, r->mrank_chi_p);
+    if (r->mrank_dev != r->mrank_dev) fputs("null", stdout);
+    else {
+      printf("{\n    \"deviation\": ");  jnum_(fmt_fp, r->mrank_dev);
+      printf(",\n    \"chi_square\": ");  jnum_(fmt_fp, r->mrank_chi);
+      printf(",\n    \"chi_p\": ");  jnum_(fmt_fp, r->mrank_chi_p);
       printf(",\n    \"matrices\": %" PRIu64,   (u64) r->mrank_matrices);
       printf(",\n    \"rank_32\": %u",          r->mrank_r32);
       printf(",\n    \"rank_31\": %u",          r->mrank_r31);
